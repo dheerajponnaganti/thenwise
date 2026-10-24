@@ -1,0 +1,131 @@
+// Weighted per-field BM25 (spec 05 §3.2). Documents can be added and removed one at a time,
+// so a changed note costs one remove plus one add, not a full rebuild.
+
+import { queryTerms, tokenize } from './tokenize.ts'
+
+export const FIELDS = ['title', 'aliases', 'summary', 'headings', 'body'] as const
+export type Field = (typeof FIELDS)[number]
+
+/** Starting weights [hypothesis, tuned on the benchmark]. */
+export const FIELD_WEIGHTS: Record<Field, number> = { title: 3, aliases: 3, summary: 2, headings: 1.5, body: 1 }
+export const K1 = 1.2
+export const B = 0.75
+
+/** Term frequencies of one document, per field. Stored in the cache so a warm start does not re-tokenize. */
+export type DocTerms = Partial<Record<Field, Record<string, number>>>
+
+export function docTerms(fields: Partial<Record<Field, string>>): DocTerms {
+  const out: DocTerms = {}
+  for (const f of FIELDS) {
+    const text = fields[f]
+    if (!text) continue
+    const tf: Record<string, number> = {}
+    for (const t of tokenize(text)) tf[t] = (tf[t] ?? 0) + 1
+    out[f] = tf
+  }
+
+  return out
+}
+
+export interface Hit {
+  id: string
+  score: number
+  /** Which query terms matched in which fields: the "why it matched" of a pointer. */
+  matched: Partial<Record<Field, string[]>>
+}
+
+export class Lexicon {
+  private postings: Record<Field, Map<string, Map<string, number>>> = { title: new Map(), aliases: new Map(), summary: new Map(), headings: new Map(), body: new Map() }
+  private lengths: Record<Field, Map<string, number>> = { title: new Map(), aliases: new Map(), summary: new Map(), headings: new Map(), body: new Map() }
+  private totals: Record<Field, number> = { title: 0, aliases: 0, summary: 0, headings: 0, body: 0 }
+  /** Document frequency across all fields: a term counts once per document. */
+  private df = new Map<string, number>()
+  private docs = new Map<string, DocTerms>()
+
+  get size(): number {
+    return this.docs.size
+  }
+
+  /** True when the term occurs in at least one document. */
+  knows(term: string): boolean {
+    return this.df.has(term)
+  }
+
+  has(id: string): boolean {
+    return this.docs.has(id)
+  }
+
+  add(id: string, terms: DocTerms): void {
+    if (this.docs.has(id)) this.remove(id)
+    this.docs.set(id, terms)
+    const seen = new Set<string>()
+    for (const f of FIELDS) {
+      const tf = terms[f]
+      if (!tf) continue
+      let len = 0
+      for (const [t, n] of Object.entries(tf)) {
+        len += n
+        let p = this.postings[f].get(t)
+        if (!p) this.postings[f].set(t, (p = new Map()))
+        p.set(id, n)
+        seen.add(t)
+      }
+      this.lengths[f].set(id, len)
+      this.totals[f] += len
+    }
+    for (const t of seen) this.df.set(t, (this.df.get(t) ?? 0) + 1)
+  }
+
+  remove(id: string): void {
+    const terms = this.docs.get(id)
+    if (!terms) return
+    const seen = new Set<string>()
+    for (const f of FIELDS) {
+      const tf = terms[f]
+      if (!tf) continue
+      for (const t of Object.keys(tf)) {
+        const p = this.postings[f].get(t)
+        p?.delete(id)
+        if (p && p.size === 0) this.postings[f].delete(t)
+        seen.add(t)
+      }
+      this.totals[f] -= this.lengths[f].get(id) ?? 0
+      this.lengths[f].delete(id)
+    }
+    for (const t of seen) {
+      const n = (this.df.get(t) ?? 1) - 1
+      if (n <= 0) this.df.delete(t)
+      else this.df.set(t, n)
+    }
+    this.docs.delete(id)
+  }
+
+  /** Scores every document that shares a term with the query. `filter` drops documents before ranking. */
+  search(text: string, limit: number, filter?: (id: string) => boolean): Hit[] {
+    const terms = queryTerms(text)
+    const n = this.docs.size
+    if (n === 0 || terms.length === 0) return []
+    const scores = new Map<string, Hit>()
+    for (const t of terms) {
+      const df = this.df.get(t)
+      if (!df) continue
+      const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5))
+      for (const f of FIELDS) {
+        const p = this.postings[f].get(t)
+        if (!p) continue
+        const avg = this.totals[f] / Math.max(1, this.lengths[f].size)
+        for (const [id, tf] of p) {
+          if (filter && !filter(id)) continue
+          const len = this.lengths[f].get(id) ?? 0
+          const s = FIELD_WEIGHTS[f] * idf * ((tf * (K1 + 1)) / (tf + K1 * (1 - B + (B * len) / Math.max(1, avg))))
+          let hit = scores.get(id)
+          if (!hit) scores.set(id, (hit = { id, score: 0, matched: {} }))
+          hit.score += s
+          ;(hit.matched[f] ??= []).push(t)
+        }
+      }
+    }
+
+    return [...scores.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit)
+  }
+}

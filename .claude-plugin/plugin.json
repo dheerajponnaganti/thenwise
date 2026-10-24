@@ -1,0 +1,17 @@
+{
+  "name": "thenwise",
+  "version": "0.1.0",
+  "description": "Memory of your past Claude Code work: search, history and a resume brief, all local.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Dheeraj Ponnaganti"
+  },
+  "repository": "https://github.com/dheerajponnaganti/thenwise",
+  "keywords": [
+    "claude-code",
+    "memory",
+    "mcp",
+    "plugin",
+    "sqlite"
+  ]
+}

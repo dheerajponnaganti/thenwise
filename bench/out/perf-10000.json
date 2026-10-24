@@ -1,0 +1,50 @@
+{
+  "notes": 10000,
+  "stats": {
+    "notes": 10000,
+    "byType": {
+      "decision": 1694,
+      "entity": 1700,
+      "finding": 1565,
+      "note": 1681,
+      "rule": 1670,
+      "task": 1690
+    },
+    "edges": 57916,
+    "hubs": 537,
+    "unresolved": 0
+  },
+  "coldMs": 1664.956625,
+  "warmMs": 639.9272079999996,
+  "updateP50Ms": 49.98041699999976,
+  "updateP95Ms": 59.510249999999814,
+  "queryP50Ms": 7,
+  "queryP95Ms": 9.420750000000226,
+  "doctorMs": 2026.578625000001,
+  "gates": [
+    {
+      "id": "N7",
+      "what": "full rebuild, cold, 10000 notes",
+      "value": 1664.956625,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "id": "N8",
+      "what": "incremental update of one note (p95)",
+      "value": 59.510249999999814,
+      "limit": 20,
+      "pass": false
+    },
+    {
+      "id": "N5",
+      "what": "lexical query (p95), in-process",
+      "value": 9.420750000000226,
+      "limit": 50,
+      "pass": true
+    }
+  ],
+  "node": "v26.0.0",
+  "machine": "darwin arm64",
+  "date": "2026-10-22T17:37:31.239Z"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "thenwise",
+  "description": "Thenwise: local memory of your past Claude Code work.",
+  "owner": { "name": "Dheeraj Ponnaganti" },
+  "plugins": [
+    {
+      "name": "thenwise",
+      "description": "Memory of your past Claude Code work: search, history and a resume brief, all local.",
+      "version": "0.1.0",
+      "license": "Apache-2.0",
+      "source": { "source": "github", "repo": "dheerajponnaganti/thenwise", "ref": "release" }
+    }
+  ]
+}

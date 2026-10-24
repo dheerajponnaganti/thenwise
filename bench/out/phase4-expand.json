@@ -1,0 +1,134 @@
+{
+  "none": {
+    "lookup": {
+      "n": 20,
+      "recall1": 0.6,
+      "recall3": 0.75,
+      "recall5": 0.9,
+      "wrong": 0.75
+    },
+    "all": {
+      "n": 100,
+      "recall1": 0.47,
+      "recall3": 0.7,
+      "recall5": 0.78,
+      "wrong": 0.6774193548387096
+    },
+    "why": {
+      "n": 20,
+      "recall1": 0.6,
+      "recall3": 0.75,
+      "recall5": 0.85,
+      "wrong": 0.7755102040816326
+    },
+    "multi_hop": {
+      "n": 20,
+      "recall1": 0.2,
+      "recall3": 0.65,
+      "recall5": 0.75,
+      "wrong": 0.65
+    },
+    "temporal": {
+      "n": 20,
+      "recall1": 0.25,
+      "recall3": 0.35,
+      "recall5": 0.4,
+      "wrong": 0.8571428571428571
+    },
+    "action": {
+      "n": 20,
+      "recall1": 0.7,
+      "recall3": 1,
+      "recall5": 1,
+      "wrong": 0.36
+    }
+  },
+  "typed": {
+    "lookup": {
+      "n": 20,
+      "recall1": 0.6,
+      "recall3": 0.75,
+      "recall5": 0.9,
+      "wrong": 0.74
+    },
+    "all": {
+      "n": 100,
+      "recall1": 0.47,
+      "recall3": 0.65,
+      "recall5": 0.78,
+      "wrong": 0.67
+    },
+    "why": {
+      "n": 20,
+      "recall1": 0.6,
+      "recall3": 0.7,
+      "recall5": 0.8,
+      "wrong": 0.8
+    },
+    "multi_hop": {
+      "n": 20,
+      "recall1": 0.2,
+      "recall3": 0.45,
+      "recall5": 0.75,
+      "wrong": 0.64
+    },
+    "temporal": {
+      "n": 20,
+      "recall1": 0.25,
+      "recall3": 0.35,
+      "recall5": 0.45,
+      "wrong": 0.85
+    },
+    "action": {
+      "n": 20,
+      "recall1": 0.7,
+      "recall3": 1,
+      "recall5": 1,
+      "wrong": 0.32
+    }
+  },
+  "ppr": {
+    "lookup": {
+      "n": 20,
+      "recall1": 0.55,
+      "recall3": 0.75,
+      "recall5": 0.9,
+      "wrong": 0.75
+    },
+    "all": {
+      "n": 100,
+      "recall1": 0.45,
+      "recall3": 0.72,
+      "recall5": 0.79,
+      "wrong": 0.678
+    },
+    "why": {
+      "n": 20,
+      "recall1": 0.55,
+      "recall3": 0.8,
+      "recall5": 0.85,
+      "wrong": 0.79
+    },
+    "multi_hop": {
+      "n": 20,
+      "recall1": 0.2,
+      "recall3": 0.7,
+      "recall5": 0.8,
+      "wrong": 0.64
+    },
+    "temporal": {
+      "n": 20,
+      "recall1": 0.25,
+      "recall3": 0.35,
+      "recall5": 0.4,
+      "wrong": 0.86
+    },
+    "action": {
+      "n": 20,
+      "recall1": 0.7,
+      "recall3": 1,
+      "recall5": 1,
+      "wrong": 0.35
+    }
+  }
+}

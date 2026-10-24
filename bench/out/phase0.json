@@ -1,0 +1,3204 @@
+{
+  "label": "phase0",
+  "date": "2026-10-22T17:18:50.678Z",
+  "vault": "~/memory-v2/fixtures/vault-sample",
+  "index": {
+    "files": 100,
+    "parsed": 100,
+    "reused": 0,
+    "removed": 0,
+    "unavailable": [],
+    "truncated": false,
+    "ms": 20,
+    "stats": {
+      "notes": 100,
+      "byType": {
+        "note": 20,
+        "decision": 27,
+        "entity": 21,
+        "finding": 17,
+        "rule": 7,
+        "task": 8
+      },
+      "edges": 500,
+      "hubs": 7,
+      "unresolved": 0
+    }
+  },
+  "datasetErrors": [],
+  "questionsUsed": 120,
+  "results": {
+    "B2_grep_proxy": {
+      "all": {
+        "questions": 120,
+        "answerable": 100,
+        "recall1": 0.28,
+        "recall3": 0.69,
+        "recall5": 0.8,
+        "mrr": 0.48783333333333334,
+        "wrongInjection": 0.7,
+        "mustNotRate": 0.5121951219512195,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 1148.13,
+        "tokensToAnswerP50": 1326,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.18370899999999324,
+        "latencyP95Ms": 0.28570799999999963
+      },
+      "lookup": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.2,
+        "recall3": 0.6,
+        "recall5": 0.75,
+        "mrr": 0.40750000000000003,
+        "wrongInjection": 0.8,
+        "mustNotRate": null,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 1179.85,
+        "tokensToAnswerP50": 1362,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.20674999999999955,
+        "latencyP95Ms": 4.803249999999991
+      },
+      "why": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.25,
+        "recall3": 0.9,
+        "recall5": 0.95,
+        "mrr": 0.56,
+        "wrongInjection": 0.81,
+        "mustNotRate": 1,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 1158.85,
+        "tokensToAnswerP50": 1326,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.19066600000000733,
+        "latencyP95Ms": 0.25516599999998846
+      },
+      "multi_hop": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.25,
+        "recall3": 0.6,
+        "recall5": 0.75,
+        "mrr": 0.4325,
+        "wrongInjection": 0.68,
+        "mustNotRate": 0.14285714285714285,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 1307.15,
+        "tokensToAnswerP50": 1557,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.22591699999999548,
+        "latencyP95Ms": 0.39050000000000296
+      },
+      "temporal": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.2,
+        "recall3": 0.55,
+        "recall5": 0.65,
+        "mrr": 0.3725,
+        "wrongInjection": 0.82,
+        "mustNotRate": 0.6,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 1362.9,
+        "tokensToAnswerP50": 1389,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.19216700000001197,
+        "latencyP95Ms": 0.26029199999999264
+      },
+      "action": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.5,
+        "recall3": 0.8,
+        "recall5": 0.9,
+        "mrr": 0.6666666666666667,
+        "wrongInjection": 0.39,
+        "mustNotRate": 0.3333333333333333,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 731.9,
+        "tokensToAnswerP50": 370,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.12966700000001197,
+        "latencyP95Ms": 0.3365410000000111
+      },
+      "negative": {
+        "questions": 20,
+        "answerable": 0,
+        "recall1": 0,
+        "recall3": 0,
+        "recall5": 0,
+        "mrr": 0,
+        "wrongInjection": 0,
+        "mustNotRate": null,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 0,
+        "tokensToAnswerP50": 0,
+        "tokensSentMean": 0,
+        "latencyP50Ms": 0.17900000000000205,
+        "latencyP95Ms": 0.25950000000000273
+      }
+    },
+    "B3_lexical": {
+      "all": {
+        "questions": 120,
+        "answerable": 100,
+        "recall1": 0.47,
+        "recall3": 0.71,
+        "recall5": 0.78,
+        "mrr": 0.5908333333333334,
+        "wrongInjection": 0.6854838709677419,
+        "mustNotRate": 0.24390243902439024,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 785.02,
+        "tokensToAnswerP50": 654,
+        "tokensSentMean": 243.45833333333334,
+        "latencyP50Ms": 0.020334000000019614,
+        "latencyP95Ms": 0.05166699999998059
+      },
+      "lookup": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.6,
+        "recall3": 0.75,
+        "recall5": 0.9,
+        "mrr": 0.7041666666666666,
+        "wrongInjection": 0.75,
+        "mustNotRate": null,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 671.45,
+        "tokensToAnswerP50": 503,
+        "tokensSentMean": 238.9,
+        "latencyP50Ms": 0.030000000000001137,
+        "latencyP95Ms": 0.24270799999999326
+      },
+      "why": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.6,
+        "recall3": 0.75,
+        "recall5": 0.85,
+        "mrr": 0.7,
+        "wrongInjection": 0.7755102040816326,
+        "mustNotRate": 0,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 773.05,
+        "tokensToAnswerP50": 553,
+        "tokensSentMean": 251.7,
+        "latencyP50Ms": 0.019583999999980506,
+        "latencyP95Ms": 0.041540999999995165
+      },
+      "multi_hop": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.15,
+        "recall3": 0.65,
+        "recall5": 0.75,
+        "mrr": 0.37499999999999994,
+        "wrongInjection": 0.65,
+        "mustNotRate": 0,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 970.5,
+        "tokensToAnswerP50": 913,
+        "tokensSentMean": 253.3,
+        "latencyP50Ms": 0.020291999999983545,
+        "latencyP95Ms": 0.033790999999979476
+      },
+      "temporal": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.3,
+        "recall3": 0.4,
+        "recall5": 0.4,
+        "mrr": 0.3416666666666667,
+        "wrongInjection": 0.8571428571428571,
+        "mustNotRate": 0.5,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 949.45,
+        "tokensToAnswerP50": 1027,
+        "tokensSentMean": 226.55,
+        "latencyP50Ms": 0.021332999999998492,
+        "latencyP95Ms": 0.0998750000000257
+      },
+      "action": {
+        "questions": 20,
+        "answerable": 20,
+        "recall1": 0.7,
+        "recall3": 1,
+        "recall5": 1,
+        "mrr": 0.8333333333333333,
+        "wrongInjection": 0.4,
+        "mustNotRate": 0,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 560.65,
+        "tokensToAnswerP50": 484,
+        "tokensSentMean": 249.6,
+        "latencyP50Ms": 0.015833999999983916,
+        "latencyP95Ms": 0.03608299999999076
+      },
+      "negative": {
+        "questions": 20,
+        "answerable": 0,
+        "recall1": 0,
+        "recall3": 0,
+        "recall5": 0,
+        "mrr": 0,
+        "wrongInjection": 0,
+        "mustNotRate": null,
+        "silenceAtZero": 0,
+        "tokensToAnswerMean": 0,
+        "tokensToAnswerP50": 0,
+        "tokensSentMean": 240.7,
+        "latencyP50Ms": 0.01608300000000895,
+        "latencyP95Ms": 0.02966699999998923
+      }
+    }
+  },
+  "thresholdSweepB3": [
+    {
+      "tau": 0,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 1,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 2,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 4,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 6,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 8,
+      "recall3": 0.71,
+      "silence": 0,
+      "wrongInjection": 0.738255033557047
+    },
+    {
+      "tau": 10,
+      "recall3": 0.7,
+      "silence": 0.05,
+      "wrongInjection": 0.7349397590361446
+    },
+    {
+      "tau": 12,
+      "recall3": 0.68,
+      "silence": 0.1,
+      "wrongInjection": 0.7289048473967684
+    },
+    {
+      "tau": 15,
+      "recall3": 0.65,
+      "silence": 0.2,
+      "wrongInjection": 0.716796875
+    },
+    {
+      "tau": 20,
+      "recall3": 0.49,
+      "silence": 0.65,
+      "wrongInjection": 0.6846846846846847
+    }
+  ],
+  "perQuestion": {
+    "B2_grep_proxy": [
+      {
+        "id": "q001",
+        "kind": "lookup",
+        "top": [
+          "decisions/use-crdts-for-budget-data.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "Home.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q002",
+        "kind": "lookup",
+        "top": [
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "Decision Index.md",
+          "entities/sync-server.md",
+          "tasks/rotate-the-jwt-signing-key.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q003",
+        "kind": "lookup",
+        "top": [
+          "decisions/validate-api-payloads-with-zod.md",
+          "Decision Index.md",
+          "decisions/use-crdts-for-budget-data.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "decisions/check-docs-links-in-ci.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q004",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q005",
+        "kind": "lookup",
+        "top": [
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/budget-screen.md",
+          "entities/on-device-sqlite.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q006",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "entities/blog.md",
+          "entities/docs-site.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q007",
+        "kind": "lookup",
+        "top": [
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "entities/budget-screen.md",
+          "entities/mobile-app.md",
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q008",
+        "kind": "lookup",
+        "top": [
+          "findings/postgres-advisory-locks-serialize-sync-per-user.md",
+          "Decision Index.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "drafts/Draft - Release notes 1.8.md",
+          "entities/api-routes.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q009",
+        "kind": "lookup",
+        "top": [
+          "entities/expo.md",
+          "Home.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/ivo-petrov.md",
+          "findings/cold-start-is-2-9-seconds-on-mid-range-android.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q010",
+        "kind": "lookup",
+        "top": [
+          "entities/docs-site.md",
+          "entities/ruth-halvorsen.md",
+          "findings/expo-sdk-54-needs-the-new-build-config.md",
+          "Home.md",
+          "rules/no-em-dashes-in-docs-or-ui-copy.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q011",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/store-money-as-integer-cents.md",
+          "drafts/Draft - How Tidewater syncs.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q012",
+        "kind": "lookup",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "Home.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q013",
+        "kind": "lookup",
+        "top": [
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "Home.md",
+          "Decision Index.md",
+          "entities/expo.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q014",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/budget-screen.md",
+          "entities/sync-engine.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q015",
+        "kind": "lookup",
+        "top": [
+          "Home.md",
+          "planning/Roadmap 2026 Q4.md",
+          "tasks/rotate-the-jwt-signing-key.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q016",
+        "kind": "lookup",
+        "top": [
+          "decisions/use-crdts-for-budget-data.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "Home.md",
+          "meetings/Budget sync - server decides.md",
+          "meetings/Weekly sync 2026-01-26.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q017",
+        "kind": "lookup",
+        "top": [
+          "entities/on-device-sqlite.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q018",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/check-docs-links-in-ci.md",
+          "entities/docs-site.md",
+          "meetings/Moving docs to Starlight.md",
+          "planning/Release 1.8 checklist.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q019",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "entities/sync-server.md",
+          "entities/conflict-resolver.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q020",
+        "kind": "lookup",
+        "top": [
+          "Decision Index.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "decisions/keep-local-data-in-asyncstorage.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q021",
+        "kind": "why",
+        "top": [
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q022",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "entities/expo.md",
+          "entities/ivo-petrov.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q023",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "entities/conflict-resolver.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "entities/conflict-resolution.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q024",
+        "kind": "why",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "Decision Index.md",
+          "entities/beacon-push.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q025",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/build-the-docs-site-with-docusaurus.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "decisions/validate-api-payloads-with-zod.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q026",
+        "kind": "why",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "Home.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q027",
+        "kind": "why",
+        "top": [
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "Decision Index.md",
+          "entities/on-device-sqlite.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q028",
+        "kind": "why",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "Decision Index.md",
+          "decisions/use-crdts-for-budget-data.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q029",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/store-money-as-integer-cents.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q030",
+        "kind": "why",
+        "top": [
+          "decisions/skip-database-encryption-in-version-1.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "Home.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q031",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/database-migrations.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q032",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "entities/ivo-petrov.md",
+          "entities/mobile-app.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q033",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "entities/beacon-push.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q034",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q035",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "entities/expo.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q036",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/check-docs-links-in-ci.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q037",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q038",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "entities/blog.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q039",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "entities/api-routes.md",
+          "entities/tidewater.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q040",
+        "kind": "why",
+        "top": [
+          "Decision Index.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "tasks/write-the-sync-protocol-2-1-spec.md",
+          "entities/sam-achebe.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q041",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "Home.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q042",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "entities/beacon-push.md",
+          "Home.md",
+          "decisions/send-push-through-beacon-push.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q043",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/send-push-through-beacon-push.md",
+          "Home.md",
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q044",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "findings/starlight-builds-300-pages-in-38-seconds.md",
+          "Home.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q045",
+        "kind": "multi_hop",
+        "top": [
+          "findings/asyncstorage-slows-past-6-mb-on-android.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "Home.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q046",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "Decision Index.md",
+          "Home.md",
+          "entities/on-device-sqlite.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q047",
+        "kind": "multi_hop",
+        "top": [
+          "entities/conflict-resolver.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "Decision Index.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q048",
+        "kind": "multi_hop",
+        "top": [
+          "entities/budget-screen.md",
+          "Decision Index.md",
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q049",
+        "kind": "multi_hop",
+        "top": [
+          "entities/ivo-petrov.md",
+          "Decision Index.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "drafts/Draft - Contributing guide.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q050",
+        "kind": "multi_hop",
+        "top": [
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "entities/tidewater.md",
+          "Decision Index.md",
+          "entities/ruth-halvorsen.md",
+          "Home.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q051",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q052",
+        "kind": "multi_hop",
+        "top": [
+          "findings/concurrent-budget-edits-are-rare.md",
+          "Decision Index.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "findings/postgres-advisory-locks-serialize-sync-per-user.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q053",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "Home.md",
+          "Decision Index.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q054",
+        "kind": "multi_hop",
+        "top": [
+          "entities/conflict-resolver.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "drafts/Draft - Roadmap 2027 thoughts.md",
+          "entities/conflict-resolution.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q055",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/keep-local-data-in-asyncstorage.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q056",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q057",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "decisions/store-money-as-integer-cents.md",
+          "entities/budget-screen.md",
+          "entities/api-routes.md",
+          "findings/float-rounding-drifts-budget-totals.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q058",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "Decision Index.md",
+          "entities/sync-engine.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q059",
+        "kind": "multi_hop",
+        "top": [
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "Home.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "findings/beacon-push-free-tier-covers-10-000-devices.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q060",
+        "kind": "multi_hop",
+        "top": [
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "entities/crdt.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q061",
+        "kind": "temporal",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "Decision Index.md",
+          "decisions/use-crdts-for-budget-data.md",
+          "meetings/Budget sync - server decides.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q062",
+        "kind": "temporal",
+        "top": [
+          "Decision Index.md",
+          "Home.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q063",
+        "kind": "temporal",
+        "top": [
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "Decision Index.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": 4
+      },
+      {
+        "id": "q064",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "entities/conflict-resolution.md",
+          "entities/docs-site.md",
+          "entities/expo.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q065",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q066",
+        "kind": "temporal",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "Home.md",
+          "meetings/Release review 2026-09-18.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q067",
+        "kind": "temporal",
+        "top": [
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "Home.md",
+          "Decision Index.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q068",
+        "kind": "temporal",
+        "top": [
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/use-crdts-for-budget-data.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q069",
+        "kind": "temporal",
+        "top": [
+          "Decision Index.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q070",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "findings/asyncstorage-slows-past-6-mb-on-android.md",
+          "Home.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q071",
+        "kind": "temporal",
+        "top": [
+          "decisions/use-crdts-for-budget-data.md",
+          "Decision Index.md",
+          "entities/budget-screen.md",
+          "entities/conflict-resolution.md",
+          "Home.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q072",
+        "kind": "temporal",
+        "top": [
+          "Decision Index.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q073",
+        "kind": "temporal",
+        "top": [
+          "Decision Index.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "entities/expo.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q074",
+        "kind": "temporal",
+        "top": [
+          "Home.md",
+          "Decision Index.md",
+          "entities/docs-site.md",
+          "entities/ivo-petrov.md",
+          "rules/every-docs-page-needs-a-runnable-example.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q075",
+        "kind": "temporal",
+        "top": [
+          "entities/crdt.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q076",
+        "kind": "temporal",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "entities/crdt.md",
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "Decision Index.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q077",
+        "kind": "temporal",
+        "top": [
+          "Home.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "Decision Index.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q078",
+        "kind": "temporal",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "Decision Index.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q079",
+        "kind": "temporal",
+        "top": [
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "Decision Index.md",
+          "entities/docs-site.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "findings/starlight-builds-300-pages-in-38-seconds.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q080",
+        "kind": "temporal",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "Home.md",
+          "tasks/add-weekly-budget-summary-push-topic.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q081",
+        "kind": "action",
+        "top": [
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "entities/conflict-resolver.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-engine.md",
+          "rules/every-sync-change-needs-a-conflict-test.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q082",
+        "kind": "action",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "entities/sync-engine.md",
+          "inbox/compress-sync-payloads-with-gzip.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q083",
+        "kind": "action",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "entities/offline-mode.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-engine.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q084",
+        "kind": "action",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "entities/budget-screen.md",
+          "findings/float-rounding-drifts-budget-totals.md",
+          "entities/mobile-app.md",
+          "Decision Index.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q085",
+        "kind": "action",
+        "top": [
+          "decisions/validate-api-payloads-with-zod.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "entities/api-routes.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "findings/postgres-advisory-locks-serialize-sync-per-user.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q086",
+        "kind": "action",
+        "top": [
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "inbox/migrations-0014-and-0015-touch-the-same-table.md",
+          "inbox/name-migrations-with-a-four-digit-counter.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q087",
+        "kind": "action",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "entities/beacon-push.md",
+          "entities/sync-server.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q088",
+        "kind": "action",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/run-the-sync-server-on-postgres-16.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q089",
+        "kind": "action",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "entities/expo.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q090",
+        "kind": "action",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/build-the-docs-site-with-docusaurus.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q091",
+        "kind": "action",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "entities/blog.md",
+          "entities/ruth-halvorsen.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q092",
+        "kind": "action",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q093",
+        "kind": "action",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q094",
+        "kind": "action",
+        "top": [
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q095",
+        "kind": "action",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "entities/conflict-resolver.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q096",
+        "kind": "action",
+        "top": [
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "Home.md",
+          "tasks/benchmark-sqlite-vacuum-on-low-end-phones.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q097",
+        "kind": "action",
+        "top": [
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "Home.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q098",
+        "kind": "action",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "Decision Index.md",
+          "Home.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q099",
+        "kind": "action",
+        "top": [
+          "drafts/Draft - Offline mode guide.md",
+          "entities/docs-site.md",
+          "rules/every-docs-page-needs-a-runnable-example.md",
+          "decisions/check-docs-links-in-ci.md",
+          "Home.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q100",
+        "kind": "action",
+        "top": [
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "entities/database-migrations.md",
+          "inbox/migrations-0014-and-0015-touch-the-same-table.md",
+          "inbox/name-migrations-with-a-four-digit-counter.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q101",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q102",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "Home.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q103",
+        "kind": "negative",
+        "top": [
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "Decision Index.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/keep-local-data-in-asyncstorage.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q104",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "inbox/compress-sync-payloads-with-gzip.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/poll-for-changes-every-5-minutes.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q105",
+        "kind": "negative",
+        "top": [
+          "entities/expo.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/skip-database-encryption-in-version-1.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q106",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q107",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/build-the-docs-site-with-docusaurus.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q108",
+        "kind": "negative",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q109",
+        "kind": "negative",
+        "top": [
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "Decision Index.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/store-money-as-integer-cents.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q110",
+        "kind": "negative",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q111",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/use-crdts-for-budget-data.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q112",
+        "kind": "negative",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "entities/ivo-petrov.md",
+          "entities/lena-ortiz.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q113",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q114",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/keep-local-data-in-asyncstorage.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q115",
+        "kind": "negative",
+        "top": [
+          "entities/blog.md",
+          "entities/tidewater.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q116",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/poll-for-changes-every-5-minutes.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q117",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q118",
+        "kind": "negative",
+        "top": [
+          "Decision Index.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q119",
+        "kind": "negative",
+        "top": [
+          "entities/beacon-push.md",
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/send-push-through-firebase-cloud-messaging-directly.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q120",
+        "kind": "negative",
+        "top": [
+          "Home.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/store-money-as-integer-cents.md",
+          "entities/budget-screen.md",
+          "entities/ivo-petrov.md"
+        ],
+        "goldRank": -1
+      }
+    ],
+    "B3_lexical": [
+      {
+        "id": "q001",
+        "kind": "lookup",
+        "top": [
+          "entities/offline-mode.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "drafts/Draft - Offline mode guide.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q002",
+        "kind": "lookup",
+        "top": [
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "tasks/benchmark-sqlite-vacuum-on-low-end-phones.md",
+          "rules/typescript-strict-mode-and-no-any.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q003",
+        "kind": "lookup",
+        "top": [
+          "decisions/validate-api-payloads-with-zod.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-server.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q004",
+        "kind": "lookup",
+        "top": [
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "entities/sync-server.md",
+          "entities/postgres.md",
+          "entities/sam-achebe.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q005",
+        "kind": "lookup",
+        "top": [
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "rules/typescript-strict-mode-and-no-any.md",
+          "drafts/Draft - Budget import walkthrough.md",
+          "entities/crdt.md",
+          "drafts/Draft - Roadmap 2027 thoughts.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q006",
+        "kind": "lookup",
+        "top": [
+          "entities/blog.md",
+          "entities/docs-site.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "tasks/publish-the-sync-explainer-blog-post.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q007",
+        "kind": "lookup",
+        "top": [
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "entities/budget-screen.md",
+          "entities/offline-mode.md",
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "tasks/add-weekly-budget-summary-push-topic.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q008",
+        "kind": "lookup",
+        "top": [
+          "planning/Release 1.8 checklist.md",
+          "drafts/Draft - Release notes 1.8.md",
+          "meetings/Release review 2026-09-18.md",
+          "entities/ivo-petrov.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q009",
+        "kind": "lookup",
+        "top": [
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "findings/cold-start-is-2-9-seconds-on-mid-range-android.md",
+          "entities/expo.md",
+          "entities/mobile-app.md",
+          "entities/ivo-petrov.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q010",
+        "kind": "lookup",
+        "top": [
+          "rules/no-em-dashes-in-docs-or-ui-copy.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "entities/docs-site.md",
+          "rules/typescript-strict-mode-and-no-any.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q011",
+        "kind": "lookup",
+        "top": [
+          "entities/blog.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "tasks/publish-the-sync-explainer-blog-post.md",
+          "entities/ruth-halvorsen.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q012",
+        "kind": "lookup",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "entities/postgres.md",
+          "decisions/skip-database-encryption-in-version-1.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q013",
+        "kind": "lookup",
+        "top": [
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "entities/mobile-app.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q014",
+        "kind": "lookup",
+        "top": [
+          "entities/api-routes.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "entities/sync-server.md",
+          "entities/sync-engine.md",
+          "decisions/validate-api-payloads-with-zod.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q015",
+        "kind": "lookup",
+        "top": [
+          "tasks/rotate-the-jwt-signing-key.md",
+          "planning/Roadmap 2026 Q4.md",
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "entities/sam-achebe.md",
+          "rules/no-releases-on-fridays.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q016",
+        "kind": "lookup",
+        "top": [
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q017",
+        "kind": "lookup",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "entities/crdt.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q018",
+        "kind": "lookup",
+        "top": [
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "planning/Release 1.8 checklist.md",
+          "meetings/Moving docs to Starlight.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q019",
+        "kind": "lookup",
+        "top": [
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "tasks/write-the-sync-protocol-2-1-spec.md",
+          "entities/sync-engine.md",
+          "entities/sam-achebe.md",
+          "entities/conflict-resolver.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q020",
+        "kind": "lookup",
+        "top": [
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "decisions/send-push-through-beacon-push.md",
+          "drafts/Draft - Budget import walkthrough.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "decisions/skip-database-encryption-in-version-1.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q021",
+        "kind": "why",
+        "top": [
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q022",
+        "kind": "why",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "findings/float-rounding-drifts-budget-totals.md",
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "entities/ivo-petrov.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q023",
+        "kind": "why",
+        "top": [
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "entities/conflict-resolver.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "entities/mobile-app.md",
+          "decisions/run-the-sync-server-on-postgres-16.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q024",
+        "kind": "why",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "drafts/Draft - Release notes 1.8.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q025",
+        "kind": "why",
+        "top": [
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "entities/lena-ortiz.md",
+          "findings/starlight-builds-300-pages-in-38-seconds.md",
+          "meetings/Moving docs to Starlight.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q026",
+        "kind": "why",
+        "top": [
+          "entities/on-device-sqlite.md",
+          "tasks/rotate-the-jwt-signing-key.md",
+          "entities/postgres.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/skip-database-encryption-in-version-1.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q027",
+        "kind": "why",
+        "top": [
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "rules/every-sync-change-needs-a-conflict-test.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q028",
+        "kind": "why",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q029",
+        "kind": "why",
+        "top": [
+          "findings/concurrent-budget-edits-are-rare.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q030",
+        "kind": "why",
+        "top": [
+          "decisions/skip-database-encryption-in-version-1.md",
+          "entities/on-device-sqlite.md",
+          "entities/database-migrations.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q031",
+        "kind": "why",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "findings/beacon-push-free-tier-covers-10-000-devices.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q032",
+        "kind": "why",
+        "top": [
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "entities/mobile-app.md",
+          "rules/no-releases-on-fridays.md",
+          "entities/ivo-petrov.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q033",
+        "kind": "why",
+        "top": [
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "decisions/send-push-through-beacon-push.md",
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q034",
+        "kind": "why",
+        "top": [
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "entities/postgres.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "entities/database-migrations.md",
+          "inbox/name-migrations-with-a-four-digit-counter.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q035",
+        "kind": "why",
+        "top": [
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "decisions/use-short-lived-jwt-access-tokens.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/expo.md",
+          "tasks/rotate-the-jwt-signing-key.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q036",
+        "kind": "why",
+        "top": [
+          "decisions/check-docs-links-in-ci.md",
+          "entities/docs-site.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q037",
+        "kind": "why",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "Decision Index.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q038",
+        "kind": "why",
+        "top": [
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "entities/blog.md",
+          "entities/api-routes.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "decisions/check-docs-links-in-ci.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q039",
+        "kind": "why",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "entities/sync-server.md",
+          "entities/database-migrations.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q040",
+        "kind": "why",
+        "top": [
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "tasks/write-the-sync-protocol-2-1-spec.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "entities/sam-achebe.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q041",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "entities/crdt.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q042",
+        "kind": "multi_hop",
+        "top": [
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "drafts/Draft - Release notes 1.8.md",
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "planning/Release 1.8 checklist.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q043",
+        "kind": "multi_hop",
+        "top": [
+          "Decision Index.md",
+          "findings/beacon-push-free-tier-covers-10-000-devices.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "tasks/move-leftover-asyncstorage-keys-to-sqlite.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q044",
+        "kind": "multi_hop",
+        "top": [
+          "findings/starlight-builds-300-pages-in-38-seconds.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q045",
+        "kind": "multi_hop",
+        "top": [
+          "findings/asyncstorage-slows-past-6-mb-on-android.md",
+          "entities/lena-ortiz.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "findings/starlight-builds-300-pages-in-38-seconds.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q046",
+        "kind": "multi_hop",
+        "top": [
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "tasks/move-leftover-asyncstorage-keys-to-sqlite.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "findings/asyncstorage-slows-past-6-mb-on-android.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q047",
+        "kind": "multi_hop",
+        "top": [
+          "entities/conflict-resolver.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "rules/no-em-dashes-in-docs-or-ui-copy.md"
+        ],
+        "goldRank": 3
+      },
+      {
+        "id": "q048",
+        "kind": "multi_hop",
+        "top": [
+          "entities/budget-screen.md",
+          "decisions/store-money-as-integer-cents.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "entities/mobile-app.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q049",
+        "kind": "multi_hop",
+        "top": [
+          "entities/ivo-petrov.md",
+          "entities/mobile-app.md",
+          "decisions/ship-mobile-releases-every-two-weeks.md",
+          "tasks/benchmark-sqlite-vacuum-on-low-end-phones.md",
+          "entities/sam-achebe.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q050",
+        "kind": "multi_hop",
+        "top": [
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "entities/docs-site.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "entities/ruth-halvorsen.md",
+          "tasks/publish-the-sync-explainer-blog-post.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q051",
+        "kind": "multi_hop",
+        "top": [
+          "entities/database-migrations.md",
+          "entities/sync-server.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q052",
+        "kind": "multi_hop",
+        "top": [
+          "findings/concurrent-budget-edits-are-rare.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "decisions/check-docs-links-in-ci.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q053",
+        "kind": "multi_hop",
+        "top": [
+          "drafts/Draft - How Tidewater syncs.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "tasks/publish-the-sync-explainer-blog-post.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q054",
+        "kind": "multi_hop",
+        "top": [
+          "entities/conflict-resolver.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "entities/crdt.md",
+          "entities/conflict-resolution.md",
+          "tasks/build-conflict-test-fixtures.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q055",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "decisions/store-money-as-integer-cents.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q056",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "findings/postgres-advisory-locks-serialize-sync-per-user.md",
+          "entities/sam-achebe.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q057",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/store-money-as-integer-cents.md",
+          "entities/budget-screen.md",
+          "findings/float-rounding-drifts-budget-totals.md",
+          "entities/api-routes.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q058",
+        "kind": "multi_hop",
+        "top": [
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "entities/sync-server.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q059",
+        "kind": "multi_hop",
+        "top": [
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "findings/beacon-push-free-tier-covers-10-000-devices.md",
+          "entities/beacon-push.md",
+          "decisions/send-push-through-beacon-push.md",
+          "tasks/add-weekly-budget-summary-push-topic.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q060",
+        "kind": "multi_hop",
+        "top": [
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "entities/lena-ortiz.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q061",
+        "kind": "temporal",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "meetings/Budget sync - server decides.md",
+          "entities/budget-screen.md",
+          "entities/conflict-resolution.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q062",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "findings/expo-sdk-54-needs-the-new-build-config.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q063",
+        "kind": "temporal",
+        "top": [
+          "entities/beacon-push.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "entities/expo.md",
+          "entities/sync-engine.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q064",
+        "kind": "temporal",
+        "top": [
+          "entities/docs-site.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "entities/conflict-resolution.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q065",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "entities/on-device-sqlite.md",
+          "entities/crdt.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q066",
+        "kind": "temporal",
+        "top": [
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "findings/beacon-push-free-tier-covers-10-000-devices.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "tasks/add-weekly-budget-summary-push-topic.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q067",
+        "kind": "temporal",
+        "top": [
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "entities/docs-site.md",
+          "meetings/Moving docs to Starlight.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "decisions/check-docs-links-in-ci.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q068",
+        "kind": "temporal",
+        "top": [
+          "entities/budget-screen.md",
+          "meetings/Budget sync - server decides.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md",
+          "findings/concurrent-budget-edits-are-rare.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q069",
+        "kind": "temporal",
+        "top": [
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q070",
+        "kind": "temporal",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "tasks/move-leftover-asyncstorage-keys-to-sqlite.md",
+          "findings/asyncstorage-slows-past-6-mb-on-android.md",
+          "entities/mobile-app.md",
+          "entities/tidewater.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q071",
+        "kind": "temporal",
+        "top": [
+          "findings/concurrent-budget-edits-are-rare.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/budget-screen.md",
+          "meetings/Budget sync - server decides.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q072",
+        "kind": "temporal",
+        "top": [
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md",
+          "entities/expo.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q073",
+        "kind": "temporal",
+        "top": [
+          "entities/beacon-push.md",
+          "decisions/send-push-through-beacon-push.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "planning/Roadmap 2026 Q4.md",
+          "entities/expo.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q074",
+        "kind": "temporal",
+        "top": [
+          "entities/docs-site.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/check-docs-links-in-ci.md",
+          "rules/every-docs-page-needs-a-runnable-example.md",
+          "rules/no-em-dashes-in-docs-or-ui-copy.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q075",
+        "kind": "temporal",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/crdt.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/tidewater.md",
+          "meetings/Onboarding call with Ivo 2025-02-03.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q076",
+        "kind": "temporal",
+        "top": [
+          "planning/Roadmap 2026 Q4.md",
+          "entities/crdt.md",
+          "meetings/Weekly sync 2026-01-26.md",
+          "meetings/Roadmap kickoff 2026-01-06.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q077",
+        "kind": "temporal",
+        "top": [
+          "entities/mobile-app.md",
+          "findings/cold-start-is-2-9-seconds-on-mid-range-android.md",
+          "planning/Roadmap 2026 Q4.md",
+          "entities/tidewater.md",
+          "meetings/Roadmap kickoff 2026-01-06.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q078",
+        "kind": "temporal",
+        "top": [
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "decisions/send-push-through-beacon-push.md",
+          "planning/Roadmap 2026 Q4.md",
+          "entities/beacon-push.md",
+          "meetings/Release review 2026-09-18.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q079",
+        "kind": "temporal",
+        "top": [
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "entities/docs-site.md",
+          "meetings/Retro 2026-06-30.md",
+          "planning/Roadmap 2026 Q4.md",
+          "meetings/Roadmap kickoff 2026-01-06.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q080",
+        "kind": "temporal",
+        "top": [
+          "findings/beacon-push-free-tier-covers-10-000-devices.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "planning/Roadmap 2026 Q4.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q081",
+        "kind": "action",
+        "top": [
+          "entities/conflict-resolver.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "entities/sync-engine.md",
+          "entities/crdt.md",
+          "entities/conflict-resolution.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q082",
+        "kind": "action",
+        "top": [
+          "entities/sync-engine.md",
+          "inbox/compress-sync-payloads-with-gzip.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "entities/conflict-resolver.md",
+          "entities/api-routes.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q083",
+        "kind": "action",
+        "top": [
+          "decisions/cap-the-offline-queue-at-5000-operations.md",
+          "entities/offline-mode.md",
+          "entities/sync-engine.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q084",
+        "kind": "action",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/budget-screen.md",
+          "entities/tidewater.md",
+          "findings/concurrent-budget-edits-are-rare.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q085",
+        "kind": "action",
+        "top": [
+          "entities/api-routes.md",
+          "entities/sync-server.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "entities/conflict-resolver.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q086",
+        "kind": "action",
+        "top": [
+          "entities/database-migrations.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "inbox/migrations-0014-and-0015-touch-the-same-table.md",
+          "entities/postgres.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q087",
+        "kind": "action",
+        "top": [
+          "entities/beacon-push.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/sync-server.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q088",
+        "kind": "action",
+        "top": [
+          "entities/on-device-sqlite.md",
+          "entities/database-migrations.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "entities/sync-engine.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q089",
+        "kind": "action",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "entities/expo.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q090",
+        "kind": "action",
+        "top": [
+          "entities/docs-site.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/check-docs-links-in-ci.md",
+          "rules/every-docs-page-needs-a-runnable-example.md",
+          "rules/no-em-dashes-in-docs-or-ui-copy.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q091",
+        "kind": "action",
+        "top": [
+          "entities/blog.md",
+          "decisions/keep-the-blog-in-markdown-in-the-main-repo.md",
+          "rules/ruth-reviews-blog-posts-before-publishing.md",
+          "tasks/publish-the-sync-explainer-blog-post.md",
+          "entities/ruth-halvorsen.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q092",
+        "kind": "action",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "entities/expo.md",
+          "entities/ivo-petrov.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q093",
+        "kind": "action",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-server.md",
+          "meetings/Budget sync - server decides.md",
+          "entities/postgres.md",
+          "decisions/run-the-sync-server-on-postgres-16.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q094",
+        "kind": "action",
+        "top": [
+          "entities/postgres.md",
+          "entities/on-device-sqlite.md",
+          "entities/database-migrations.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-server.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q095",
+        "kind": "action",
+        "top": [
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "entities/sync-engine.md",
+          "inbox/compress-sync-payloads-with-gzip.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "meetings/Budget sync - server decides.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q096",
+        "kind": "action",
+        "top": [
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "entities/on-device-sqlite.md",
+          "findings/sqlite-write-throughput-depends-on-transactions.md",
+          "tasks/move-leftover-asyncstorage-keys-to-sqlite.md",
+          "entities/conflict-resolver.md"
+        ],
+        "goldRank": 2
+      },
+      {
+        "id": "q097",
+        "kind": "action",
+        "top": [
+          "findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/crdt.md",
+          "entities/conflict-resolver.md",
+          "findings/crdt-merge-cost-on-low-end-phones.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q098",
+        "kind": "action",
+        "top": [
+          "decisions/support-bank-csv-import-before-bank-apis.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md"
+        ],
+        "goldRank": 1
+      },
+      {
+        "id": "q099",
+        "kind": "action",
+        "top": [
+          "entities/docs-site.md",
+          "rules/every-docs-page-needs-a-runnable-example.md",
+          "drafts/Draft - Offline mode guide.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/check-docs-links-in-ci.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q100",
+        "kind": "action",
+        "top": [
+          "entities/database-migrations.md",
+          "decisions/write-migrations-as-forward-only-sql-files.md",
+          "inbox/migrations-0014-and-0015-touch-the-same-table.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "inbox/name-migrations-with-a-four-digit-counter.md"
+        ],
+        "goldRank": 0
+      },
+      {
+        "id": "q101",
+        "kind": "negative",
+        "top": [
+          "entities/mobile-app.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/beacon-push.md",
+          "entities/tidewater.md",
+          "entities/expo.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q102",
+        "kind": "negative",
+        "top": [
+          "entities/budget-screen.md",
+          "Home.md",
+          "decisions/send-push-through-beacon-push.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "tasks/add-weekly-budget-summary-push-topic.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q103",
+        "kind": "negative",
+        "top": [
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "entities/mobile-app.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "entities/tidewater.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q104",
+        "kind": "negative",
+        "top": [
+          "decisions/check-docs-links-in-ci.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "findings/beacon-push-free-tier-shrank-to-5-000-devices.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q105",
+        "kind": "negative",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/expo.md",
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "findings/expo-push-tokens-expire-after-reinstall.md",
+          "entities/tidewater.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q106",
+        "kind": "negative",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "entities/sync-server.md",
+          "meetings/Budget sync - server decides.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "entities/postgres.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q107",
+        "kind": "negative",
+        "top": [
+          "entities/docs-site.md",
+          "decisions/build-the-docs-site-with-astro-starlight.md",
+          "decisions/check-docs-links-in-ci.md",
+          "rules/every-docs-page-needs-a-runnable-example.md",
+          "rules/no-em-dashes-in-docs-or-ui-copy.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q108",
+        "kind": "negative",
+        "top": [
+          "entities/api-routes.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "entities/sync-server.md",
+          "findings/docusaurus-build-takes-over-four-minutes-at-300-pages.md",
+          "decisions/send-push-through-beacon-push.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q109",
+        "kind": "negative",
+        "top": [
+          "decisions/use-server-authoritative-sync-for-budgets.md",
+          "decisions/keep-last-write-wins-for-habit-check-ins.md",
+          "entities/conflict-resolver.md",
+          "decisions/keep-local-data-in-sqlite-on-device.md",
+          "tasks/publish-the-sync-explainer-blog-post.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q110",
+        "kind": "negative",
+        "top": [
+          "entities/api-routes.md",
+          "tasks/write-the-sync-protocol-2-1-spec.md",
+          "entities/sync-engine.md",
+          "rules/every-sync-change-needs-a-conflict-test.md",
+          "decisions/use-server-authoritative-sync-for-budgets.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q111",
+        "kind": "negative",
+        "top": [
+          "entities/on-device-sqlite.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "entities/postgres.md",
+          "entities/database-migrations.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q112",
+        "kind": "negative",
+        "top": [
+          "entities/offline-mode.md",
+          "entities/budget-screen.md",
+          "rules/typescript-strict-mode-and-no-any.md",
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "findings/concurrent-budget-edits-are-rare.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q113",
+        "kind": "negative",
+        "top": [
+          "entities/postgres.md",
+          "decisions/send-push-through-beacon-push.md",
+          "entities/sync-server.md",
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "entities/on-device-sqlite.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q114",
+        "kind": "negative",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/tidewater.md",
+          "decisions/track-sync-progress-with-a-per-device-cursor.md",
+          "entities/expo.md",
+          "entities/ivo-petrov.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q115",
+        "kind": "negative",
+        "top": [
+          "entities/tidewater.md",
+          "drafts/Draft - How Tidewater syncs.md",
+          "tasks/publish-the-sync-explainer-blog-post.md",
+          "drafts/Draft - Offline mode guide.md",
+          "drafts/Draft - Budget import walkthrough.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q116",
+        "kind": "negative",
+        "top": [
+          "decisions/use-expo-managed-workflow-with-a-dev-client.md",
+          "entities/sync-engine.md",
+          "entities/mobile-app.md",
+          "decisions/validate-api-payloads-with-zod.md",
+          "drafts/Draft - Offline mode guide.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q117",
+        "kind": "negative",
+        "top": [
+          "decisions/run-the-sync-server-on-postgres-16.md",
+          "decisions/skip-database-encryption-in-version-1.md",
+          "decisions/version-the-sync-protocol-with-semantic-versions.md",
+          "tasks/fix-budget-screen-scroll-jank-on-android.md",
+          "findings/beacon-push-delivers-more-android-pushes-than-fcm.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q118",
+        "kind": "negative",
+        "top": [
+          "entities/beacon-push.md",
+          "entities/expo.md",
+          "entities/sync-server.md",
+          "tasks/add-weekly-budget-summary-push-topic.md",
+          "decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q119",
+        "kind": "negative",
+        "top": [
+          "tasks/add-weekly-budget-summary-push-topic.md",
+          "entities/beacon-push.md",
+          "inbox/batch-push-notifications-per-user-per-hour.md",
+          "meetings/Weekly sync 2026-01-26.md",
+          "planning/Roadmap 2026 Q4.md"
+        ],
+        "goldRank": -1
+      },
+      {
+        "id": "q120",
+        "kind": "negative",
+        "top": [
+          "entities/mobile-app.md",
+          "entities/budget-screen.md",
+          "entities/tidewater.md",
+          "entities/ivo-petrov.md",
+          "entities/expo.md"
+        ],
+        "goldRank": -1
+      }
+    ]
+  }
+}

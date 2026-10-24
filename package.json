@@ -1,0 +1,46 @@
+{
+  "name": "thenwise",
+  "version": "0.1.0",
+  "description": "Local memory of your past Claude Code work: search, history and a resume brief. No model in retrieval.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/store-postgres/schema.sql','dist/store-postgres/schema.sql')\"",
+    "test": "node --test 'test/*.test.ts'",
+    "check": "tsc -p .",
+    "bench": "node bench/run.ts",
+    "perf": "node bench/perf.ts",
+    "prepack": "npm run build",
+    "release:branch": "node scripts/release-branch.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "typescript": "^5.9.3"
+  },
+  "bin": {
+    "thenwise": "dist/cli.js",
+    "memory": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "optionalDependencies": {
+    "pg": "^8.23.1"
+  },
+  "license": "Apache-2.0",
+  "author": "Dheeraj Ponnaganti",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dheerajponnaganti/thenwise.git"
+  },
+  "keywords": [
+    "claude-code",
+    "memory",
+    "mcp",
+    "plugin",
+    "sqlite"
+  ]
+}

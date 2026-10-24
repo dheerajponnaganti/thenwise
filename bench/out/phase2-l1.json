@@ -1,0 +1,9 @@
+{
+  "questions": 20,
+  "max": 2,
+  "recallAtMax": 1,
+  "wrongInjection": 0,
+  "sentPerQuestion": 1.9,
+  "mustNotRate": 0,
+  "p95Ms": 0.4772920000000056
+}

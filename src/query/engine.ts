@@ -134,7 +134,7 @@ export class Graph {
     if (n.kind === 'turn' || n.kind === 'summary') root = this.roots!.get(n.source) ?? ''
     else if (n.kind === 'pr') root = n.extra.repo ? projectRoot(n.extra.repo) : byName(n.project)
     else if (n.kind === 'note' || n.kind === 'section' || n.kind === 'rule' || n.kind === 'doc') root = byPath(n.source.replace(/\\/g, '/'))
-    else if (n.kind === 'memory') root = this.keyRoots.get(n.project) ?? ''
+    else if (n.kind === 'memory' || n.kind === 'plan') root = this.keyRoots.get(n.project) ?? ''
     else if (n.extra?.curated) root = byName(n.project) || (this.keyRoots.get(n.project) ?? '')
     this.roots!.set(n.id, root)
     return root

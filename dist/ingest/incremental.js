@@ -16,6 +16,7 @@ import { parseTrailers, syncTrailers } from "../capture/notes.js";
 import { fillSynonyms, keepWord, toks } from "../query/language.js";
 import { noteKeys, splitPassages } from "../query/passages.js";
 import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, ownerRows, scanSessions, sessionId, sha256, signatureOf } from "./ingest.js";
+import { plansPart } from "./plans.js";
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
 import { discoverRepos } from "./repos.js";
 import { parseSession } from "./transcript.js";
@@ -291,6 +292,7 @@ function update(db, cfg, opts, dbPath) {
     S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg));
     S.applyLayer(['doc:', 'rule:'], ['part_of'], docsPart(cfg));
     S.applyLayer(['mem:'], [], memoryPart(cfg, S.all("SELECT DISTINCT project FROM nodes WHERE kind = 'session'").map((r) => r.project), opts.memoryFrom));
+    S.applyLayer(['plan:'], [], plansPart(cfg));
     // 4. File nodes.
     const aliasRoots = [...new Set([...cfg.roots, ...repos])];
     for (const fid of S.touched) {

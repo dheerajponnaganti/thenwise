@@ -20,6 +20,7 @@ import { updateGraph } from './incremental.ts'
 import { withLock } from './lock.ts'
 import { LOG_FORMAT, Graph, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
 import type { Claim, GEdge, Look, PrInput, SessionPart, Status } from './parts.ts'
+import { plansPart } from './plans.ts'
 import { fetchPrs } from './prs.ts'
 import { discoverRepos } from './repos.ts'
 import { parseSession } from './transcript.ts'
@@ -226,7 +227,7 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const layers = [pr, notesPart(cfg, opts.until)]
   // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
   if (!opts.until) syncTrailers(cfg.memDir, trailerItems)
-  layers.push(curatedPart(cfg, opts.until), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom))
+  layers.push(curatedPart(cfg, opts.until), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until))
   for (const l of layers) {
     for (const n of l.nodes) g.node(n)
     for (const e of l.edges) g.edge(e.src, e.dst, e.kind, e.at, e.extra)

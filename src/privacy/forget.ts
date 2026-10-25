@@ -75,6 +75,20 @@ function chatsOf(cfg: Config): Chat[] {
 
 const claudeKey = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
 
+/** Project keys with plan snapshots that the target names: by key, or by a recorded folder at or under it. */
+function planKeys(cfg: Config, target: string, folder: string): string[] {
+  const base = join(cfg.memDir, 'archive', 'plans')
+
+  return list(base).filter((e) => e.isDirectory()).map((e) => e.name).filter((k) => {
+    if (k === target || k === claudeKey(folder)) return true
+    try {
+      return underFolder(readFileSync(join(base, k, '.folder'), 'utf8'), folder)
+    } catch {
+      return false
+    }
+  })
+}
+
 function countSessions(db: string): number {
   if (!existsSync(db)) return 0
   const d = new DatabaseSync(db, { readOnly: true })
@@ -102,11 +116,12 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   const byProject = (c: Chat) => c.key === target || c.key === claudeKey(folder) || (!!c.cwd && underFolder(c.cwd, folder))
   const hit = (c: Chat) => c.id === target || (target.length >= 8 && c.id.startsWith(target)) || byProject(c)
   const chats = all.filter(hit)
-  if (!chats.length) return (out(`Nothing found for "${target}": no chat with that session id and no project with that folder or key.`), 0)
+  const plans = planKeys(cfg, target, folder)
+  if (!chats.length && !plans.length) return (out(`Nothing found for "${target}": no chat with that session id and no project with that folder or key.`), 0)
 
-  const projectWide = chats.some(byProject)
+  const projectWide = chats.some(byProject) || plans.length > 0
   const sessions = [...new Set(chats.map((c) => c.id))]
-  const keys = [...new Set(chats.map((c) => c.key))]
+  const keys = [...new Set([...chats.map((c) => c.key), ...plans])]
   const base = join(cfg.memDir, 'archive')
   const gz = chats.flatMap((c) => [join(base, 'sessions', c.key, `${c.id}.jsonl.gz`), join(base, 'sessions', c.key, c.id), join(base, 'claude-projects', c.key, `${c.id}.jsonl`), join(base, 'claude-projects', c.key, c.id)]).filter(existsSync)
   out(`Will forget ${sessions.length} chat${sessions.length === 1 ? '' : 's'} (${projectWide ? `project ${target}` : `session ${target}`}); ${gz.length} archived item${gz.length === 1 ? '' : 's'} will be removed.`)
@@ -123,6 +138,7 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     saveTombs(cfg.memDir, tombs)
 
     for (const p of gz) rmSync(p, { recursive: true, force: true })
+    for (const k of plans) rmSync(join(base, 'plans', k), { recursive: true, force: true })
     const mfile = join(base, 'manifest.json')
     let manifestGone = 0
     if (existsSync(mfile)) {
@@ -164,6 +180,7 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     out(`Forgot ${sessions.length} chat${sessions.length === 1 ? '' : 's'}.`)
     out(`  archive: ${gz.length} item${gz.length === 1 ? '' : 's'} removed, ${manifestGone} manifest entr${manifestGone === 1 ? 'y' : 'ies'}`)
     out(`  store: ${inStore} session${inStore === 1 ? '' : 's'} removed`)
+    out(`  plan snapshots: ${plans.length} project${plans.length === 1 ? '' : 's'}`)
     out(`  hook state: ${state} file${state === 1 ? '' : 's'}`)
     out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared`)
     for (const l of backups) out(`  backup folders: ${l}`)

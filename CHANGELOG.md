@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Plan history: every version of planning-with-files plans (`task_plan.md`, `findings.md`, `progress.md`, at the project root or in `.planning/<slug>/`) is kept, masked, before Claude changes it. The background sync also saves plans edited by hand. Each version is a dated `plan` record that search, asof and trace find. `ingest.plans: false` turns it off. Paused and excluded projects are skipped, and `forget <project folder>` removes the project's plans.
+- README: opens with the three questions Thenwise is built for (why, what was tried, what held on a date) and the go/no-go result.
+
 ## 0.1.1
 
 - Masking: a key wrapped at a line break, a key glued to `_` or `-`, and Twilio `SK` keys are now masked. Mask version 4: the archive masks old copies again on the next sync.

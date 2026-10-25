@@ -15,6 +15,7 @@ import { globMatch } from "./config.js";
 import { updateGraph } from "./incremental.js";
 import { withLock } from "./lock.js";
 import { LOG_FORMAT, Graph, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
+import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos } from "./repos.js";
 import { parseSession } from "./transcript.js";
@@ -181,7 +182,7 @@ function fullBuild(cfg, opts, dbPath) {
     // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
     if (!opts.until)
         syncTrailers(cfg.memDir, trailerItems);
-    layers.push(curatedPart(cfg, opts.until), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom));
+    layers.push(curatedPart(cfg, opts.until), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until));
     for (const l of layers) {
         for (const n of l.nodes)
             g.node(n);

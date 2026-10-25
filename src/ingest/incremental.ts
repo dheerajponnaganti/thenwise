@@ -21,6 +21,7 @@ import { noteKeys, splitPassages } from '../query/passages.ts'
 import type { Config } from './config.ts'
 import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, ownerRows, scanSessions, sessionId, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
+import { plansPart } from './plans.ts'
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
 import type { Claim, GEdge, GNode, Look, Part, Ref, SessionPart, Status } from './parts.ts'
 import { discoverRepos } from './repos.ts'
@@ -284,6 +285,7 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg))
   S.applyLayer(['doc:', 'rule:'], ['part_of'], docsPart(cfg))
   S.applyLayer(['mem:'], [], memoryPart(cfg, S.all("SELECT DISTINCT project FROM nodes WHERE kind = 'session'").map((r) => r.project), opts.memoryFrom))
+  S.applyLayer(['plan:'], [], plansPart(cfg))
 
   // 4. File nodes.
   const aliasRoots = [...new Set([...cfg.roots, ...repos])]

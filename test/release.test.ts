@@ -13,17 +13,17 @@ const ROOT = new URL('..', import.meta.url).pathname
 const CLI = join(ROOT, 'src/cli.ts')
 
 // R-H3: licence, changelog and one version everywhere.
-test('R-H3: Apache 2.0, a changelog, and 0.1.0 in package, plugin and marketplace', () => {
+test('R-H3: Apache 2.0, a changelog entry for the version, and one version in package, plugin and marketplace', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   const plugin = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8'))
   const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'))
-  assert.equal(pkg.version, '0.1.0')
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.equal(plugin.version, pkg.version)
   assert.equal(market.plugins[0].version, pkg.version)
   assert.equal(market.plugins[0].name, plugin.name)
   assert.equal(pkg.license, 'Apache-2.0')
   assert.match(readFileSync(join(ROOT, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0[\s\S]*Copyright 2026 /)
-  assert.match(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), /^## 0\.1\.0/m)
+  assert.ok(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8').includes(`\n## ${pkg.version}\n`))
 })
 
 // A home with one small chat, run through the real CLI.

@@ -111,6 +111,27 @@ test('S7-B3: every secret type is masked, including a secret split over two line
   assert.ok(MASK_VERSION >= 3)
 })
 
+test('S7-B3: Twilio keys, wrapped keys and keys glued to word characters are masked', () => {
+  const twilio = `SK${'0a1b2c3d'.repeat(4)}`
+  const ghp = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  const cases = [`sid ${twilio} ok`, `${ghp}_v2`, `foo_${ghp}`, `token:\n${ghp.slice(0, 40)}\n    ${ghp.slice(40)}\n\nnext line`]
+  for (const c of cases) {
+    const r = maskSecrets(c)
+    assert.ok(r.count >= 1 && r.text.includes(MASK), c)
+    assert.ok(!r.text.includes(twilio) && !r.text.includes('a1B2c3D4e5'), r.text)
+  }
+  assert.equal(maskSecrets(cases[3]!).text, `token:\n${MASK}\n\nnext line`)
+})
+
+test('S7-B4: prose and base64 are not swallowed by the wrapped-key or unanchored patterns', () => {
+  const prose = 'the prefix sk-\nabcdefghijklmnopqrstuvwxyz is a word'
+  const b64 = `data:image/png;base64,${'QUJD'.repeat(10)}AIza${'QUJD'.repeat(12)}`
+  const names = 'network_test_environment_config, task-runner-configuration-file, disk-image-builder-service-name'
+  assert.equal(maskSecrets(prose).text, prose)
+  assert.equal(maskSecrets(b64).text, b64)
+  assert.equal(maskSecrets(names).text, names)
+})
+
 test('S7-B4: git SHAs, UUIDs, base64 images, prose and file hashes stay readable', () => {
   for (const k of KEEP) assert.deepEqual(maskSecrets(k), { text: k, count: 0 }, k)
 })

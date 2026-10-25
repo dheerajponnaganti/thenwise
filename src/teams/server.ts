@@ -35,12 +35,13 @@ export function invite(db: DatabaseSync, name: string, expiresAt: number = Date.
   return token
 }
 
-/** The token stops working at once, and the member's shared notes go with it. */
-export function removeMember(db: DatabaseSync, name: string): boolean {
-  const n = Number(db.prepare('DELETE FROM members WHERE name = ?').run(name).changes)
-  for (const t of ['notes', 'tombs']) db.prepare(`DELETE FROM ${t} WHERE owner = ?`).run(name)
+/** The token stops working at once. The member's notes go too, unless keepNotes (then they stay read-only). */
+export function removeMember(db: DatabaseSync, name: string, keepNotes = false): { removed: boolean; notes: number } {
+  const removed = Number(db.prepare('DELETE FROM members WHERE name = ?').run(name).changes) > 0
+  const notes = Number((db.prepare('SELECT COUNT(*) AS n FROM notes WHERE owner = ?').get(name) as any).n)
+  if (!keepNotes) for (const t of ['notes', 'tombs']) db.prepare(`DELETE FROM ${t} WHERE owner = ?`).run(name)
 
-  return n > 0
+  return { removed, notes }
 }
 
 export interface TeamApp {

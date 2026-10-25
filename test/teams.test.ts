@@ -1,13 +1,13 @@
 // Teams preview: one server on a temp port, two users on two temp data folders.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 
-import { checkUrl, flush, joinTeam, payloadOf, search, share, sharedIds, unshare } from '../src/teams/client.ts'
+import { checkUrl, flush, locked, joinTeam, payloadOf, search, share, sharedIds, unshare } from '../src/teams/client.ts'
 import { createTeamServer, invite, openTeamDb, removeMember } from '../src/teams/server.ts'
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), `tw-${p}-`))
@@ -151,9 +151,26 @@ describe('teams preview', () => {
     const db = openTeamDb(serverDir)
     const t = invite(db, 'dave')
     assert.equal((await get(t, '/me')).status, 200)
-    assert.ok(removeMember(db, 'dave'))
+    assert.ok(removeMember(db, 'dave').removed)
     db.close()
     assert.equal((await get(t, '/me')).status, 401)
+  })
+
+  test('T-B4: remove can keep or delete the notes; the CLI needs a flag without a terminal', async () => {
+    const db = openTeamDb(serverDir)
+    const tk = invite(db, 'kim')
+    const td = invite(db, 'lee')
+    for (const [t, id] of [[tk, 'kn1'], [td, 'ln1']] as const) await realFetch(`${base}/notes/${id}`, { method: 'PUT', headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' }, body: JSON.stringify({ title: id, text: 'osprey body', project: '', rev: 1 }) })
+    assert.deepEqual(removeMember(db, 'kim', true), { removed: true, notes: 1 })
+    assert.deepEqual(removeMember(db, 'lee'), { removed: true, notes: 1 })
+    db.close()
+    assert.equal((await get(tk, '/me')).status, 401)
+    assert.equal((await get(tokenB, '/notes/kim/kn1')).status, 200)
+    assert.equal((await get(tokenB, '/notes/lee/ln1')).status, 404)
+    const run = (...args: string[]) => spawnSync(process.execPath, ['src/main.ts', 'team', 'remove', ...args, '--dir', serverDir], { env: { ...process.env, THENWISE_HOME: a }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    assert.equal(run('zed').status, 2)
+    assert.equal(run('zed', '--keep-notes', '--delete-notes').status, 2)
+    assert.match(run('--keep-notes', 'zed').stdout, /zed is not a member/)
   })
 
   test('T-B5: SQL in queries and ids is text', async () => {
@@ -186,9 +203,23 @@ describe('teams preview', () => {
     assert.equal(JSON.parse(readFileSync(join(home, 'team.json'), 'utf8')).queue.length, 1)
     const s3 = createTeamServer({ dir, port: p2 })
     await s3.listen()
-    assert.match(await flush(home), /1 sent; nothing waiting/)
+    // Async spawn: the test server lives in this process and must keep answering.
+    const code = await new Promise((res) => spawn(process.execPath, ['src/main.ts', 'hook', 'sync-run'], { env: { ...process.env, HOME: home, THENWISE_HOME: home }, stdio: 'ignore' }).on('exit', res))
+    assert.equal(code, 0)
+    assert.equal(JSON.parse(readFileSync(join(home, 'team.json'), 'utf8')).queue.length, 0)
     assert.equal((await realFetch(`http://127.0.0.1:${p2}/notes/erin/w1`, { headers: { authorization: `Bearer ${tok}` } })).status, 200)
     await s3.close()
+  })
+
+  test('T-B10: the queue lock waits, and a dead holder is taken over', () => {
+    const d = tmp('lk')
+    writeFileSync(join(d, 'team.lock'), '999999999')
+    assert.equal(locked(d, () => 7), 7)
+    assert.ok(!existsSync(join(d, 'team.lock')))
+    writeFileSync(join(d, 'team.lock'), String(process.pid))
+    const t0 = Date.now()
+    assert.throws(() => locked(d, () => 0), /busy/)
+    assert.ok(Date.now() - t0 >= 1900)
   })
 
   test('T-B8: plain http to a host that is not localhost is refused', async () => {

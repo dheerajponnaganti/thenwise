@@ -157,8 +157,8 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',
     includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', ''],
-    ingestExcludeProjects: ing.exclude_projects ?? ['*-eval-ws*'],
-    ingestExcludeMarkers: ing.exclude_markers ?? ['[memory-eval]'],
+    ingestExcludeProjects: ing.exclude_projects ?? [],
+    ingestExcludeMarkers: ing.exclude_markers ?? ['[no-memory]'],
     ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,
     viewProjects: Object.entries((user.views?.projects ?? {}) as Record<string, { words?: string[]; paths?: string[] }>).map(([name, p]) => ({ name, words: (p.words ?? []).map((w) => w.toLowerCase()), paths: list(p.paths, []) })),
   }

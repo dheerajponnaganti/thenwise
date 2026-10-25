@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.4
+
+Fixes from an evaluation of 0.1.3 against plain Claude Code.
+
+- Results: search, why and tried show the top 3 in full, each with the next turn of the same chat, then more matches as one line each, kept under the tool output limit. Excerpts show the part of a passage with the most distinct rare query words. Reading a passage of a short record prints the whole record. Short stub passages join the next one.
+- Ranking: subagent turns weigh half and stay out of title matches; near-duplicates in one chat take one slot. A query word missing from a passage counts half when its turn or the turns next to it hold it.
+- As of a date: memory_asof asks for the hour and zone the question gives. A note edited after the date stays out, even when its front matter carries an older date.
+- NEWER warnings skip records from the same chat within 30 minutes and quote what the newer record says.
+- The server tells Claude to use the memory first for why, tried, when and as-of questions.
+- Dead ends: chat replies, Revert commits and PRs closed unmerged that record an abandoned approach are flagged at ingest, by phrase rules, with no model. The file hint lists them, also before an edit, and is silent for files without one.
+- Off the record: `[no-memory]` in a prompt keeps that chat out (replaces the old evaluation tag as the default). The evaluation folder exclusions are gone from the defaults.
+
 ## 0.1.3
 
 Fixes from a full audit of 0.1.2.

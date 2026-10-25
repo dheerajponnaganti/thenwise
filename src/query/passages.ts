@@ -24,7 +24,8 @@ export function splitPassages(text: string): string[] {
   const out: string[] = []
   let cur = ''
   for (const u of units) {
-    if (cur && cur.length + u.length + 2 > MAX) (out.push(cur), (cur = u))
+    // A stub (under half of MIN) joins the next unit instead of standing alone, so a passage may reach MAX + MIN / 2.
+    if (cur && cur.length >= MIN / 2 && cur.length + u.length + 2 > MAX) (out.push(cur), (cur = u))
     else cur = cur ? `${cur}\n\n${u}` : u
     if (cur.length >= MIN) (out.push(cur), (cur = ''))
   }

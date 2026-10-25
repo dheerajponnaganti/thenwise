@@ -9,6 +9,7 @@ import { normPath } from "../core/vault-index.js";
 import { parseTrailers, readNotes } from "../capture/notes.js";
 import { globMatch } from "./config.js";
 import { skipReason } from "../vault/user.js";
+import { commitDeadEnd, deadEnd } from "./deadend.js";
 import { repoRoot } from "./repos.js";
 import { normalizePath } from "./transcript.js";
 export const GENERATED = 'Memory v2/Generated/';
@@ -72,7 +73,8 @@ export function sessionPart(s, key) {
         node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(dirs.length ? { editDirs: dirs } : {}) } });
     for (const t of s.turns) {
         const tid = `turn:${t.id}`;
-        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: s.sub ? { subagent: true } : {} });
+        const de = deadEnd(t.reply.join('\n\n')); // the reply only: the prompt is the user's question
+        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de } : {}) } });
         edge(tid, sid, 'part_of', t.at);
         for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']])
             for (const p of paths)
@@ -108,7 +110,8 @@ export function parseLog(raw, repo, until, main) {
         for (const m of body.matchAll(/^(Decision|Why|Dead-end):[ \t]*(.+)$/gim))
             (trailers[m[1].toLowerCase()] ??= []).push(m[2].trim());
         const id = `commit:${name}:${sha}`;
-        out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) });
+        const de = commitDeadEnd(subject ?? '', body);
+        out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(de ? { deadEnd: de } : {}), ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) });
     }
     return out;
 }
@@ -130,7 +133,7 @@ export function prPart(inputs, repos, commit, until) {
             const mc = p.mergeCommit?.oid;
             // Masked like the stored text, so a full build and an update derive the same trailer notes.
             out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name));
-            out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}) } }));
+            out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160) } : {}) } }));
             if (out.numbers.has(p.number))
                 out.ambiguous.add(p.number);
             out.numbers.set(p.number, id);
@@ -161,8 +164,7 @@ export function walk(dir, match, out, depth = 0, skip) {
     }
     for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
         if (e.isDirectory()) {
-            // eval-ws holds evaluation clones: copies, dated after the test was frozen.
-            if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === 'eval-ws' || (e.name.startsWith('.') && e.name !== '.claude'))
+            if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || (e.name.startsWith('.') && e.name !== '.claude'))
                 continue;
             if (!skip?.(join(dir, e.name)))
                 walk(join(dir, e.name), match, out, depth + 1, skip);
@@ -210,7 +212,8 @@ export function notesPart(cfg, until) {
             const title = String(fm.data.title ?? h1 ?? basename(f, '.md'));
             const date = fm.data.date ?? fm.data.created;
             // Template placeholders such as {{date}} are not dates.
-            const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : fileDate(f);
+            const edited = fileDate(f);
+            const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : edited;
             if (cut(at, until))
                 continue;
             const id = `note:${cfg.vaults.length > 1 ? `${basename(vault)}/` : ''}${rel}`;
@@ -220,7 +223,7 @@ export function notesPart(cfg, until) {
             const sections = datedSections(fm.body);
             // Paraphrase keys: `answers:` (questions the note answers) and `aliases:` are indexed like the title.
             const keys = Object.fromEntries(['answers', 'aliases'].map((k) => [k, [].concat(fm.data[k] ?? []).filter((v) => typeof v === 'string' && !!v)]).filter(([, v]) => v.length));
-            nodes.push(fullNode({ id, kind: 'note', title, text: (sections.length >= 2 ? sections.preamble : fm.body).trim(), at, until: typeof fm.data.valid_to === 'string' ? fm.data.valid_to : '', project: basename(vault), source: f, extra: keys }));
+            nodes.push(fullNode({ id, kind: 'note', title, text: (sections.length >= 2 ? sections.preamble : fm.body).trim(), at, until: typeof fm.data.valid_to === 'string' ? fm.data.valid_to : '', project: basename(vault), source: f, extra: { ...keys, edited } }));
             if (sections.length >= 2) {
                 sections.forEach((sec, k) => {
                     if (cut(sec.date, until))

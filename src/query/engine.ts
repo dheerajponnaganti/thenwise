@@ -29,6 +29,7 @@ export interface Hit {
   cov: number // share of the query's weight (by idf) that this passage contains
   lanes: string[]
   project: string // the project the passage's node belongs to ("global" for notes that belong to none)
+  idf: (word: string) => number // weight of a word in this corpus, for choosing which part of the passage to show
 }
 export interface Search {
   terms: string[]
@@ -44,6 +45,8 @@ const STOP = new Set(
 )
 export const GOOD = 0.5 // idf-weighted query coverage a passage needs to count as a match
 const K = 60 // RRF constant
+const SUBAGENT = 0.5 // weight of a subagent turn in ranking: crew briefs share boilerplate and crowd out the real answers
+const DUP = 0.8 // word overlap above which two passages of one session count as the same text
 const HUB = 30 // a file touched by more than this many nodes is a hub
 
 export const words = (q: string): string[] => q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -248,6 +251,13 @@ export class Graph {
   }
 
   /** Rowids of the passages containing one (stemmed) term, and its idf. */
+  /** Weight of a highlighted span for choosing an excerpt: its rarest plain word. A span of markdown bold can hold quotes
+   * or dots that are not valid inside an FTS query, so only plain words are looked up. */
+  wordIdf(span: string): number {
+    const ws = words(span)
+
+    return ws.length ? Math.max(...ws.map((t) => this.term(t).idf)) : 0
+  }
   private term(t: string) {
     let v = this.idfCache.get(t)
     if (!v) {
@@ -364,7 +374,41 @@ export class Graph {
     if (!known.length && !exact.length) return { terms, missing, expanded, fixed, hits: [], good: [] }
 
     const wsum = known.reduce((a, s) => a + s.idf, 0) || 1
-    const cov = (rowid: number) => known.reduce((a, s) => a + (s.set.has(rowid) ? s.idf : s.alt.some((x) => x.set.has(rowid)) ? SYN_WEIGHT * s.idf : 0), 0) / wsum
+    // A query word absent from the passage but present elsewhere in its turn or the neighbouring turns of its session counts at half weight.
+    const near = new Map<number, number[]>()
+    const nearRows = (rowid: number): number[] => {
+      let v = near.get(rowid)
+      if (!v) {
+        const id = (this.db.prepare('SELECT node FROM passages WHERE rowid = ?').get(rowid) as any)?.node as string | undefined
+        const n = id ? this.nodes.get(id) : undefined
+        const ids = new Set<string>(id ? [id] : [])
+        if (n && (n.kind === 'turn' || n.kind === 'summary')) {
+          const sib = this.bySource(n.source).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+          const i = sib.findIndex((x) => x.id === id)
+          for (const x of [sib[i - 1], sib[i + 1]]) if (x) ids.add(x.id)
+        }
+        v = [...ids].flatMap((x) => (this.db.prepare('SELECT rowid FROM passages WHERE node = ?').all(x) as any[]).map((r) => r.rowid as number)).filter((r) => r !== rowid)
+        near.set(rowid, v)
+      }
+      return v
+    }
+    const covs = new Map<number, number>()
+    const cov = (rowid: number) => {
+      let c = covs.get(rowid)
+      if (c === undefined) {
+        let direct = 0
+        let ctx = 0
+        let rows: number[] | undefined
+        for (const s of known) {
+          if (s.set.has(rowid)) direct += s.idf
+          else if (s.alt.some((x) => x.set.has(rowid))) direct += SYN_WEIGHT * s.idf
+          else if (s.idf > 0 && (rows ??= nearRows(rowid)).some((r) => s.set.has(r))) ctx += s.idf / 2
+        }
+        c = (direct + (direct > 0 ? ctx : 0)) / wsum
+        covs.set(rowid, c)
+      }
+      return c
+    }
     const lanes = new Map<string, string[]>() // lane name -> passage ids in rank order
     const rowOf = new Map<string, number>()
     const row = (pid: string): number => {
@@ -391,7 +435,8 @@ export class Graph {
     lanes.set('bm25', bm.map((r) => r.pid))
     // Lane 2: title matches, mapped to the node's best passage.
     const tiSql = this.db.prepare('SELECT n.id FROM titles_fts f JOIN nodes n ON n.rowid = f.rowid WHERE titles_fts MATCH ? ORDER BY bm25(titles_fts), n.id LIMIT ?')
-    const ti = known.length ? this.widen((l) => tiSql.all(fts(every), l) as any[], (r) => ok(this.nodes.get(r.id)), 60) : []
+    // Subagent briefs repeat their boilerplate in the title, so they stay out of this lane.
+    const ti = known.length ? this.widen((l) => tiSql.all(fts(every), l) as any[], (r) => ok(this.nodes.get(r.id)) && !this.nodes.get(r.id)!.extra?.subagent, 60) : []
     lanes.set('title', ti.flatMap((r) => bestOf(r.id, false) ?? []))
     // Lane 4: exact references. A file has no text, so its non-hub neighbours stand in, newest first.
     const exactIds: string[] = []
@@ -433,7 +478,8 @@ export class Graph {
     const found = new Map<string, string[]>()
     for (const [lane, pids] of lanes) {
       pids.forEach((pid, i) => {
-        score.set(pid, (score.get(pid) ?? 0) + weight[lane]! / (K + i + 1))
+        const sub = this.nodes.get(pid.replace(/#p\d+$/, ''))?.extra?.subagent ? SUBAGENT : 1
+        score.set(pid, (score.get(pid) ?? 0) + (weight[lane]! * sub) / (K + i + 1))
         found.set(pid, [...(found.get(pid) ?? []), lane])
       })
     }
@@ -442,13 +488,19 @@ export class Graph {
     const get = this.db.prepare('SELECT p.n, p.text, p.rowid, ' + (hl ? "highlight(passages_fts, 0, '**', '**') AS shown" : 'p.text AS shown') + ' FROM passages p ' + (hl ? 'JOIN passages_fts ON passages_fts.rowid = p.rowid AND passages_fts MATCH ? ' : '') + 'WHERE p.pid = ?')
     const hits: Hit[] = []
     const perNode = new Map<string, number>()
+    const seenText = new Map<string, Set<string>[]>() // per session: word sets of the passages already listed
     for (const [pid, sc] of order) {
       const node = this.nodes.get(pid.replace(/#p\d+$/, ''))!
       if ((perNode.get(node.id) ?? 0) >= 2) continue
       const r = (hl ? get.get(hl, pid) : get.get(pid)) as any
       if (!r) continue // no highlight row when the passage has no query word (exact lane): fall back below
+      // Near-duplicates in one session (sibling briefs) take one slot; the exact lane is kept as asked for.
+      const ws = new Set(words(r.text))
+      const prior = seenText.get(node.source) ?? []
+      if (!found.get(pid)!.includes('exact') && prior.some((o) => [...ws].filter((w) => o.has(w)).length / Math.max(ws.size, o.size) >= DUP)) continue
+      seenText.set(node.source, [...prior, ws])
       perNode.set(node.id, (perNode.get(node.id) ?? 0) + 1)
-      hits.push({ pid, node, n: r.n, text: r.text, shown: r.shown, score: sc, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node) })
+      hits.push({ pid, node, n: r.n, text: r.text, shown: r.shown, score: sc, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w) })
       if (hits.length >= (opts.limit ?? 200)) break
     }
     // Exact-lane passages without a query word are not found by the highlight join; add them plainly.
@@ -456,7 +508,7 @@ export class Graph {
       if (hits.some((h) => h.pid === pid)) continue
       const r = this.db.prepare('SELECT n, text, rowid FROM passages WHERE pid = ?').get(pid) as any
       const node = this.nodes.get(pid.replace(/#p\d+$/, ''))!
-      hits.push({ pid, node, n: r.n, text: r.text, shown: r.text, score: score.get(pid)!, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node) })
+      hits.push({ pid, node, n: r.n, text: r.text, shown: r.text, score: score.get(pid)!, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w) })
     }
     hits.sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))
     // A passage is a match when it covers enough of the query, or the query named its node exactly.

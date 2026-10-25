@@ -1,8 +1,9 @@
 // Teams preview client. Only notes the person marks shared are sent, never chats. The server url, the token and the
 // queue of unsent changes live in <data folder>/team.json (mode 0600), never in a vault.
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
+import { takeLock } from "../hooks/hook.js";
 import { maskSecrets } from "../core/secrets.js";
 import { makeId, readNotes } from "../capture/notes.js";
 export const LABEL = 'teams preview';
@@ -69,6 +70,22 @@ export function resolveNote(memDir, claudeDir, arg) {
         throw new Error(`${arg}: no such file, and no active note with that id`);
     return { id: c.id, title: c.title, text: parseFrontMatter(readFileSync(c.path, 'utf8')).body.trim() || c.summary, project: c.project };
 }
+/** Serializes load-modify-save across processes. Never wrap a network call in it. */
+export function locked(dir, fn) {
+    const lock = join(dir, 'team.lock');
+    const end = Date.now() + 2000;
+    while (!takeLock(lock)) {
+        if (Date.now() > end)
+            throw new Error('the team queue is busy; try again');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+    try {
+        return fn();
+    }
+    finally {
+        rmSync(lock, { force: true });
+    }
+}
 function enqueue(s, o) {
     s.lastRev = Math.max(Date.now(), s.lastRev + 1);
     s.queue = [...s.queue.filter((q) => q.id !== o.id), { ...o, rev: s.lastRev }];
@@ -78,15 +95,19 @@ function enqueue(s, o) {
         delete s.shared[o.id];
 }
 export async function share(dir, id, payload) {
-    const s = load(dir);
-    enqueue(s, { op: 'put', id, rev: 0, note: payload });
-    save(dir, s);
+    locked(dir, () => {
+        const s = load(dir);
+        enqueue(s, { op: 'put', id, rev: 0, note: payload });
+        save(dir, s);
+    });
     return flush(dir);
 }
 export async function unshare(dir, id) {
-    const s = load(dir);
-    enqueue(s, { op: 'del', id, rev: 0 });
-    save(dir, s);
+    locked(dir, () => {
+        const s = load(dir);
+        enqueue(s, { op: 'del', id, rev: 0 });
+        save(dir, s);
+    });
     return flush(dir);
 }
 /** Sends the queue in order. A network failure leaves the rest waiting; nothing here throws into a chat. */
@@ -104,9 +125,11 @@ export async function flush(dir) {
             const left = load(dir).queue.length;
             return `${sent} sent; server not reachable, ${left} change${left === 1 ? '' : 's'} waiting (${LABEL})`;
         }
-        const after = load(dir);
-        after.queue = after.queue.filter((q) => !(q.id === o.id && q.rev === o.rev));
-        save(dir, after);
+        locked(dir, () => {
+            const after = load(dir);
+            after.queue = after.queue.filter((q) => !(q.id === o.id && q.rev === o.rev));
+            save(dir, after);
+        });
         sent++;
     }
     return `${sent} sent; nothing waiting (${LABEL})`;

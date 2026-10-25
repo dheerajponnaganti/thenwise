@@ -6,7 +6,7 @@ import { loadConfig } from "../ingest/config.js";
 import { flush, joinTeam, LABEL, payloadOf, resolveNote, search, sharedIds, share, unshare } from "./client.js";
 import { createTeamServer, invite, openTeamDb, removeMember } from "./server.js";
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>]   (${LABEL})
-thenwise team invite <name> [--days N] | remove <name>   (run where the server runs)
+thenwise team invite <name> [--days N] | remove <name> [--keep-notes | --delete-notes]   (run where the server runs)
 thenwise team join <url> <token> | search <words> | sync
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`;
 async function confirm(q) {
@@ -22,7 +22,8 @@ export async function teamMain(argv, flag) {
     const cfg = loadConfig(homedir());
     const dir = cfg.memDir;
     const serverDir = flag('dir') ?? join(dir, 'team-server');
-    const words = rest.filter((w, i) => !w.startsWith('--') && !rest[i - 1]?.startsWith('--'));
+    const BOOL = ['--keep-notes', '--delete-notes', '--yes'];
+    const words = rest.filter((w, i) => !w.startsWith('--') && (!rest[i - 1]?.startsWith('--') || BOOL.includes(rest[i - 1])));
     try {
         if (cmd === 'share' || cmd === 'unshare') {
             const arg = sub;
@@ -57,8 +58,21 @@ export async function teamMain(argv, flag) {
                 const token = invite(db, words[0], flag('days') ? Date.now() + Number(flag('days')) * 864e5 : undefined);
                 console.log(`token for ${words[0]} (shown once, ${LABEL}):\n${token}\nThey join with: thenwise team join <server url> ${token}`);
             }
-            else
-                console.log(removeMember(db, words[0]) ? `removed ${words[0]}; their token and shared notes are gone` : `${words[0]} is not a member`);
+            else {
+                const keep = rest.includes('--keep-notes');
+                if (keep && rest.includes('--delete-notes'))
+                    return (db.close(), console.error(TEAM_USAGE), 2);
+                let doKeep = keep;
+                if (!keep && !rest.includes('--delete-notes')) {
+                    if (!process.stdin.isTTY)
+                        return (db.close(), console.error(TEAM_USAGE), 2);
+                    const n = Number(db.prepare('SELECT COUNT(*) AS n FROM notes WHERE owner = ?').get(words[0]).n);
+                    console.log(`${words[0]} shared ${n} note${n === 1 ? '' : 's'}`);
+                    doKeep = await confirm('Keep them for the team? [y/N] ');
+                }
+                const r = removeMember(db, words[0], doKeep);
+                console.log(r.removed ? `removed ${words[0]}; token revoked; ${r.notes} shared note${r.notes === 1 ? '' : 's'} ${doKeep ? 'kept' : 'deleted'}` : `${words[0]} is not a member`);
+            }
             db.close();
         }
         else if (sub === 'join') {

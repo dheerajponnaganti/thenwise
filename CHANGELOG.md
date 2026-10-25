@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Masking: a key wrapped at a line break, a key glued to `_` or `-`, and Twilio `SK` keys are now masked. Mask version 4: the archive masks old copies again on the next sync.
+- Teams preview: waiting shares retry in the background sync at session start. A lock keeps two processes from losing a queued change.
+- Teams preview: `thenwise team remove <name>` asks whether to keep or delete the member's shared notes (`--keep-notes`, `--delete-notes`). Without a terminal it needs one of the flags.
+- The sync lock no longer fails when it is released mid-read, and a fresh lock is never taken as stale.
+
 ## 0.1.0
 
 First release. Teams mode is a preview. Windows is experimental.

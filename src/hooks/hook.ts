@@ -74,7 +74,14 @@ export function takeLock(file: string, pid = process.pid): boolean {
 
       return true
     } catch {
-      const held = Number(readFileSync(file, 'utf8').trim())
+      let held: number
+      try {
+        held = Number(readFileSync(file, 'utf8').trim())
+        // Empty means the holder made the file but has not written its pid yet; only an old empty file is stale.
+        if (!held && Date.now() - statSync(file).mtimeMs < 10_000) return false
+      } catch {
+        continue // released between our create and our read: try again
+      }
       if (held && alive(held)) return false
       rmSync(file, { force: true })
     }
@@ -112,7 +119,7 @@ export function syncRun(env: HookEnv) {
   const lock = join(env.dir, 'sync.lock')
   if (!takeLock(lock)) return log(env, 'sync skipped: another sync is running')
   try {
-    for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily']) {
+    for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : [])]) {
       const t = Date.now()
       const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', env: { ...process.env, THENWISE_HOME: env.dir } })
       log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`)

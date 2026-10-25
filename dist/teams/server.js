@@ -29,12 +29,14 @@ export function invite(db, name, expiresAt = Date.now() + 365 * 864e5) {
     db.prepare('INSERT INTO members (name, token_hash, expires_at) VALUES (?, ?, ?)').run(name, hash(token), expiresAt);
     return token;
 }
-/** The token stops working at once, and the member's shared notes go with it. */
-export function removeMember(db, name) {
-    const n = Number(db.prepare('DELETE FROM members WHERE name = ?').run(name).changes);
-    for (const t of ['notes', 'tombs'])
-        db.prepare(`DELETE FROM ${t} WHERE owner = ?`).run(name);
-    return n > 0;
+/** The token stops working at once. The member's notes go too, unless keepNotes (then they stay read-only). */
+export function removeMember(db, name, keepNotes = false) {
+    const removed = Number(db.prepare('DELETE FROM members WHERE name = ?').run(name).changes) > 0;
+    const notes = Number(db.prepare('SELECT COUNT(*) AS n FROM notes WHERE owner = ?').get(name).n);
+    if (!keepNotes)
+        for (const t of ['notes', 'tombs'])
+            db.prepare(`DELETE FROM ${t} WHERE owner = ?`).run(name);
+    return { removed, notes };
 }
 export function createTeamServer(opts) {
     const db = openTeamDb(opts.dir);

@@ -152,7 +152,7 @@ test('V-B4: an iCloud conflict copy is not read twice and is reported', () => {
   const { w, dir, cfg, write } = setup()
   write()
   writeFileSync(join(dir, 'Decisions 2.md'), readFileSync(join(dir, 'Decisions.md'), 'utf8'))
-  writeFileSync(join(w.vault, 'Plan 2.md'), '# Plan again\nSame note.\n')
+  writeFileSync(join(w.vault, 'Plan 2.md'), readFileSync(join(w.vault, 'Plan.md'), 'utf8')) // a copy is a near-identical one
   const r = write()
   assert.ok(r.reported.some((x) => x.includes('conflict copy') && x.includes('Decisions 2.md')))
   assert.ok(existsSync(join(dir, 'Decisions 2.md')))

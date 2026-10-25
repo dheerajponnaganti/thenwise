@@ -8,12 +8,13 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { backup } from '../backup/backup.ts'
 import { readNotes } from '../capture/notes.ts'
-import { expandHome } from '../core/home.ts'
+import { expandHome, legacyDir } from '../core/home.ts'
 import { normPath } from '../core/vault-index.ts'
 import { takeLock } from '../hooks/hook.ts'
 import type { Config } from '../ingest/config.ts'
 import { tighten } from './perms.ts'
-import { ingest } from '../ingest/ingest.ts'
+import { dropPrCache, ingest } from '../ingest/ingest.ts'
+import { githubSlug, repoRoot } from '../ingest/repos.ts'
 import { sharedIds, unshare } from '../teams/client.ts'
 import { writeVault } from '../vault/vault.ts'
 import { loadTombs, saveTombs, sessionOf, underFolder } from './tombstones.ts'
@@ -80,11 +81,10 @@ function planKeys(cfg: Config, target: string, folder: string): string[] {
   const base = join(cfg.memDir, 'archive', 'plans')
 
   return list(base).filter((e) => e.isDirectory()).map((e) => e.name).filter((k) => {
-    if (k === target || k === claudeKey(folder)) return true
     try {
       return underFolder(readFileSync(join(base, k, '.folder'), 'utf8'), folder)
     } catch {
-      return false
+      return k === target || k === claudeKey(folder)
     }
   })
 }
@@ -131,7 +131,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   try {
     const tombs = loadTombs(cfg.memDir)
     if (projectWide) {
-      tombs.projects.push(...keys.filter((k) => k === target || k === claudeKey(folder)))
+      // A mangled key is shared by /x/my.app and /x/my-app: record one only for a key target or a chat with no folder known.
+      tombs.projects.push(...chats.filter((c) => byProject(c) && (c.key === target || !c.cwd)).map((c) => c.key))
       tombs.folders.push(folder)
       tombs.sessions.push(...sessions)
     } else tombs.sessions.push(...sessions)
@@ -156,6 +157,12 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
 
     const db = join(cfg.memDir, 'graph.db')
     const before = countSessions(db)
+    if (projectWide) {
+      // Its cached PRs go too; ingest keeps the repo out from now on.
+      const repo = repoRoot(folder)
+      const slug = repo && underFolder(repo, folder) ? githubSlug(repo) : undefined
+      if (slug) dropPrCache(cfg.memDir, [slug])
+    }
     if (existsSync(db)) ingest(cfg)
     const inStore = before - countSessions(db)
 
@@ -185,6 +192,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared`)
     for (const l of backups) out(`  backup folders: ${l}`)
     if (notes) out(`  ${notes} saved note${notes === 1 ? '' : 's'} cite${notes === 1 ? 's' : ''} these chats and ${notes === 1 ? 'was' : 'were'} kept; review them with: thenwise inbox`)
+    const old = legacyDir(cfg.memDir)
+    if (old) out(`  ${old} is an older data folder that still holds Thenwise data. Forget does not clean it; delete it or run Thenwise with THENWISE_HOME=${old}.`)
     out('Not reachable from here:')
     out(`  Claude Code's own chat files in ${join(cfg.claudeDir, 'projects')} (never touched; a tombstone keeps them out of Thenwise)`)
     out('  git history of a backed-up vault')

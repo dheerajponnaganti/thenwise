@@ -83,7 +83,7 @@ function fixture() {
     u('m1', 'commit the first one', before),
     a('m2', [{ type: 'tool_use', id: 'g1', name: 'Bash', input: { command: 'git add -A && git commit -q -m "Add a"' } }], before),
   ))
-  writeFileSync(join(dir, 'sdk.jsonl'), j({ ...u('k1', 'automated question', '2026-10-03T00:00:00Z'), entrypoint: 'sdk-cli' }))
+  writeFileSync(join(dir, 'sdk.jsonl'), j({ ...u('k1', 'automated question', '2026-10-03T00:00:00Z'), entrypoint: 'mcp' }))
   // An interactive test chat in the real project, recognised by the marker in its prompts.
   writeFileSync(join(dir, 'mk.jsonl'), j(u('mk1', 'what is the latest release? [memory-eval]', '2026-10-03T00:00:00Z')))
   const evalKey = join(home, '.claude/projects/-home-proj-eval-ws-grep')
@@ -157,7 +157,7 @@ test('ingest links sessions, commits, PRs, notes and rules; out-of-scope session
   const f = fixture()
   archive(f.cfg)
   const r = ingest(f.cfg, { prs: f.prs, db: join(f.home, 'g.db') })
-  assert.equal(r.sessionsIn, 3)
+  assert.equal(r.sessionsIn, 4) // s1, s2, s3 and the subagent file of s2
   assert.equal(r.sessionsOut, 1)
   assert.equal(r.excludedEntrypoint, 1)
   assert.equal(r.excludedEval, 1) // the eval-ws folder chat; the marked test chat never reaches the archive
@@ -191,7 +191,7 @@ test('ingest links sessions, commits, PRs, notes and rules; out-of-scope session
   assert.deepEqual(c.trailers, { decision: ['keep a tiny'], why: ['fewer moving parts'], 'dead-end': ['a big framework'] })
   assert.equal(db.prepare("SELECT count(*) n FROM nodes_fts WHERE nodes_fts MATCH 'framework'").get()!.n, 2) // the commit and the active note made from its trailer
   const rep = report(join(f.home, 'g.db'))
-  assert.match(rep, /sessions in scope: 3, out of scope: 1/)
+  assert.match(rep, /sessions in scope: 4, out of scope: 1/)
   assert.match(rep, /continuation chains: 1/)
   db.close()
 })

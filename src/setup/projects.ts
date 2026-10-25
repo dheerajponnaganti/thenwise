@@ -32,6 +32,13 @@ function headCwd(file: string): string | null {
 }
 
 /** Reads the head of up to `sample` chats per project; counts every top-level chat. */
+/** Projects in the chat history that the config's roots leave out and no exclude rule names: they are silently out of scope. */
+export function newProjectLines(claudeDir: string, roots: string[], excluded: (key: string) => boolean): string[] {
+  const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !roots.some((r) => p.folder === r || p.folder!.startsWith(`${r}/`)))
+
+  return out.length ? [`not remembered yet: ${out.map((p) => p.folder).join(', ')}. Run \`thenwise setup\` to add ${out.length === 1 ? 'it' : 'them'}.`] : []
+}
+
 export function discoverProjects(claudeDir: string, sample = 20): FoundProject[] {
   const root = join(claudeDir, 'projects')
   if (!existsSync(root)) return []

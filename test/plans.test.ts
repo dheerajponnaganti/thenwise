@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readdirSync, renameSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -76,6 +76,9 @@ test('PL4: after ingest, search finds an old plan version as a dated plan record
   const f = join(w.proj, 'task_plan.md')
   writeFileSync(f, '# Zanzibar migration\nstep: rotate zanzibar keys\n')
   snapshotAll(w.cfg)
+  // Snapshots of one day collapse to the last; date the first one earlier so both stay records.
+  const first = snaps(w)[0]!
+  renameSync(first, join(dirname(first), '2026-10-01T09-00-00-000Z.md'))
   w.archive()
   assert.equal(w.both().a, w.both().b)
   writeFileSync(f, '# Zanzibar migration\nstep: done\n')

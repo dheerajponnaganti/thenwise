@@ -31,9 +31,14 @@ export interface Session {
   turns: Turn[]
   summaries: Summary[]
   paths: Set<string> // every path any tool call touched
+  sub: boolean // a subagent file: its turns belong to session `id`, which is the parent
 }
 
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users)\/[^\s"'`;|&)<>]+)/g
+const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|system-reminder|task-notification|command-message|bash-input|bash-stdout|bash-stderr|user-prompt-submit-hook|ide_opened_file|ide_selection|ide_diagnostics'
+const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`)
+const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`)
+const AGENT_TOOLS = /^(Agent|Task)$/
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i
 
 export function normalizePath(path: string, home: string, cwd = '/'): string {
@@ -62,15 +67,25 @@ function promptText(content: unknown): string | null {
   else if (Array.isArray(content) && content.length && !content.some((b: any) => b?.type === 'tool_result')) t = textOf(content.filter((b: any) => b?.type === 'text'))
   else return null
   t = t.trim()
+  const cmd = /<command-name>\s*([^<]*?)\s*<\/command-name>/.exec(t)
+  if (t.startsWith('<') && cmd?.[1]) {
+    // A typed slash command: "/review args" is the prompt.
+    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(t)?.[1]?.trim()
 
-  return !t || t.startsWith('<') || t.startsWith('[Request interrupted') ? null : t
+    return args ? `${cmd[1]} ${args}` : cmd[1]
+  }
+  // System and editor wrappers are not prompts; text after them is. Any other "<..." (say "<div>") is the user's.
+  for (let m: RegExpExecArray | null; (m = WRAPPER.exec(t)); ) t = t.slice(m[0].length).trim()
+
+  return !t || WRAPPER_OPEN.test(t) || t.startsWith('[Request interrupted') ? null : t
 }
 
 /** `until` (ISO) drops every entry stamped after it. */
-export function parseSession(text: string, id: string, home: string, until = ''): Session {
+/** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
+export function parseSession(text: string, id: string, home: string, until = '', sub = false): Session {
   const cut = until ? Date.parse(until) : Infinity
-  const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set() }
-  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' }>()
+  const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), sub }
+  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' }>()
   let turn: Turn | null = null
   for (const line of text.split('\n')) {
     let d: any
@@ -79,7 +94,7 @@ export function parseSession(text: string, id: string, home: string, until = '')
     } catch {
       continue
     }
-    if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || d.isSidechain) continue
+    if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || (d.isSidechain && !sub)) continue
     if (typeof d.timestamp === 'string' && Date.parse(d.timestamp) > cut) continue
     if (!s.entrypoint && typeof d.entrypoint === 'string') s.entrypoint = d.entrypoint
     if (!s.cwd && typeof d.cwd === 'string') s.cwd = d.cwd
@@ -99,7 +114,8 @@ export function parseSession(text: string, id: string, home: string, until = '')
           const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined
           if (!hit) continue
           const out = textOf(b.content)
-          if (hit.kind === 'commit') for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\]/g)) hit.turn.commitShas.add(m[1]!)
+          if (hit.kind === 'agent') out && hit.turn.reply.push(out.slice(0, 8000)) // a subagent's report to the turn that asked
+          else if (hit.kind === 'commit') for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\]/g)) hit.turn.commitShas.add(m[1]!)
           else for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)) hit.turn.prUrls.add(m[0])
         }
       }
@@ -119,6 +135,7 @@ export function parseSession(text: string, id: string, home: string, until = '')
           s.paths.add(p)
           if (turn) (b.name === 'Read' ? turn.reads : /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name) ? turn.edits : turn.reads).add(p)
         }
+        if (turn && AGENT_TOOLS.test(b.name)) pending.set(b.id, { turn, kind: 'agent' })
         if (b.name === 'Bash' && typeof inp.command === 'string') {
           for (const p of bashPaths(inp.command, home)) {
             s.paths.add(p)

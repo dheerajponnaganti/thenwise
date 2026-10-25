@@ -100,8 +100,8 @@ test('S6-B6: hook output is cut to its token cap', () => {
 
 test('S6-B7: only Read has a hook entry, so Grep and Glob get no hint', () => {
   const hooks = JSON.parse(readFileSync('hooks/hooks.json', 'utf8')).hooks
-  assert.equal(hooks.PostToolUse.length, 1)
   assert.equal(hooks.PostToolUse[0].matcher, 'Read')
+  assert.ok(!hooks.PostToolUse.some((x: any) => /Grep|Glob/.test(x.matcher)))
   assert.equal(runHook('read', { tool_name: 'Grep', tool_input: {}, session_id: 's' }, withStore()), '')
 })
 

@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 
 /** Order: THENWISE_HOME, MEMORY_HOME, ~/.thenwise if present, ~/.memory if present (older installs), else ~/.thenwise. */
 export function resolveDataDir(home: string = homedir(), env: Record<string, string | undefined> = process.env): string {
@@ -12,6 +12,14 @@ export function resolveDataDir(home: string = homedir(), env: Record<string, str
   const old = join(home, '.memory')
 
   return !existsSync(fresh) && existsSync(old) ? old : fresh
+}
+
+/** An older ~/.memory that still holds Thenwise data next to a ~/.thenwise: forget, uninstall and tighten cover it too. */
+export function legacyDir(dataDir: string): string | null {
+  const old = join(dirname(dataDir), '.memory')
+  if (basename(dataDir) !== '.thenwise' || !['graph.db', 'archive', 'config.json', 'forgotten.json'].some((f) => existsSync(join(old, f)))) return null
+
+  return old
 }
 
 const SYNCED = [/[\\/]Library[\\/]Mobile Documents[\\/]/, /[\\/]Library[\\/]CloudStorage[\\/]/, /[\\/](Dropbox|OneDrive|Google Drive)([\\/ ]|$)/i]

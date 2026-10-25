@@ -391,11 +391,14 @@ test('S7b-B2 S7-B9: a backup never holds the archive or the store, and a pushed 
   w.writeConfig({ vault: { path: vault }, backup: { kind: 'git', push: true } })
   spawnSync('git', ['-C', vault, 'init', '-q'])
   spawnSync('git', ['-C', vault, 'remote', 'add', 'origin', remote])
+  mkdirSync(join(vault, '_thenwise'), { recursive: true })
+  writeFileSync(join(vault, '_thenwise', 'Index.md'), '# Index')
   const r = w.cli(['backup'])
   assert.equal(r.status, 0, r.stderr + r.stdout)
   const tracked = spawnSync('git', ['-C', vault, 'ls-files'], { encoding: 'utf8' }).stdout
-  assert.match(tracked, /note\.md/)
   assert.doesNotMatch(tracked, /archive|graph\.db|\.jsonl|\.thenwise/)
+  assert.match(tracked, /_thenwise\/Index\.md/)
+  assert.doesNotMatch(tracked, /note\.md/, "the user's own notes are never committed")
   const dry = spawnSync('git', ['-C', vault, 'push', '--dry-run', 'origin', 'HEAD'], { encoding: 'utf8' })
   assert.equal(dry.status, 0, dry.stderr)
   const pushed = spawnSync('git', ['-C', remote, 'grep', '-i', 'zanzibar', 'HEAD'], { encoding: 'utf8' })
@@ -404,7 +407,8 @@ test('S7b-B2 S7-B9: a backup never holds the archive or the store, and a pushed 
 
 test('Uninstall stops a running sync and lists what to delete by hand', async () => {
   const w = world()
-  const holder = spawn('sleep', ['30'])
+  // Uninstall only signals a process that looks like a Thenwise sync.
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'thenwise-sync-holder'])
   writeFileSync(join(w.data, 'sync.lock'), String(holder.pid))
   w.writeConfig({ vault: { path: join(w.home, 'vault') }, backup: { kind: 'folders', folders: [join(w.home, 'c1')] } })
   const r = w.cli(['uninstall'])
@@ -421,3 +425,12 @@ function tmpdirOf(prefix: string) {
 function rmFile(p: string) {
   spawnSync('rm', ['-f', p])
 }
+
+test('gap 2: prose keeps its words, function calls are not secrets, Bearer values are masked', () => {
+  for (const t of ['the token expiration is short', 'secret management and password validation', 'const token = getToken()', 'token = makeToken(']) assert.equal(maskSecrets(t).text, t)
+  const pw = 'hunter2' + 'hunter2'
+  assert.ok(!maskSecrets(`Authorization: Bearer ${pw}`).text.includes(pw))
+  assert.ok(!maskSecrets(`Bearer ${pw}`).text.includes(pw))
+  assert.ok(!maskSecrets(`authorization basic ${pw}`).text.includes(pw))
+  assert.ok(MASK_VERSION >= 5)
+})

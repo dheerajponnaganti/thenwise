@@ -13,19 +13,17 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
-import { gunzipSync } from 'node:zlib'
 
 import { parseTrailers, syncTrailers } from '../capture/notes.ts'
 import { fillSynonyms, keepWord, toks } from '../query/language.ts'
 import { noteKeys, splitPassages } from '../query/passages.ts'
 import type { Config } from './config.ts'
-import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, ownerRows, scanSessions, sessionId, sha256, signatureOf } from './ingest.ts'
+import { ALL_REFS, DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, scanSessions, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
 import { plansPart } from './plans.ts'
-import { LOG_FORMAT, MENTION_KINDS, aliasesOf, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
+import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
 import type { Claim, GEdge, GNode, Look, Part, Ref, SessionPart, Status } from './parts.ts'
 import { discoverRepos } from './repos.ts'
-import { parseSession } from './transcript.ts'
 
 const SESSION_KINDS = ['part_of', 'read', 'edited', 'ran_in', 'continued_from']
 const LABELLED = new Set(['note', 'section', 'commit', 'pr'])
@@ -219,6 +217,8 @@ interface Fresh {
 
 export function updateGraph(cfg: Config, opts: IngestOptions, dbPath: string): IngestResult {
   const db = new DatabaseSync(dbPath)
+  // Stores built before the fast path lack this index; an update adds it.
+  db.exec('CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind, source)')
   try {
     const sig = db.prepare("SELECT value FROM ingest_state WHERE key = 'signature'").get() as { value: string } | undefined
     if (sig?.value !== signatureOf(cfg)) throw new Error('settings changed: rebuild')
@@ -255,7 +255,7 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
       S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
       continue
     }
-    const s = parseSession(gunzipSync(bytes).toString('utf8'), sessionId(sf.name), cfg.home)
+    const s = parseSf(sf, bytes, cfg.home)
     const status = classify(cfg, s)
     fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key) } : {}) })
   }
@@ -265,7 +265,11 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   for (const f of gone) S.run('DELETE FROM ingest_files WHERE file = ?', f)
 
   // 2. Commits.
-  const cwds = S.all("SELECT DISTINCT json_extract(extra, '$.cwd') AS cwd FROM nodes WHERE kind = 'session'").map((r) => r.cwd as string)
+  const cwds = S.all("SELECT extra FROM nodes WHERE kind = 'session'").flatMap((r) => {
+    const x = JSON.parse(r.extra)
+
+    return [x.cwd as string, ...workDirs(cfg, x.editDirs ?? [])]
+  })
   const repos = discoverRepos(cfg.repos, cwds)
   const reposChanged = JSON.stringify(repos) !== S.get("SELECT value FROM ingest_state WHERE key = 'repos'")?.value
   S.run("INSERT OR REPLACE INTO ingest_state VALUES ('repos', ?)", JSON.stringify(repos))
@@ -393,7 +397,7 @@ function applySessions(S: Store, cfg: Config, fresh: Fresh[], gone: string[], by
     let m = loaded.get(file)
     if (!m) {
       const sf = byFile.get(file)!
-      const s = parseSession(gunzipSync(readFileSync(sf.path)).toString('utf8'), sessionId(sf.name), cfg.home)
+      const s = parseSf(sf, readFileSync(sf.path), cfg.home)
       m = new Map(sessionPart(s, sf.key).nodes.map((n) => [n.id, n]))
       loaded.set(file, m)
     }
@@ -430,25 +434,51 @@ function applySessions(S: Store, cfg: Config, fresh: Fresh[], gone: string[], by
 
 function applyCommits(S: Store, repos: string[], warnings: string[]) {
   const wanted = new Map<string, string>() // sha -> repo, the first repo that has it
+  const main = new Map<string, Set<string> | null>() // repo -> shas on its default branch
+  const failed = new Set<string>()
   for (const repo of repos) {
-    const raw = gitOut(repo, ['rev-list', '--all'])
+    const raw = gitOut(repo, ['rev-list', ...ALL_REFS])
     if (raw === null) {
       warnings.push(`git log failed in ${repo}`)
+      failed.add(repo)
       continue
     }
+    main.set(repo, mainShas(repo))
     for (const sha of raw.split('\n')) if (sha && !wanted.has(sha)) wanted.set(sha, repo)
   }
   const have = new Map<string, any>(S.all('SELECT * FROM commit_idx').map((r) => [r.sha, r]))
+  const extras = new Map<string, Record<string, unknown>>(S.all("SELECT id, extra FROM nodes WHERE kind = 'commit'").map((r) => [r.id, JSON.parse(r.extra)]))
   const touch = (sha: string, title: string) => {
     S.keys.add(`sha\0${sha.slice(0, 7)}`)
     S.claimKeys.add(`sha\0${sha.slice(0, 7)}`)
     S.claimKeys.add(`sub\0${title}`)
   }
+  // A commit seen once stays: when history is rewritten it is kept and marked unreachable. It leaves only when another repo owns the sha now.
   for (const [sha, c] of have) {
-    if (wanted.get(sha) === c.repo) continue
-    S.delNode(c.id)
-    S.run('DELETE FROM commit_idx WHERE sha = ?', sha)
-    touch(sha, c.title)
+    const now = wanted.get(sha)
+    if (now !== undefined && now !== c.repo) {
+      S.delNode(c.id)
+      S.run('DELETE FROM commit_idx WHERE sha = ?', sha)
+      touch(sha, c.title)
+      continue
+    }
+    if (now === undefined && !repos.includes(c.repo)) {
+      // The repo itself is gone from the set (deleted or dropped): its commits go, as in a rebuild.
+      S.delNode(c.id)
+      S.run('DELETE FROM commit_idx WHERE sha = ?', sha)
+      touch(sha, c.title)
+      continue
+    }
+    if (now === undefined && failed.has(c.repo)) continue
+    const old = extras.get(c.id)
+    if (!old) continue
+    const { unreachable: _u, ...rest } = old
+    const m = main.get(c.repo)
+    const want = now === undefined ? { ...rest, onMain: false, unreachable: true } : { ...rest, ...(m ? { onMain: m.has(sha) } : {}) }
+    if (JSON.stringify(sortKeys(want)) !== JSON.stringify(sortKeys(old))) {
+      S.writes++
+      S.run('UPDATE nodes SET extra = ? WHERE id = ?', JSON.stringify(sortKeys(want)), c.id)
+    }
   }
   const add = new Map<string, string[]>()
   for (const [sha, repo] of wanted) if (have.get(sha)?.repo !== repo) add.set(repo, [...(add.get(repo) ?? []), sha])
@@ -458,7 +488,7 @@ function applyCommits(S: Store, repos: string[], warnings: string[]) {
       warnings.push(`git log failed in ${repo}`)
       continue
     }
-    for (const c of parseLog(raw, repo)) {
+    for (const c of parseLog(raw, repo, undefined, main.get(repo) ?? undefined)) {
       const sha = c.node.extra.sha as string
       S.putNode(c.node)
       for (const e of commitEdges(c)) S.putEdge(e)

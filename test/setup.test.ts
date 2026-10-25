@@ -91,17 +91,26 @@ test('S2-H7: a second run shows the current answers and changes only what is ask
   assert.equal(f.cfg().backup.kind, 'none')
 })
 
-test('S2-H2 S2-H3 S2-B7: interactive run, vault inside the project, no commit adds a .gitignore line and keeps the file', () => {
+test('S2-H2 S2-H3 S2-B7: Obsidian vault inside a repo, no commit ignores the folder the writer uses', () => {
   const f = f1()
-  // Enter on projects, "2" inside the project, "n" to commit, no notes folders, backup none.
-  const r = f.cli(['setup', '--no-sync'], '\n2\nn\n\nnone\n')
+  const r = f.cli(['setup', '--yes', '--no-sync', '--place', 'obsidian', '--vault-path', join(f.work, 'alpha', 'vault'), '--no-commit-vault'])
   assert.equal(r.status, 0, r.stderr)
-  assert.match(r.stdout, /central folder/)
-  assert.match(r.stdout, /Obsidian vault/)
-  assert.equal(readFileSync(join(f.work, 'alpha', '.gitignore'), 'utf8'), 'node_modules\nThenwise/\n')
-  assert.equal(f.cfg().vault.place, 'project')
+  assert.equal(readFileSync(join(f.work, 'alpha', '.gitignore'), 'utf8'), 'node_modules\nvault/_thenwise/\n')
+  assert.equal(f.cfg().vault.place, 'obsidian')
   assert.equal(f.cfg().vault.commit, false)
-  assert.ok(!r.stdout.includes('pull requests'), 'PRs are asked only when gh is signed in')
+})
+
+test('S2-37: the menu has no per-project vault, and --place project is refused', () => {
+  const f = f1()
+  const r = f.cli(['setup', '--no-sync'], '\n1\n\nn\n\nnone\n')
+  assert.ok(!r.stdout.includes('inside each project'))
+  assert.equal(f.cli(['setup', '--yes', '--no-sync', '--place', 'project']).status, 2)
+})
+
+test('S2-7: --yes leaves PRs off', () => {
+  const f = f1()
+  f.cli(['setup', '--yes', '--no-sync'])
+  assert.equal(f.cfg().ingest.prs, false)
 })
 
 test('S2-B1: no ~/.claude/projects says so, exits 0 and creates no store', () => {

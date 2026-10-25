@@ -58,6 +58,8 @@ export function costOf(text: string, session: string, project = '', home = '/'):
   return { session, project, start: s.start, turns: s.turns.length, calls: usage.size, ...t, weighted: weighted(t), memoryCalls, credits: credited.size }
 }
 
+// Cost is measured on chats a person typed in; ingest also takes headless and SDK chats now.
+const INTERACTIVE = ['cli', 'claude-vscode']
 /** Interactive sessions of the archive (entrypoints and exclusions as in ingest), optionally from a date on. */
 export function report(archiveDir: string, since = ''): { sessions: SessionCost[]; total: SessionCost } {
   const cfg = loadConfig()
@@ -68,7 +70,7 @@ export function report(archiveDir: string, since = ''): { sessions: SessionCost[
       for (const f of readdirSync(join(archiveDir, key)).filter((x) => x.endsWith('.jsonl.gz')).sort()) {
         const text = gunzipSync(readFileSync(join(archiveDir, key, f))).toString('utf8')
         const s = parseSession(text, '', cfg.home)
-        if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || (since && Date.parse(s.start) < Date.parse(since))) continue
+        if (!INTERACTIVE.includes(s.entrypoint) || !s.start || (since && Date.parse(s.start) < Date.parse(since))) continue
         sessions.push(costOf(text, f.replace(/\.jsonl\.gz$/, ''), key, cfg.home))
       }
     }

@@ -32,6 +32,8 @@ export interface Config {
   ingestExcludeProjects: string[]
   /** A chat with a user prompt containing any of these is a test chat: it never enters the archive or the memory. */
   ingestExcludeMarkers: string[]
+  /** How long one `gh pr list` may take, in ms (default 60 s; it doubles after each timeout, up to 8 times that). */
+  ghTimeoutMs: number
   /** Named timelines: a chat belongs to the first project whose words appear in its first prompt, or whose folders it edited. */
   viewProjects: { name: string; words: string[]; paths: string[] }[]
 }
@@ -44,7 +46,7 @@ const SCHEMA: Record<string, any> = {
   exclude_projects: 'string[]',
   off: 'boolean',
   off_projects: 'string[]',
-  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', prs: 'boolean', plans: 'boolean' },
+  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean' },
   vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
   backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
   views: { projects: 'object' },
@@ -154,9 +156,10 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',
-    includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop'],
+    includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', ''],
     ingestExcludeProjects: ing.exclude_projects ?? ['*-eval-ws*'],
     ingestExcludeMarkers: ing.exclude_markers ?? ['[memory-eval]'],
+    ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,
     viewProjects: Object.entries((user.views?.projects ?? {}) as Record<string, { words?: string[]; paths?: string[] }>).map(([name, p]) => ({ name, words: (p.words ?? []).map((w) => w.toLowerCase()), paths: list(p.paths, []) })),
   }
 

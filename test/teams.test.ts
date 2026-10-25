@@ -243,6 +243,14 @@ describe('teams preview', () => {
     assert.equal((await get(tokenB, '/notes/alice/late')).status, 404)
   })
 
+  test('T-8: a refused share is dropped and not marked shared; the team db is private', async () => {
+    const r = await share(a, 'toolong', { title: 'T', text: 'x', project: 'p'.repeat(300) })
+    assert.match(r, /refused: toolong \(400/)
+    assert.ok(!sharedIds(a).includes('toolong'))
+    assert.match(await flush(a), /nothing waiting/)
+    assert.equal(statSync(join(serverDir, 'team.db')).mode & 0o077, 0)
+  })
+
   test('the client file is private and the CLI says teams preview', () => {
     assert.equal(statSync(join(a, 'team.json')).mode & 0o077, 0)
     const r = spawnSync(process.execPath, ['src/main.ts', 'team', 'join', 'http://example.com', 'tw_x'], { env: { ...process.env, THENWISE_HOME: tmp('c') }, encoding: 'utf8' })

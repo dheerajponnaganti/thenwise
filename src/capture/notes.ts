@@ -53,14 +53,14 @@ export function readNotes(memDir: string): CNote[] {
 
 export function saveNote(memDir: string, n: CNote): CNote {
   if (!n.path) {
-    mkdirSync(join(notesDir(memDir), n.type), { recursive: true })
+    mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 })
     n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`)
   }
   const fm = FIELDS.map((k) => {
     const v = n[k] as Scalar | Scalar[]
     return `${k}: ${yamlValue(v === '' ? null : v)}`
   })
-  writeFileSync(n.path, `---\n${fm.join('\n')}\n---\n${n.summary}\n`)
+  writeFileSync(n.path, `---\n${fm.join('\n')}\n---\n${n.summary}\n`, { mode: 0o600 })
 
   return n
 }

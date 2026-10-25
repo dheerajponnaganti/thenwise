@@ -4,6 +4,8 @@
 import { chmodSync, lstatSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { legacyDir } from '../core/home.ts'
+
 export function tighten(dir: string): number {
   let fixed = 0
   const walk = (p: string) => {
@@ -13,9 +15,10 @@ export function tighten(dir: string): number {
     if ((st.mode & 0o777) !== want) (chmodSync(p, want), fixed++)
     if (st.isDirectory()) for (const e of readdirSync(p)) walk(join(p, e))
   }
-  try {
-    walk(dir)
-  } catch {}
+  for (const d of [dir, legacyDir(dir)])
+    try {
+      if (d) walk(d)
+    } catch {}
 
   return fixed
 }

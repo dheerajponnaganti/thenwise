@@ -17,13 +17,16 @@ const TOOLS = {
     memory_why: { text: `Use FIRST for any question about why something is the way it is: the decisions behind it and their reasons. ${NEWER}`, run: (g, a) => c.why(g, a[0]) },
     memory_tried: { text: `Use FIRST for what was tried before, what failed and dead ends, so they are not repeated. ${NEWER}`, run: (g, a) => c.tried(g, a[0]) },
     memory_asof: { text: 'Use FIRST for what was true on a date. Give an ISO date and words. It names the commit of that date: read a file as it was with git show <sha>:<path>.', run: (g, a) => c.asof(g, a[0], a[1]) },
-    memory_trace: { text: 'Use FIRST for the full story of a file, symbol or topic: decisions, dead ends, sessions, commits and PRs, newest first.', run: (g, a) => c.trace(g, a[0]) },
+    memory_trace: { text: 'Use FIRST for the full story of a file, symbol or topic: decisions, dead ends, sessions, commits and PRs, newest first. A long story is paged: pass offset to read the older items.', run: (g, a) => c.trace(g, a[0], 100, Number(a[1]) || 0, CAP - 300) },
     memory_read: { text: 'Prints one memory record or passage in full. Results show passages cut around the match; give the id and passage they show, such as turn:abc#p2.', run: (g, a) => c.get(g, a[0]) },
 };
 const field = (name) => (name === 'memory_read' ? 'id' : 'query');
 const toolList = Object.entries(TOOLS).map(([name, t]) => {
     const props = name === 'memory_asof' ? { date: { type: 'string', description: 'ISO date, such as 2026-10-19' }, query: { type: 'string' } } : { [field(name)]: { type: 'string' } };
-    return { name, description: `${t.text} ${MARK}`, inputSchema: { type: 'object', properties: props, required: Object.keys(props) } };
+    const required = Object.keys(props);
+    if (name === 'memory_trace')
+        props.offset = { type: 'integer', description: 'Items to skip from the newest, to page to older ones' };
+    return { name, description: `${t.text} ${MARK}`, inputSchema: { type: 'object', properties: props, required } };
 });
 const cut = (s, n) => (s.length > n ? `${s.slice(0, n).replace(/\n[^\n]*$/, '')}\n(cut)` : s);
 const ok = (id, result) => ({ jsonrpc: '2.0', id, result });
@@ -48,7 +51,7 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
         const s = statSync(p);
         const now = `${s.ino}:${s.size}:${s.mtimeMs}`;
         if (!graph || now !== sig) {
-            const g = new Graph(p);
+            const g = new Graph(p, { lazy: true });
             const cfg = loadConfigSafe().config;
             // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
             if (cfg && isOff(cfg, project))
@@ -71,10 +74,10 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
         catch { }
         graph = undefined;
     };
-    function call(name, args) {
+    function call(name, a0) {
         const t = TOOLS[name];
         const need = name === 'memory_asof' ? ['date', 'query'] : [field(name)];
-        const vals = need.map((k) => (typeof args[k] === 'string' ? args[k].trim() : ''));
+        const vals = need.map((k) => (typeof a0[k] === 'string' ? a0[k].trim() : ''));
         if (vals.some((v) => v === ''))
             return text(`Missing argument: ${need.join(' and ')} must be non-empty text.`, true);
         try {
@@ -82,13 +85,18 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
             if (!g)
                 return text(NONE);
             const args = vals.map((v) => v.slice(0, 2000));
+            if (name === 'memory_trace')
+                args.push(String(Number(a0.offset) || 0));
             let out = t.run(g, args);
             // Never lose an answer to the scope: nothing in this project falls back to every project, and says so.
             if (g.scope !== undefined && g.scope !== OFF && /^not recorded/.test(out)) {
                 const scope = g.scope;
+                const cfg = loadConfigSafe().config;
                 g.scope = undefined;
+                g.hide = cfg ? (root) => isOff(cfg, root) : undefined; // paused projects stay out of the fallback
                 const all = t.run(g, args);
                 g.scope = scope;
+                g.hide = undefined;
                 if (!/^not recorded/.test(all))
                     out = `Nothing in this project; from all projects:\n${all}`;
             }

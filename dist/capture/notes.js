@@ -31,14 +31,14 @@ export function readNotes(memDir) {
 }
 export function saveNote(memDir, n) {
     if (!n.path) {
-        mkdirSync(join(notesDir(memDir), n.type), { recursive: true });
+        mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 });
         n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`);
     }
     const fm = FIELDS.map((k) => {
         const v = n[k];
         return `${k}: ${yamlValue(v === '' ? null : v)}`;
     });
-    writeFileSync(n.path, `---\n${fm.join('\n')}\n---\n${n.summary}\n`);
+    writeFileSync(n.path, `---\n${fm.join('\n')}\n---\n${n.summary}\n`, { mode: 0o600 });
     return n;
 }
 export function expireInbox(memDir, nowMs) {

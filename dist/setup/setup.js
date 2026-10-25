@@ -7,10 +7,12 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { cloudWarning, expandHome, resolveDataDir } from "../core/home.js";
 import { globMatch, loadConfigSafe, readConfigFile, saveConfig } from "../ingest/config.js";
+import { OURS } from "../vault/user.js";
 import { ghSignedIn } from "./doctor.js";
 import { discoverProjects } from "./projects.js";
 const DEFAULT_EXCLUDE = ['-private-tmp*', '*-claude-mem-observer-sessions'];
-const PLACES = ['central', 'project', 'obsidian'];
+// "project" is not offered: the writer needs a vault path, so a per-project vault would never be written.
+const PLACES = ['central', 'obsidian'];
 const gitRoot = (dir) => {
     for (let d = resolve(dir);; d = dirname(d)) {
         if (existsSync(join(d, '.git')))
@@ -135,10 +137,10 @@ export async function setup(argv, home = homedir()) {
         // 2. Vault
         const pv = prev.vault ?? {};
         let place = val('place') ?? pv.place ?? 'central';
-        if (!PLACES.includes(place))
+        if (!PLACES.includes(place) && place !== pv.place)
             return fail(`--place must be one of ${PLACES.join(', ')}`);
         if (!yes && val('place') === undefined) {
-            out('\nWhere should the vault (the curated notes) live?\n  1. a central folder, outside your repos and cloud folders (default)\n  2. inside each project\n  3. inside an existing Obsidian vault');
+            out('\nWhere should the vault (the curated notes) live?\n  1. a central folder, outside your repos and cloud folders (default)\n  2. inside an existing Obsidian vault');
             place = PLACES[Number(await ask('Choice:', String(PLACES.indexOf(place) + 1))) - 1] ?? place;
         }
         let layout = val('layout') ?? pv.layout ?? 'shared';
@@ -153,7 +155,7 @@ export async function setup(argv, home = homedir()) {
             return fail('an Obsidian vault needs --vault-path');
         if (place === 'project')
             vpath = '';
-        const dirs = place === 'project' ? folders.map((f) => join(f, 'Thenwise')) : [place === 'obsidian' ? join(expandHome(vpath, home), 'Thenwise') : resolve(expandHome(vpath, home))];
+        const dirs = place === 'project' ? folders.map((f) => join(f, 'Thenwise')) : [place === 'obsidian' ? join(expandHome(vpath, home), OURS) : resolve(expandHome(vpath, home))];
         const cloud = dirs.map(cloudWarning).find(Boolean);
         if (cloud) {
             out(cloud);
@@ -169,7 +171,7 @@ export async function setup(argv, home = homedir()) {
         if (!yes && val('notes') === undefined)
             notes = (await ask('Folders of notes to read (comma separated, Enter for none):', notes.join(', '))).split(',').map((x) => x.trim()).filter(Boolean);
         const signedIn = ghSignedIn();
-        let prs = has('prs') ? true : has('no-prs') ? false : ing.prs ?? signedIn;
+        let prs = has('prs') ? true : has('no-prs') ? false : ing.prs ?? false;
         if (prs && !signedIn)
             (out('gh is not signed in, so PRs are skipped. Run `gh auth login`, then `thenwise setup --prs`.'), (prs = false));
         else if (signedIn && !yes && !has('prs') && !has('no-prs'))

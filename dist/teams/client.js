@@ -108,31 +108,48 @@ export async function unshare(dir, id) {
         enqueue(s, { op: 'del', id, rev: 0 });
         save(dir, s);
     });
-    return flush(dir);
+    const msg = await flush(dir);
+    return `${load(dir).queue.some((q) => q.id === id) ? 'unshare queued, not done yet' : 'unshared'}: ${msg}`;
 }
-/** Sends the queue in order. A network failure leaves the rest waiting; nothing here throws into a chat. */
+/** Sends the queue in order. Only 2xx is sent. 409 (already unshared) is done. Other 4xx is refused and dropped. 5xx and network errors stay queued. */
 export async function flush(dir) {
     let sent = 0;
+    const refused = [];
+    const tail = () => `${refused.length ? `; refused: ${refused.join('; ')}` : ''} (${LABEL})`;
     for (const o of load(dir).queue) {
         const s = load(dir);
+        let status;
+        let json;
         try {
             // The mask runs again at send time, so a queue written before a pattern change is still clean.
-            const r = o.op === 'put' ? await call(s, 'PUT', `/notes/${encodeURIComponent(o.id)}`, { ...payloadOf(o.note).payload, rev: o.rev }) : await call(s, 'DELETE', `/notes/${encodeURIComponent(o.id)}?rev=${o.rev}`);
-            if (r.status === 401)
-                return `${sent} sent; the server refused the token (${LABEL})`;
+            ;
+            ({ status, json } = o.op === 'put' ? await call(s, 'PUT', `/notes/${encodeURIComponent(o.id)}`, { ...payloadOf(o.note).payload, rev: o.rev }) : await call(s, 'DELETE', `/notes/${encodeURIComponent(o.id)}?rev=${o.rev}`));
         }
         catch {
             const left = load(dir).queue.length;
-            return `${sent} sent; server not reachable, ${left} change${left === 1 ? '' : 's'} waiting (${LABEL})`;
+            return `${sent} sent; server not reachable, ${left} change${left === 1 ? '' : 's'} waiting${tail()}`;
         }
+        if (status === 401)
+            return `${sent} sent; the server refused the token${tail()}`;
+        if (status >= 500)
+            return `${sent} sent; the server answered ${status}, ${load(dir).queue.length} waiting${tail()}`;
+        const ok = status >= 200 && status < 300;
+        // A refused share must not stay marked as shared.
+        const drop = status >= 400 && status !== 409;
+        if (drop)
+            refused.push(`${o.id} (${status}${json?.error ? ` ${json.error}` : ''})`);
         locked(dir, () => {
             const after = load(dir);
             after.queue = after.queue.filter((q) => !(q.id === o.id && q.rev === o.rev));
+            if (status === 409 || drop)
+                if (o.op === 'put' && after.shared[o.id]?.rev === o.rev)
+                    delete after.shared[o.id];
             save(dir, after);
         });
-        sent++;
+        if (ok)
+            sent++;
     }
-    return `${sent} sent; nothing waiting (${LABEL})`;
+    return `${sent} sent; nothing waiting${tail()}`;
 }
 export async function search(dir, q) {
     const r = await call(load(dir), 'GET', `/search?q=${encodeURIComponent(q)}`);

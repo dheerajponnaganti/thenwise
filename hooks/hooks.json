@@ -10,9 +10,16 @@
     ],
     "SessionStart": [
       {
-        "matcher": "startup|resume|compact",
+        "matcher": "startup|resume|clear|fork|compact",
         "hooks": [
           { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-start"], "timeout": 3 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-end"], "timeout": 3 }
         ]
       }
     ],
@@ -21,6 +28,12 @@
         "matcher": "Read",
         "hooks": [
           { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "read"], "timeout": 3 }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 3 }
         ]
       }
     ]

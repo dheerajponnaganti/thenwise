@@ -9,12 +9,14 @@ import { createInterface } from 'node:readline'
 
 import { cloudWarning, expandHome, resolveDataDir } from '../core/home.ts'
 import { globMatch, loadConfigSafe, readConfigFile, saveConfig } from '../ingest/config.ts'
+import { OURS } from '../vault/user.ts'
 import { ghSignedIn } from './doctor.ts'
 import { discoverProjects } from './projects.ts'
 import type { FoundProject } from './projects.ts'
 
 const DEFAULT_EXCLUDE = ['-private-tmp*', '*-claude-mem-observer-sessions']
-const PLACES = ['central', 'project', 'obsidian']
+// "project" is not offered: the writer needs a vault path, so a per-project vault would never be written.
+const PLACES = ['central', 'obsidian']
 
 const gitRoot = (dir: string): string | null => {
   for (let d = resolve(dir); ; d = dirname(d)) {
@@ -138,9 +140,9 @@ export async function setup(argv: string[], home: string = homedir()): Promise<n
     // 2. Vault
     const pv = prev.vault ?? {}
     let place: string = val('place') ?? pv.place ?? 'central'
-    if (!PLACES.includes(place)) return fail(`--place must be one of ${PLACES.join(', ')}`)
+    if (!PLACES.includes(place) && place !== pv.place) return fail(`--place must be one of ${PLACES.join(', ')}`)
     if (!yes && val('place') === undefined) {
-      out('\nWhere should the vault (the curated notes) live?\n  1. a central folder, outside your repos and cloud folders (default)\n  2. inside each project\n  3. inside an existing Obsidian vault')
+      out('\nWhere should the vault (the curated notes) live?\n  1. a central folder, outside your repos and cloud folders (default)\n  2. inside an existing Obsidian vault')
       place = PLACES[Number(await ask('Choice:', String(PLACES.indexOf(place) + 1))) - 1] ?? place
     }
     let layout: string = val('layout') ?? pv.layout ?? 'shared'
@@ -150,7 +152,7 @@ export async function setup(argv: string[], home: string = homedir()): Promise<n
     if (place !== 'project' && !yes && val('vault-path') === undefined) vpath = await ask(place === 'obsidian' ? 'Path of your Obsidian vault:' : 'Folder for the vault:', vpath)
     if (place === 'obsidian' && !vpath) return fail('an Obsidian vault needs --vault-path')
     if (place === 'project') vpath = ''
-    const dirs = place === 'project' ? folders.map((f) => join(f, 'Thenwise')) : [place === 'obsidian' ? join(expandHome(vpath, home), 'Thenwise') : resolve(expandHome(vpath, home))]
+    const dirs = place === 'project' ? folders.map((f) => join(f, 'Thenwise')) : [place === 'obsidian' ? join(expandHome(vpath, home), OURS) : resolve(expandHome(vpath, home))]
     const cloud = dirs.map(cloudWarning).find(Boolean)
     if (cloud) {
       out(cloud)
@@ -164,7 +166,7 @@ export async function setup(argv: string[], home: string = homedir()): Promise<n
     let notes: string[] = list('notes') ?? ing.vaults ?? []
     if (!yes && val('notes') === undefined) notes = (await ask('Folders of notes to read (comma separated, Enter for none):', notes.join(', '))).split(',').map((x) => x.trim()).filter(Boolean)
     const signedIn = ghSignedIn()
-    let prs: boolean = has('prs') ? true : has('no-prs') ? false : ing.prs ?? signedIn
+    let prs: boolean = has('prs') ? true : has('no-prs') ? false : ing.prs ?? false
     if (prs && !signedIn) (out('gh is not signed in, so PRs are skipped. Run `gh auth login`, then `thenwise setup --prs`.'), (prs = false))
     else if (signedIn && !yes && !has('prs') && !has('no-prs')) prs = await yn('Read pull requests through gh (read only, cached)?', prs)
     let kind: string = val('backup') ?? prev.backup?.kind ?? 'none'

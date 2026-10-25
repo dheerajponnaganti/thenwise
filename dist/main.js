@@ -72,6 +72,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
             console.log(`${r.excludedChats} test chats and ${r.off} chats of paused projects were not archived`);
         for (const p of r.pruned)
             console.log(`  removed: ${p}`);
+        for (const f of r.failed)
+            console.log(`  failed: ${f}`);
         if (r.leftover.length)
             console.log(`${r.leftover.length} archived chats belong to excluded chats or projects; remove them with: thenwise archive --prune-excluded`);
     }
@@ -87,6 +89,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
         if (process.argv.includes('--report'))
             console.log(report(r.db));
     }
+    ;
+    (await import("./privacy/perms.js")).tighten(cfg.memDir); // same promise as a sync: readable by you only
     process.exit(0);
 }
 if (cmd === 'mcp') {
@@ -107,8 +111,12 @@ if (cmd === 'hook') {
 if (cmd === 'status') {
     const { loadConfig } = await import("./ingest/config.js");
     const { statusLines } = await import("./ingest/status.js");
+    const { newProjectLines } = await import("./setup/projects.js");
+    const { globMatch } = await import("./ingest/config.js");
     const cfg = loadConfig();
     for (const l of statusLines(cfg, xp(flag('db')) ?? join(cfg.memDir, 'graph.db')))
+        console.log(l);
+    for (const l of newProjectLines(cfg.claudeDir, cfg.roots, (k) => cfg.excludeProjects.some((g) => globMatch(g, k))))
         console.log(l);
     process.exit(0);
 }
@@ -185,12 +193,12 @@ if (cmd && QUERY.includes(cmd)) {
     const args = [];
     const rest = process.argv.slice(3);
     for (let i = 0; i < rest.length; i++)
-        rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
+        rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
     const cfg = loadConfig();
     const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
     if (!existsSync(dbPath))
         (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2));
-    const g = new Graph(dbPath);
+    const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }); // lazy reads only what the command touches; --full loads the whole graph
     g.expand = process.argv.includes('--expand');
     // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
     if (!process.argv.includes('--all') && (flag('project') || process.argv.includes('--here')))

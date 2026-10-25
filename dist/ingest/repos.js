@@ -45,7 +45,11 @@ export function discoverRepos(configured, cwds) {
     const add = (r) => seen.has(real(r)) || (seen.add(real(r)), out.push(r));
     for (const r of configured)
         add(r);
-    for (const r of [...new Set([...cwds].filter(Boolean).map((c) => repoRoot(c)).filter((r) => !!r))].sort())
+    // One lookup per folder (chats repeat the same few), and at most 200 repos found this way.
+    const roots = new Map();
+    for (const c of new Set([...cwds].filter(Boolean)))
+        roots.set(c, repoRoot(c));
+    for (const r of [...new Set([...roots.values()].filter((r) => !!r))].sort().slice(0, 200))
         add(r);
     return out;
 }

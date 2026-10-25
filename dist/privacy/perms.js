@@ -2,6 +2,7 @@
 // so a file made loose by an older version or by hand is fixed on the next run.
 import { chmodSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { legacyDir } from "../core/home.js";
 export function tighten(dir) {
     let fixed = 0;
     const walk = (p) => {
@@ -15,9 +16,11 @@ export function tighten(dir) {
             for (const e of readdirSync(p))
                 walk(join(p, e));
     };
-    try {
-        walk(dir);
-    }
-    catch { }
+    for (const d of [dir, legacyDir(dir)])
+        try {
+            if (d)
+                walk(d);
+        }
+        catch { }
     return fixed;
 }

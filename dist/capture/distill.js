@@ -87,7 +87,7 @@ export function distill(cfg, opts = {}) {
         if (ex.length)
             res.lines.push(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`);
     }
-    const log = (o) => appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`);
+    const log = (o) => appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 });
     const root = join(cfg.memDir, 'archive/sessions');
     const under = (p, r) => p === r || p.startsWith(`${r}/`);
     for (const key of existsSync(root) ? readdirSync(root).sort() : []) {
@@ -174,7 +174,7 @@ export function distill(cfg, opts = {}) {
                 state[id] = { turn: lastTurn ? lastTurn.node.slice(5) : st.turn, summaries: [...st.summaries, ...chunk.filter((u) => !u.turn).map((u) => u.node.slice(4))] };
                 st.turn = state[id].turn;
                 st.summaries = state[id].summaries;
-                writeFileSync(stateFile, JSON.stringify(state, null, 1));
+                writeFileSync(stateFile, JSON.stringify(state, null, 1), { mode: 0o600 });
                 res.lines.push(`  chunk: ${kept} proposal(s) written, ${dropped} dropped`);
             }
         }

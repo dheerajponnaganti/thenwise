@@ -1,6 +1,7 @@
 // Deterministic retrieval over the graph (Phase C). No model anywhere: BM25 over passages, fused by reciprocal rank
 // fusion with a title lane, a graph lane and an exact lane. Every result carries the lanes that found it.
-import { basename } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { projectRoot, real, repoRoot } from "../ingest/repos.js";
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from "./language.js";
@@ -53,16 +54,58 @@ export class Graph {
     expand = false;
     /** The project folder results are limited to (plus global notes); undefined searches everything. */
     scope;
+    /** Roots to leave out even when the scope is everything (paused projects in the all-projects fallback). */
+    hide;
     roots;
     known = [];
     keyRoots = new Map(); // a chat folder's name in ~/.claude/projects -> its project folder
     vocab;
     idfCache = new Map();
-    constructor(path) {
+    /** Fast path for hooks: nodes and edges are read from SQLite when asked for, so a big store costs no more than a small one.
+     *  Only get/has on nodes and adj, ofKind, bySource and isHub are valid then; iterating `nodes` would see only what was loaded. */
+    lazy;
+    constructor(path, opts = {}) {
+        this.lazy = !!opts.lazy;
         this.db = new DatabaseSync(path, { readOnly: true });
         this.db.exec('PRAGMA busy_timeout = 5000'); // an update may be committing
         if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'passages'").get())
             throw new Error(`${path} has no passage index: run \`memory ingest\` again`);
+        if (this.lazy) {
+            const self = this;
+            const load = (r) => ({ ...r, extra: JSON.parse(r.extra || '{}') });
+            const one = this.db.prepare('SELECT id, kind, title, at, until, project, source, extra FROM nodes WHERE id = ?');
+            const edgesOf = this.db.prepare('SELECT src, dst, kind, at, extra FROM edges WHERE src = ? OR dst = ? ORDER BY src, dst, kind');
+            this.nodes = new (class extends Map {
+                get(id) {
+                    if (!super.has(id)) {
+                        const r = one.get(id);
+                        if (r)
+                            super.set(id, load(r));
+                    }
+                    return super.get(id);
+                }
+                has(id) { return this.get(id) !== undefined; }
+            })();
+            this.adj = new (class extends Map {
+                get(id) {
+                    if (!super.has(id)) {
+                        const list = [];
+                        // Same order as the eager build: by (src, dst, kind), a self-link listed in both directions.
+                        for (const e of edgesOf.all(id, id)) {
+                            const x = JSON.parse(e.extra || '{}');
+                            if (e.src === id)
+                                list.push({ to: e.dst, kind: e.kind, out: true, extra: x, at: e.at });
+                            if (e.dst === id)
+                                list.push({ to: e.src, kind: e.kind, out: false, extra: x, at: e.at });
+                        }
+                        super.set(id, list);
+                    }
+                    return super.get(id);
+                }
+            })();
+            this.passageCount = this.db.prepare('SELECT count(*) n FROM passages').get().n;
+            return;
+        }
         for (const r of this.db.prepare('SELECT id, kind, title, at, until, project, source, extra FROM nodes ORDER BY id').all())
             this.nodes.set(r.id, { ...r, extra: JSON.parse(r.extra || '{}') });
         for (const e of this.db.prepare('SELECT src, dst, kind, at, extra FROM edges ORDER BY src, dst, kind').all()) {
@@ -102,7 +145,7 @@ export class Graph {
         else if (n.kind === 'note' || n.kind === 'section' || n.kind === 'rule' || n.kind === 'doc')
             root = byPath(n.source.replace(/\\/g, '/'));
         else if (n.kind === 'memory' || n.kind === 'plan')
-            root = this.keyRoots.get(n.project) ?? '';
+            root = this.keyRoots.get(n.project) ?? known.find((k) => k.replace(/[^A-Za-z0-9]/g, '-') === n.project) ?? '';
         else if (n.extra?.curated)
             root = byName(n.project) || (this.keyRoots.get(n.project) ?? '');
         this.roots.set(n.id, root);
@@ -112,17 +155,24 @@ export class Graph {
         this.roots = new Map();
         const cache = new Map();
         const of = (f) => (f ? (cache.get(f) ?? (cache.set(f, projectRoot(f)), cache.get(f))) : '');
-        for (const n of this.nodes.values()) {
+        for (const n of this.ofKind('session', 'commit')) {
             // A chat run outside any repository (a home folder) is about no one project, so it counts as global.
-            if (n.kind === 'session')
-                (this.roots.set(n.id, repoRoot(String(n.extra?.cwd ?? '')) ? of(String(n.extra.cwd)) : ''), this.keyRoots.set(n.project, this.roots.get(n.id)));
+            // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
+            if (n.kind === 'session') {
+                const cwd = String(n.extra?.cwd ?? '');
+                this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? resolve(cwd) : '');
+                this.keyRoots.set(n.project, this.roots.get(n.id));
+            }
             else if (n.kind === 'commit')
                 this.roots.set(n.id, of(n.source));
         }
         this.known = [...new Set(this.roots.values())].filter(Boolean);
     }
     inScope(n) {
-        return !n || n.kind === 'file' || this.scope === undefined || this.rootOf(n) === this.scope || this.rootOf(n) === '';
+        if (!n || n.kind === 'file' || (this.scope === undefined && !this.hide))
+            return true;
+        const r = this.rootOf(n);
+        return !(r && this.hide?.(r)) && (this.scope === undefined || r === this.scope || r === '');
     }
     projectName(n) {
         const r = this.rootOf(n);
@@ -133,7 +183,33 @@ export class Graph {
         return r ? basename(r) : n.kind === 'session' || n.kind === 'turn' || n.kind === 'summary' || n.kind === 'commit' || n.kind === 'pr' ? n.project || 'global' : 'global';
     }
     isHub(id) {
-        return this.nodes.get(id)?.kind === 'file' && (this.deg.get(id) ?? 0) > HUB;
+        if (this.nodes.get(id)?.kind !== 'file')
+            return false;
+        if (!this.lazy)
+            return (this.deg.get(id) ?? 0) > HUB;
+        // Same count as the eager build: every non-part_of edge counts once per end.
+        const q = (c) => this.db.prepare(`SELECT count(*) n FROM edges WHERE ${c} = ? AND kind != 'part_of'`).get(id).n;
+        return q('src') + q('dst') > HUB;
+    }
+    /** Nodes of these kinds, from SQLite when lazy. */
+    ofKind(...kinds) {
+        if (!this.lazy)
+            return [...this.nodes.values()].filter((n) => kinds.includes(n.kind));
+        const rows = this.db.prepare(`SELECT id, kind, title, at, until, project, source, extra FROM nodes WHERE kind IN (${kinds.map(() => '?').join(',')}) ORDER BY id`).all(...kinds);
+        return rows.map((r) => Map.prototype.get.call(this.nodes, r.id) ?? this.nodes.set(r.id, { ...r, extra: JSON.parse(r.extra || '{}') }).get(r.id));
+    }
+    /** Up to `n` node ids containing `s`, in id order. */
+    idsContaining(s, n) {
+        if (!this.lazy)
+            return [...this.nodes.keys()].filter((k) => k.includes(s)).slice(0, n);
+        return this.db.prepare('SELECT id FROM nodes WHERE instr(id, ?) > 0 ORDER BY id LIMIT ?').all(s, n).map((r) => r.id);
+    }
+    /** Turns and summaries recorded under one session. */
+    bySource(source) {
+        if (!this.lazy)
+            return [...this.nodes.values()].filter((n) => n.source === source && (n.kind === 'turn' || n.kind === 'summary'));
+        const rows = this.db.prepare("SELECT id FROM nodes WHERE kind IN ('turn', 'summary') AND source = ? ORDER BY id").all(source);
+        return rows.map((r) => this.nodes.get(r.id));
     }
     /** One-hop neighbours, never through part_of and never to a hub. */
     neighbours(id) {
@@ -149,7 +225,23 @@ export class Graph {
     term(t) {
         let v = this.idfCache.get(t);
         if (!v) {
-            const set = new Set(this.db.prepare('SELECT rowid FROM passages_fts WHERE passages_fts MATCH ?').all(`"${t}"`).map((r) => r.rowid));
+            const m = `"${t}"`;
+            // Lazy: sorted rowids in a typed array, so a word in half the passages costs 4 bytes each, not a Set entry (and a row object) each.
+            let set;
+            if (this.lazy) {
+                const ids = new Uint32Array(this.db.prepare('SELECT count(*) n FROM passages_fts WHERE passages_fts MATCH ?').get(m).n);
+                let i = 0;
+                for (const r of this.db.prepare('SELECT rowid FROM passages_fts WHERE passages_fts MATCH ? ORDER BY rowid').iterate(m))
+                    ids[i++] = r.rowid;
+                set = { size: ids.length, has: (r) => { let lo = 0, hi = ids.length - 1; while (lo <= hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (ids[mid] === r)
+                            return true;
+                        ids[mid] < r ? (lo = mid + 1) : (hi = mid - 1);
+                    } return false; } };
+            }
+            else
+                set = new Set(this.db.prepare('SELECT rowid FROM passages_fts WHERE passages_fts MATCH ?').all(m).map((r) => r.rowid));
             v = { set, idf: Math.log(1 + (this.passageCount - set.size + 0.5) / (set.size + 0.5)) };
             this.idfCache.set(t, v);
         }
@@ -191,19 +283,24 @@ export class Graph {
             for (const r of this.db.prepare("SELECT id FROM nodes WHERE kind = 'commit' AND id LIKE ? ORDER BY id").all(`commit:%:${m[0]}%`))
                 add(r.id, `commit ${m[0]}`);
         }
-        for (const m of q.matchAll(/[\w@.~/-]*[/.][\w@.~/-]*\w/g)) {
-            const p = m[0].replace(/^~/, '').replace(/\.+$/, '');
+        const cands = new Set([...q.matchAll(/[\w@.~/-]*[/.][\w@.~/-]*\w/g)].map((m) => m[0]));
+        // The whole query as one path: absolute, Windows, with spaces, brackets or parentheses, or a `note:` prefix.
+        const whole = q.trim().replace(/^(?:note|file|path):\s*/i, '').replace(/\\/g, '/').replace(/^[A-Za-z]:(?=\/)/, '');
+        if (whole.length < 300 && whole.includes('/') && !whole.includes('\n'))
+            cands.add(whole);
+        for (const c of cands) {
+            const p = c.replace(/^~/, '').replace(/\.+$/, '');
             if (!/[/]|\.[A-Za-z0-9]{1,6}$/.test(p) || /^\d+(\.\d+)*$/.test(p))
                 continue;
-            const esc = p.replace(/[\\%_]/g, '\\$&');
-            const rows = this.db.prepare("SELECT id FROM nodes WHERE kind = 'file' AND (id LIKE ? ESCAPE '\\' OR (? NOT LIKE '%/%' AND title = ?)) ORDER BY id LIMIT 5").all(`%/${esc}`, p, p);
-            for (const r of rows)
+            const esc = p.replace(/^\//, '').replace(/[\\%_]/g, '\\$&');
+            const rows = this.db.prepare("SELECT id FROM nodes WHERE kind = 'file' AND (id LIKE ? ESCAPE '\\' OR (? NOT LIKE '%/%' AND title = ?)) ORDER BY id").all(`%/${esc}`, p, p);
+            // Files under the session's project first, so a common name (README.md) does not fill the limit with other repos.
+            const mine = (id) => (this.scope !== undefined && id.startsWith(`file:${this.scope}/`) ? 0 : 1);
+            for (const r of rows.sort((a, b) => mine(a.id) - mine(b.id)).slice(0, 5))
                 add(r.id, `path ${p}`);
         }
         const lq = q.toLowerCase();
-        for (const n of this.nodes.values()) {
-            if (n.kind !== 'note')
-                continue;
+        for (const n of this.ofKind('note')) {
             const t = n.title.toLowerCase();
             const base = n.id.replace(/^.*\//, '').replace(/\.md$/, '').toLowerCase();
             if ((t.length >= 5 && lq.includes(t)) || (base.length >= 5 && lq.includes(base)))
@@ -211,9 +308,20 @@ export class Graph {
         }
         return [...out].filter(([id]) => this.inScope(this.nodes.get(id))).map(([id, why]) => ({ id, why }));
     }
+    /** Rows from `run(limit)` that pass `ok`, widening the limit until `want` pass, so other projects cannot fill it. */
+    widen(run, ok, want) {
+        for (let lim = want;; lim *= 4) {
+            const rows = run(lim);
+            const good = rows.filter(ok);
+            if (good.length >= want || rows.length < lim || lim >= want * 64)
+                return good.slice(0, want);
+        }
+    }
     /** Ranked passages for a query. `filter` keeps only nodes it accepts (as-of dates, kinds). */
     search(q, opts = {}) {
         const terms = queryTerms(q);
+        if (this.idfCache.size > 16)
+            this.idfCache.clear(); // a long-lived server would otherwise keep every word ever asked
         const sets = this.termSets(terms);
         const known = sets.filter((s) => s.set.size > 0).map((s) => ({ ...s, alt: [] }));
         let missing = sets.filter((s) => s.set.size === 0).map((s) => s.t);
@@ -267,11 +375,13 @@ export class Graph {
             return best && (best.c > 0 || anyPassage) ? best.pid : anyPassage ? ps[0]?.pid : undefined;
         };
         // Lane 1: BM25 over passages.
-        const bm = known.length ? this.db.prepare('SELECT p.pid, p.node FROM passages_fts f JOIN passages p ON p.rowid = f.rowid WHERE passages_fts MATCH ? ORDER BY bm25(passages_fts), p.pid LIMIT 400').all(fts(every)) : [];
-        lanes.set('bm25', bm.filter((r) => ok(this.nodes.get(r.node))).map((r) => r.pid));
+        const bmSql = this.db.prepare('SELECT p.pid, p.node FROM passages_fts f JOIN passages p ON p.rowid = f.rowid WHERE passages_fts MATCH ? ORDER BY bm25(passages_fts), p.pid LIMIT ?');
+        const bm = known.length ? this.widen((l) => bmSql.all(fts(every), l), (r) => ok(this.nodes.get(r.node)), 400) : [];
+        lanes.set('bm25', bm.map((r) => r.pid));
         // Lane 2: title matches, mapped to the node's best passage.
-        const ti = known.length ? this.db.prepare('SELECT n.id FROM titles_fts f JOIN nodes n ON n.rowid = f.rowid WHERE titles_fts MATCH ? ORDER BY bm25(titles_fts), n.id LIMIT 60').all(fts(every)) : [];
-        lanes.set('title', ti.filter((r) => ok(this.nodes.get(r.id))).flatMap((r) => bestOf(r.id, false) ?? []));
+        const tiSql = this.db.prepare('SELECT n.id FROM titles_fts f JOIN nodes n ON n.rowid = f.rowid WHERE titles_fts MATCH ? ORDER BY bm25(titles_fts), n.id LIMIT ?');
+        const ti = known.length ? this.widen((l) => tiSql.all(fts(every), l), (r) => ok(this.nodes.get(r.id)), 60) : [];
+        lanes.set('title', ti.flatMap((r) => bestOf(r.id, false) ?? []));
         // Lane 4: exact references. A file has no text, so its non-hub neighbours stand in, newest first.
         const exactIds = [];
         for (const e of exact) {

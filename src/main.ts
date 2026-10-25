@@ -73,6 +73,7 @@ if (cmd === 'archive' || cmd === 'ingest') {
     for (const u of r.unparsed) console.log(`  unparsed: ${u.rel} line ${u.line}`)
     if (r.excludedChats || r.off) console.log(`${r.excludedChats} test chats and ${r.off} chats of paused projects were not archived`)
     for (const p of r.pruned) console.log(`  removed: ${p}`)
+    for (const f of r.failed) console.log(`  failed: ${f}`)
     if (r.leftover.length) console.log(`${r.leftover.length} archived chats belong to excluded chats or projects; remove them with: thenwise archive --prune-excluded`)
   } else {
     const { ingest, report } = await import('./ingest/ingest.ts')
@@ -83,6 +84,7 @@ if (cmd === 'archive' || cmd === 'ingest') {
     console.log(`${r.mode === 'full' ? 'rebuilt everything' : r.mode === 'update' ? 'updated' : 'nothing new'}: ${r.filesRead} chat files read in ${(r.ms / 1000).toFixed(1)} s`)
     if (process.argv.includes('--report')) console.log(report(r.db))
   }
+  ;(await import('./privacy/perms.ts')).tighten(cfg.memDir) // same promise as a sync: readable by you only
   process.exit(0)
 }
 
@@ -105,8 +107,11 @@ if (cmd === 'hook') {
 if (cmd === 'status') {
   const { loadConfig } = await import('./ingest/config.ts')
   const { statusLines } = await import('./ingest/status.ts')
+  const { newProjectLines } = await import('./setup/projects.ts')
+  const { globMatch } = await import('./ingest/config.ts')
   const cfg = loadConfig()
   for (const l of statusLines(cfg, xp(flag('db')) ?? join(cfg.memDir, 'graph.db'))) console.log(l)
+  for (const l of newProjectLines(cfg.claudeDir, cfg.roots, (k) => cfg.excludeProjects.some((g) => globMatch(g, k)))) console.log(l)
   process.exit(0)
 }
 
@@ -170,11 +175,11 @@ if (cmd && QUERY.includes(cmd)) {
   // Positional words are everything after the command that is not a flag or a flag value.
   const args: string[] = []
   const rest = process.argv.slice(3)
-  for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
+  for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
   const cfg = loadConfig()
   const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(dbPath)) (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2))
-  const g = new Graph(dbPath)
+  const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }) // lazy reads only what the command touches; --full loads the whole graph
   g.expand = process.argv.includes('--expand')
   // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
   if (!process.argv.includes('--all') && (flag('project') || process.argv.includes('--here'))) g.scopeTo(xp(flag('project')) ?? process.cwd())

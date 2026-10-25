@@ -3,11 +3,12 @@
 // snapshot into a dated `plan` record.
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { maskSecrets } from "../core/secrets.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { fullNode } from "./parts.js";
+import { repoRoot } from "./repos.js";
 export const STEMS = ['task_plan', 'findings', 'progress'];
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 /** The Claude Code project key of a folder, the same one the chat archive uses. */
@@ -29,13 +30,17 @@ export function snapshotPlan(cfg, file, now = new Date()) {
     const p = planOf(file);
     if (!cfg.plans || !p || !existsSync(file))
         return false;
-    const key = keyOf(p.dir);
+    // A nested plan belongs to its repo (the key a session in that repo has); the sub folder moves into the slug.
+    const top = repoRoot(p.dir) ?? p.dir;
+    const rel = relative(top, p.dir);
+    const key = keyOf(top);
+    const slug = rel && !rel.startsWith('..') ? `${rel.split(sep).join('~')}~${p.slug}` : p.slug;
     if (isOff(cfg, p.dir) || cfg.excludeProjects.some((g) => globMatch(g, key)) || isForgotten(loadTombs(cfg.memDir), `${key}/x`, p.dir))
         return false;
     const text = maskSecrets(readFileSync(file, 'utf8')).text;
     if (!text.trim())
         return false;
-    const dest = join(plansDir(cfg), key, p.slug, p.stem);
+    const dest = join(plansDir(cfg), key, slug, p.stem);
     const last = existsSync(dest) ? readdirSync(dest).filter((x) => x.endsWith('.md')).sort().pop() : undefined;
     if (last && sha(readFileSync(join(dest, last), 'utf8')) === sha(text))
         return false;
@@ -44,7 +49,7 @@ export function snapshotPlan(cfg, file, now = new Date()) {
     for (let d = resolve(dest), top = resolve(cfg.memDir); d.startsWith(top + sep); d = dirname(d))
         chmodSync(d, 0o700);
     // Forget finds a project's folders by this marker, since the key cannot be turned back into a path.
-    writeFileSync(join(plansDir(cfg), key, '.folder'), p.dir, { mode: 0o600 });
+    writeFileSync(join(plansDir(cfg), key, '.folder'), top, { mode: 0o600 });
     const name = join(dest, `${now.toISOString().replace(/[:.]/g, '-')}.md`);
     writeFileSync(`${name}.tmp`, text, { mode: 0o600 });
     renameSync(`${name}.tmp`, name);
@@ -52,6 +57,21 @@ export function snapshotPlan(cfg, file, now = new Date()) {
 }
 /** The hook's entry: a Write or Edit is about to change a plan file, so keep what it holds now. */
 export const snapshotBefore = (cfg, file, cwd) => snapshotPlan(cfg, isAbsolute(file) ? file : resolve(cwd, file));
+/** The hook's entry after a tool ran: snapshots the plan files in `cwd` and its .planning folders (a Bash command may have changed them). Cheap when there are none. */
+export function snapshotNear(cfg, cwd) {
+    let n = 0;
+    for (const stem of STEMS)
+        if (snapshotPlan(cfg, join(cwd, `${stem}.md`)))
+            n++;
+    const pl = join(cwd, '.planning');
+    for (const slug of dirs(pl))
+        for (const stem of STEMS)
+            if (snapshotPlan(cfg, join(pl, slug, `${stem}.md`)))
+                n++;
+    return n;
+}
+/** True when `cwd` holds a plan file, so a hook can skip the config load when it does not. */
+export const hasPlanFiles = (cwd) => STEMS.some((s) => existsSync(join(cwd, `${s}.md`))) || existsSync(join(cwd, '.planning'));
 /** Snapshots the plan files in each root and the folders directly inside it. shortcut: two levels only, deeper projects need their own root. */
 export function snapshotAll(cfg) {
     if (!cfg.plans)
@@ -76,7 +96,12 @@ export function snapshotAll(cfg) {
     return n;
 }
 const when = (name) => name.replace(/\.md$/, '').replace(/^(\d{4}-\d\d-\d\dT\d\d)-(\d\d)-(\d\d)-(\d{3}Z)$/, '$1:$2:$3.$4');
-/** One `plan` record per snapshot, dated by the snapshot. */
+/** The newest snapshot of each day among those taken up to `until`; names sort by time. */
+const lastPerDay = (files, until) => {
+    const ok = files.filter((f) => !Number.isNaN(Date.parse(when(f))) && !(until && Date.parse(when(f)) > Date.parse(until)));
+    return ok.filter((f, i) => ok[i + 1]?.slice(0, 10) !== f.slice(0, 10));
+};
+/** One `plan` record per plan file per day, dated by the day's last snapshot. */
 export function plansPart(cfg, until) {
     const out = { nodes: [], edges: [] };
     if (!cfg.plans)
@@ -86,10 +111,9 @@ export function plansPart(cfg, until) {
             continue;
         for (const slug of dirs(join(plansDir(cfg), key)))
             for (const stem of dirs(join(plansDir(cfg), key, slug)))
-                for (const f of readdirSync(join(plansDir(cfg), key, slug, stem)).filter((x) => x.endsWith('.md')).sort()) {
+                // One record per plan file per day: the last snapshot of the day (the others stay on disk).
+                for (const f of lastPerDay(readdirSync(join(plansDir(cfg), key, slug, stem)).filter((x) => x.endsWith('.md')).sort(), until)) {
                     const at = when(f);
-                    if (Number.isNaN(Date.parse(at)) || (until && Date.parse(at) > Date.parse(until)))
-                        continue;
                     const path = join(plansDir(cfg), key, slug, stem, f);
                     const text = readFileSync(path, 'utf8');
                     const heading = /^#+\s+(.+)$/m.exec(text)?.[1]?.trim();

@@ -2,14 +2,18 @@
 // function of its inputs, so both paths produce the same nodes and edges.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, join, posix } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { basename, dirname, join, posix } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
+import { maskSecrets } from '../core/secrets.ts'
 import { normPath } from '../core/vault-index.ts'
 import { parseTrailers, readNotes } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
+import { globMatch } from './config.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
+import { repoRoot } from './repos.ts'
 import { normalizePath } from './transcript.ts'
 import type { Session } from './transcript.ts'
 
@@ -44,7 +48,21 @@ export const sortKeys = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortKeys(x)])) : v
 export const edgeKey = (e: { src: string; dst: string; kind: string }) => `${e.src}\0${e.dst}\0${e.kind}`
 
-export const fullNode = (n: Partial<GNode> & { id: string; kind: string }): GNode => ({ title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n })
+// The one choke point: every record's title and text are masked before it is stored (chat text is masked already, a no-op).
+export const fullNode = (n: Partial<GNode> & { id: string; kind: string }): GNode => {
+  const o: GNode = { title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n }
+  o.title = maskSecrets(o.title).text
+  o.text = maskSecrets(o.text).text
+
+  return o
+}
+
+/** A chat is a test chat when its first prompt starts or ends with a marker, or any prompt holds one alone on a line. */
+export function isMarked(markers: string[], prompts: string[]): boolean {
+  const first = (prompts[0] ?? '').trim()
+
+  return markers.some((m) => first.startsWith(m) || first.endsWith(m) || prompts.some((p) => p.split('\n').some((l) => l.trim() === m)))
+}
 /** The same turn can appear in a resumed session; the fuller copy wins, and on a tie the first one, so order never matters. */
 export const mergeNode = (old: GNode | undefined, n: GNode): GNode => (!old || n.text.length > old.text.length ? (old ? { ...n, extra: { ...old.extra, ...n.extra } } : n) : old)
 
@@ -67,7 +85,7 @@ export type Status = 'in' | 'entry' | 'marker' | 'empty' | 'out'
 /** Why a parsed chat is in or out of the memory. Test chats carry a marker in their prompts: their answers must never become memory. */
 export function classify(cfg: Config, s: Session): Status {
   if (!cfg.includeEntrypoints.includes(s.entrypoint)) return 'entry'
-  if (s.turns.some((t) => cfg.ingestExcludeMarkers.some((m) => t.prompt.includes(m)))) return 'marker'
+  if (isMarked(cfg.ingestExcludeMarkers, s.turns.map((t) => t.prompt))) return 'marker'
   if (!s.start) return 'empty'
 
   return [s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r))) ? 'in' : 'out'
@@ -84,6 +102,11 @@ export interface SessionPart extends Part {
   claims: Claim[]
 }
 
+/** Folders of the files a chat edited, for finding the repos it worked in. Bounded: 50 per chat. */
+export const editDirs = (s: Session): string[] => [...new Set([...s.turns].flatMap((t) => [...t.edits].map((f) => posix.dirname(f))))].sort().slice(0, 50)
+/** Those folders that lie under a root. */
+export const workDirs = (cfg: Config, dirs: string[]) => dirs.filter((d) => cfg.roots.some((r) => under(d, r)))
+
 /** What one chat file gives: its nodes (merged by id), its own edges, and the commit and PR references of its turns. */
 export function sessionPart(s: Session, key: string): SessionPart {
   const nodes = new Map<string, GNode>()
@@ -93,10 +116,12 @@ export function sessionPart(s: Session, key: string): SessionPart {
   const edge = (src: string, dst: string, kind: string, at: string, extra: Record<string, unknown> = {}) => edges.has(`${src}\0${dst}\0${kind}`) || edges.set(`${src}\0${dst}\0${kind}`, { src, dst, kind, at, extra })
   const sid = `ses:${s.id}`
   const first = s.turns[0]?.prompt ?? ''
-  node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd } })
+  // A subagent file adds turns to its parent, whose own file gives the session node.
+  const dirs = editDirs(s)
+  if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(dirs.length ? { editDirs: dirs } : {}) } })
   for (const t of s.turns) {
     const tid = `turn:${t.id}`
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: s.sub ? { subagent: true } : {} })
     edge(tid, sid, 'part_of', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${p}`, kind, t.at)
     for (const m of t.commitMsgs) claims.push({ node: tid, kind: 'sub', val: m.subject, at: m.at, turnAt: t.at })
@@ -121,7 +146,8 @@ export interface CommitRec {
   files: string[]
   trailers: TrailerItem[]
 }
-export function parseLog(raw: string, repo: string, until?: string): CommitRec[] {
+/** `main`: the shas on the default branch; each commit then says `onMain`. */
+export function parseLog(raw: string, repo: string, until?: string, main?: Set<string>): CommitRec[] {
   const name = basename(repo)
   const out: CommitRec[] = []
   for (const rec of raw.split('\x1e').slice(1)) {
@@ -132,7 +158,7 @@ export function parseLog(raw: string, repo: string, until?: string): CommitRec[]
     const trailers: Record<string, string[]> = {}
     for (const m of body.matchAll(/^(Decision|Why|Dead-end):[ \t]*(.+)$/gim)) (trailers[m[1]!.toLowerCase()] ??= []).push(m[2]!.trim())
     const id = `commit:${name}:${sha}`
-    out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(body, id, date ?? '', name) })
+    out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) })
   }
 
   return out
@@ -167,9 +193,11 @@ export function prPart(inputs: PrInput[], repos: string[], commit: CommitLook, u
       if (cut(p.mergedAt ?? '', until)) (p.mergedAt = null, p.mergeCommit = null, p.state = 'OPEN')
       const id = `pr:${name}#${p.number}`
       const url: string = p.url ?? `https://github.com/${full}/pull/${p.number}`
-      const comments = (p.comments ?? []).map((c: any) => c.body ?? '').filter(Boolean)
+      // Review summaries (approve, request changes, comment) read like comments; inline review comments need one call per PR and are not fetched.
+      const comments = [...(p.comments ?? []), ...(p.reviews ?? [])].map((c: any) => c.body ?? '').filter(Boolean)
       const mc: string | undefined = p.mergeCommit?.oid
-      out.trailers.push(...parseTrailers([p.body ?? '', ...comments].join('\n'), id, p.createdAt ?? '', name))
+      // Masked like the stored text, so a full build and an update derive the same trailer notes.
+      out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name))
       out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}) } }))
       if (out.numbers.has(p.number)) out.ambiguous.add(p.number)
       out.numbers.set(p.number, id)
@@ -189,7 +217,7 @@ export function prPart(inputs: PrInput[], repos: string[], commit: CommitLook, u
 
 // 4. Notes, rules, memory files, curated notes ---------------------------------------------------------------------
 
-export function walk(dir: string, match: (name: string) => boolean, out: string[], depth = 0) {
+export function walk(dir: string, match: (name: string) => boolean, out: string[], depth = 0, skip?: (dir: string) => boolean) {
   if (depth > 7 || !existsSync(dir)) return
   let entries
   try {
@@ -201,7 +229,7 @@ export function walk(dir: string, match: (name: string) => boolean, out: string[
     if (e.isDirectory()) {
       // eval-ws holds evaluation clones: copies, dated after the test was frozen.
       if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === 'eval-ws' || (e.name.startsWith('.') && e.name !== '.claude')) continue
-      walk(join(dir, e.name), match, out, depth + 1)
+      if (!skip?.(join(dir, e.name))) walk(join(dir, e.name), match, out, depth + 1, skip)
     } else if (e.isFile() && match(e.name)) out.push(join(dir, e.name))
   }
 }
@@ -215,6 +243,18 @@ export function datedSections(body: string): { heading: string; date: string; bo
   out.preamble = marks.length ? body.slice(0, marks[0]!.at) : body
 
   return out
+}
+
+/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime. */
+function fileDate(f: string): string {
+  if (repoRoot(dirname(f))) {
+    try {
+      const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim()
+      if (out && !Number.isNaN(Date.parse(out))) return iso(Date.parse(out))
+    } catch {}
+  }
+
+  return iso(statSync(f).mtimeMs)
 }
 
 export function notesPart(cfg: Config, until?: string): Part {
@@ -234,7 +274,7 @@ export function notesPart(cfg: Config, until?: string): Part {
       const title = String(fm.data.title ?? h1 ?? basename(f, '.md'))
       const date = fm.data.date ?? fm.data.created
       // Template placeholders such as {{date}} are not dates.
-      const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : iso(statSync(f).mtimeMs)
+      const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : fileDate(f)
       if (cut(at, until)) continue
       const id = `note:${cfg.vaults.length > 1 ? `${basename(vault)}/` : ''}${rel}`
       const links = [...fm.body.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)].map((m) => m[1]!.trim())
@@ -299,7 +339,8 @@ export function docsPart(cfg: Config): Part {
   // The home folder or the disk root as a root would walk everything: read only their own CLAUDE.md files.
   for (const r of cfg.roots) {
     if (normPath(r) === normPath(cfg.home) || /^([a-z]:)?\/?$/i.test(normPath(r))) claudeFiles.push(...[join(r, 'CLAUDE.md'), join(r, '.claude', 'CLAUDE.md')].filter((f) => existsSync(f)))
-    else walk(r, (n) => n === 'CLAUDE.md', claudeFiles)
+    // A clone below a root has its own rules for its own project: not global ones, unless it is a configured repo.
+    else walk(r, (n) => n === 'CLAUDE.md', claudeFiles, 0, (d) => existsSync(join(d, '.git')) && ![...cfg.repos, ...cfg.roots].some((x) => normPath(x) === normPath(d)))
   }
   if (existsSync(join(cfg.claudeDir, 'CLAUDE.md'))) claudeFiles.push(join(cfg.claudeDir, 'CLAUDE.md'))
   const seenDocs = new Set<string>()
@@ -333,8 +374,11 @@ export function docsPart(cfg: Config): Part {
 /** Claude Code's auto-memory files of the projects that have sessions in the memory. */
 export function memoryPart(cfg: Config, keys: string[], memoryFrom?: string): Part {
   const out: Part = { nodes: [], edges: [] }
-  for (const key of [...new Set(keys)].sort()) {
-    const dir = join(memoryFrom ?? join(cfg.claudeDir, 'projects'), key, 'memory')
+  const base = memoryFrom ?? join(cfg.claudeDir, 'projects')
+  // Projects with no chat in the memory still have auto-memory; only excluded projects stay out.
+  const all = existsSync(base) ? readdirSync(base).filter((k) => !cfg.excludeProjects.concat(cfg.ingestExcludeProjects).some((g) => globMatch(g, k))) : []
+  for (const key of [...new Set([...keys, ...all])].sort()) {
+    const dir = join(base, key, 'memory')
     if (!existsSync(dir)) continue
     for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
       const raw = readFileSync(join(dir, f), 'utf8')

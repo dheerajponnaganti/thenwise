@@ -9,6 +9,9 @@ process.emitWarning = ((w, ...a) => {
     origEmit(w, ...a);
 });
 try {
+    const [maj = 0, min = 0] = process.versions.node.split('.').map(Number);
+    if (maj < 22 || (maj === 22 && min < 16))
+        throw new Error('old node');
     const { DatabaseSync } = await import('node:sqlite');
     const db = new DatabaseSync(':memory:');
     db.exec("CREATE VIRTUAL TABLE t USING fts5(x, tokenize='porter unicode61')");

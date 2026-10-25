@@ -2,7 +2,7 @@
 // notes their owners chose to share, and every statement binds its values, so a read cannot reach a private note.
 
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server } from 'node:http'
 import { join } from 'node:path'
@@ -21,6 +21,8 @@ export function openTeamDb(dir: string): DatabaseSync {
     CREATE TABLE IF NOT EXISTS members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
     CREATE TABLE IF NOT EXISTS notes (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY (owner, id));
     CREATE TABLE IF NOT EXISTS tombs (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, PRIMARY KEY (owner, id));`)
+
+  for (const f of ['team.db', 'team.db-wal', 'team.db-shm']) if (existsSync(join(dir, f))) chmodSync(join(dir, f), 0o600)
 
   return db
 }

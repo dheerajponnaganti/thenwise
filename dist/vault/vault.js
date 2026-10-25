@@ -149,8 +149,8 @@ const readState = (dir) => {
     }
 };
 function atomic(path, text) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(`${path}.tmp`, text);
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    writeFileSync(`${path}.tmp`, text, { mode: 0o600 });
     renameSync(`${path}.tmp`, path);
 }
 const mdFiles = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => join(e.parentPath, e.name)) : []);

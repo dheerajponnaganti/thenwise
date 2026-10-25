@@ -1,12 +1,13 @@
 // Pull requests through the GitHub CLI, read only. `gh pr list` is the one call. The answer is cached in the data
-// folder and fetched at most once a day per repo. Any failure keeps the cache; a hung call is killed after 20 s.
+// folder and fetched at most once a day per repo. Any failure keeps the cache; a hung call is killed after ingest.gh_timeout_s (60 s, doubling after each timeout).
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MASK_VERSION, maskDeep } from "../core/secrets.js";
 import { githubSlug } from "./repos.js";
 const DAY = 86400000;
 const RETRY = 3600000; // after a failure, ask again no sooner than this
-export const FIELDS = 'number,title,body,state,createdAt,mergedAt,mergeCommit,url,files,comments,headRefName,baseRefName';
+export const FIELDS = 'number,title,body,state,createdAt,mergedAt,mergeCommit,url,files,comments,reviews,headRefName,baseRefName';
 const cacheFile = (cfg) => join(cfg.memDir, 'prs-cache.json');
 function readCache(cfg) {
     try {
@@ -33,26 +34,32 @@ export function fetchPrs(cfg, repos, opts = {}) {
     if (!cfg.prs)
         return (out.lines.push('PRs: off in the config'), out);
     let dirty = false;
+    // Masked before it is stored; a newer mask version rewrites older entries (also masks caches written unmasked).
+    for (const e of Object.values(cache))
+        if (e.mask !== MASK_VERSION)
+            ((e.prs = maskDeep(e.prs)), (e.mask = MASK_VERSION), (dirty = true));
     let noGh = false;
     for (const { slug, repo } of slugsOf(cfg, repos)) {
         const e = cache[slug];
         const fresh = !!e && !!e.fetchedAt && !e.error && now - e.fetchedAt < DAY;
         const backoff = !!e && !!e.error && now - e.tried < RETRY;
         if (!fresh && !backoff && !noGh) {
+            const timeout = (opts.timeoutMs ?? cfg.ghTimeoutMs) * 2 ** Math.min(e?.slow ?? 0, 3);
             try {
-                const raw = execFileSync('gh', ['pr', 'list', '--repo', slug, '--state', 'all', '--limit', '2000', '--json', FIELDS], { encoding: 'utf8', maxBuffer: 1 << 29, timeout: opts.timeoutMs ?? 20000, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] });
+                const raw = execFileSync('gh', ['pr', 'list', '--repo', slug, '--state', 'all', '--limit', '2000', '--json', FIELDS], { encoding: 'utf8', maxBuffer: 1 << 29, timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] });
                 const prs = JSON.parse(raw);
                 if (!Array.isArray(prs))
                     throw new Error('gh did not return a list');
-                cache[slug] = { fetchedAt: now, tried: now, error: '', prs };
+                cache[slug] = { fetchedAt: now, tried: now, error: '', prs: maskDeep(prs), mask: MASK_VERSION };
                 dirty = true;
             }
             catch (err) {
                 if (err?.code === 'ENOENT')
                     noGh = true;
                 else {
-                    const why = err?.signal === 'SIGKILL' ? 'gh took longer than 20 s' : String(err?.stderr || err?.message || err).trim().split('\n')[0].slice(0, 200);
-                    cache[slug] = { fetchedAt: e?.fetchedAt ?? 0, tried: now, error: why, prs: e?.prs ?? [] };
+                    const slow = err?.signal === 'SIGKILL';
+                    const why = slow ? `gh took longer than ${Math.round(timeout / 1000)} s (set ingest.gh_timeout_s to wait longer)` : String(err?.stderr || err?.message || err).trim().split('\n')[0].slice(0, 200);
+                    cache[slug] = { fetchedAt: e?.fetchedAt ?? 0, tried: now, error: why, ...(slow ? { slow: (e?.slow ?? 0) + 1 } : {}), prs: e?.prs ?? [], mask: MASK_VERSION };
                     dirty = true;
                 }
             }

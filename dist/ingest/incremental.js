@@ -11,15 +11,13 @@
 //    the nodes that changed and for the nodes whose references now point at something else (a new commit, PR or file).
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
 import { parseTrailers, syncTrailers } from "../capture/notes.js";
 import { fillSynonyms, keepWord, toks } from "../query/language.js";
 import { noteKeys, splitPassages } from "../query/passages.js";
-import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, ownerRows, scanSessions, sessionId, sha256, signatureOf } from "./ingest.js";
+import { ALL_REFS, DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, scanSessions, sha256, signatureOf } from "./ingest.js";
 import { plansPart } from "./plans.js";
-import { LOG_FORMAT, MENTION_KINDS, aliasesOf, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
+import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
 import { discoverRepos } from "./repos.js";
-import { parseSession } from "./transcript.js";
 const SESSION_KINDS = ['part_of', 'read', 'edited', 'ran_in', 'continued_from'];
 const LABELLED = new Set(['note', 'section', 'commit', 'pr']);
 const range = (p) => [p, p.slice(0, -1) + String.fromCharCode(p.charCodeAt(p.length - 1) + 1)];
@@ -218,6 +216,8 @@ class Store {
 }
 export function updateGraph(cfg, opts, dbPath) {
     const db = new DatabaseSync(dbPath);
+    // Stores built before the fast path lack this index; an update adds it.
+    db.exec('CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind, source)');
     try {
         const sig = db.prepare("SELECT value FROM ingest_state WHERE key = 'signature'").get();
         if (sig?.value !== signatureOf(cfg))
@@ -256,7 +256,7 @@ function update(db, cfg, opts, dbPath) {
             S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file);
             continue;
         }
-        const s = parseSession(gunzipSync(bytes).toString('utf8'), sessionId(sf.name), cfg.home);
+        const s = parseSf(sf, bytes, cfg.home);
         const status = classify(cfg, s);
         fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key) } : {}) });
     }
@@ -268,7 +268,10 @@ function update(db, cfg, opts, dbPath) {
     for (const f of gone)
         S.run('DELETE FROM ingest_files WHERE file = ?', f);
     // 2. Commits.
-    const cwds = S.all("SELECT DISTINCT json_extract(extra, '$.cwd') AS cwd FROM nodes WHERE kind = 'session'").map((r) => r.cwd);
+    const cwds = S.all("SELECT extra FROM nodes WHERE kind = 'session'").flatMap((r) => {
+        const x = JSON.parse(r.extra);
+        return [x.cwd, ...workDirs(cfg, x.editDirs ?? [])];
+    });
     const repos = discoverRepos(cfg.repos, cwds);
     const reposChanged = JSON.stringify(repos) !== S.get("SELECT value FROM ingest_state WHERE key = 'repos'")?.value;
     S.run("INSERT OR REPLACE INTO ingest_state VALUES ('repos', ?)", JSON.stringify(repos));
@@ -417,7 +420,7 @@ function applySessions(S, cfg, fresh, gone, byFile) {
         let m = loaded.get(file);
         if (!m) {
             const sf = byFile.get(file);
-            const s = parseSession(gunzipSync(readFileSync(sf.path)).toString('utf8'), sessionId(sf.name), cfg.home);
+            const s = parseSf(sf, readFileSync(sf.path), cfg.home);
             m = new Map(sessionPart(s, sf.key).nodes.map((n) => [n.id, n]));
             loaded.set(file, m);
         }
@@ -459,28 +462,55 @@ function applySessions(S, cfg, fresh, gone, byFile) {
 }
 function applyCommits(S, repos, warnings) {
     const wanted = new Map(); // sha -> repo, the first repo that has it
+    const main = new Map(); // repo -> shas on its default branch
+    const failed = new Set();
     for (const repo of repos) {
-        const raw = gitOut(repo, ['rev-list', '--all']);
+        const raw = gitOut(repo, ['rev-list', ...ALL_REFS]);
         if (raw === null) {
             warnings.push(`git log failed in ${repo}`);
+            failed.add(repo);
             continue;
         }
+        main.set(repo, mainShas(repo));
         for (const sha of raw.split('\n'))
             if (sha && !wanted.has(sha))
                 wanted.set(sha, repo);
     }
     const have = new Map(S.all('SELECT * FROM commit_idx').map((r) => [r.sha, r]));
+    const extras = new Map(S.all("SELECT id, extra FROM nodes WHERE kind = 'commit'").map((r) => [r.id, JSON.parse(r.extra)]));
     const touch = (sha, title) => {
         S.keys.add(`sha\0${sha.slice(0, 7)}`);
         S.claimKeys.add(`sha\0${sha.slice(0, 7)}`);
         S.claimKeys.add(`sub\0${title}`);
     };
+    // A commit seen once stays: when history is rewritten it is kept and marked unreachable. It leaves only when another repo owns the sha now.
     for (const [sha, c] of have) {
-        if (wanted.get(sha) === c.repo)
+        const now = wanted.get(sha);
+        if (now !== undefined && now !== c.repo) {
+            S.delNode(c.id);
+            S.run('DELETE FROM commit_idx WHERE sha = ?', sha);
+            touch(sha, c.title);
             continue;
-        S.delNode(c.id);
-        S.run('DELETE FROM commit_idx WHERE sha = ?', sha);
-        touch(sha, c.title);
+        }
+        if (now === undefined && !repos.includes(c.repo)) {
+            // The repo itself is gone from the set (deleted or dropped): its commits go, as in a rebuild.
+            S.delNode(c.id);
+            S.run('DELETE FROM commit_idx WHERE sha = ?', sha);
+            touch(sha, c.title);
+            continue;
+        }
+        if (now === undefined && failed.has(c.repo))
+            continue;
+        const old = extras.get(c.id);
+        if (!old)
+            continue;
+        const { unreachable: _u, ...rest } = old;
+        const m = main.get(c.repo);
+        const want = now === undefined ? { ...rest, onMain: false, unreachable: true } : { ...rest, ...(m ? { onMain: m.has(sha) } : {}) };
+        if (JSON.stringify(sortKeys(want)) !== JSON.stringify(sortKeys(old))) {
+            S.writes++;
+            S.run('UPDATE nodes SET extra = ? WHERE id = ?', JSON.stringify(sortKeys(want)), c.id);
+        }
     }
     const add = new Map();
     for (const [sha, repo] of wanted)
@@ -492,7 +522,7 @@ function applyCommits(S, repos, warnings) {
             warnings.push(`git log failed in ${repo}`);
             continue;
         }
-        for (const c of parseLog(raw, repo)) {
+        for (const c of parseLog(raw, repo, undefined, main.get(repo) ?? undefined)) {
             const sha = c.node.extra.sha;
             S.putNode(c.node);
             for (const e of commitEdges(c))

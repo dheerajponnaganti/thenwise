@@ -13,7 +13,7 @@ const SCHEMA = {
     exclude_projects: 'string[]',
     off: 'boolean',
     off_projects: 'string[]',
-    ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', prs: 'boolean', plans: 'boolean' },
+    ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean' },
     vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
     backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
     views: { projects: 'object' },
@@ -118,9 +118,10 @@ export function loadConfigSafe(home = homedir()) {
         vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
         backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
         scope: user.scope ?? 'project',
-        includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop'],
+        includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', ''],
         ingestExcludeProjects: ing.exclude_projects ?? ['*-eval-ws*'],
         ingestExcludeMarkers: ing.exclude_markers ?? ['[memory-eval]'],
+        ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,
         viewProjects: Object.entries((user.views?.projects ?? {})).map(([name, p]) => ({ name, words: (p.words ?? []).map((w) => w.toLowerCase()), paths: list(p.paths, []) })),
     };
     return { config, errors: [], warnings: read.warnings };

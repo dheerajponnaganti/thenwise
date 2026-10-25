@@ -4,20 +4,21 @@
 // Deterministic: inputs are sorted and no wall-clock time is used in the graph.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync } from 'node:zlib';
 import { syncTrailers } from "../capture/notes.js";
 import { buildLanguage } from "../query/language.js";
 import { buildPassageIndex } from "../query/passages.js";
-import { globMatch } from "./config.js";
+import { loadTombs, underFolder } from "../privacy/tombstones.js";
+import { globMatch, isOff } from "./config.js";
 import { updateGraph } from "./incremental.js";
 import { withLock } from "./lock.js";
-import { LOG_FORMAT, Graph, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
+import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
-import { discoverRepos } from "./repos.js";
+import { discoverRepos, githubSlug } from "./repos.js";
 import { parseSession } from "./transcript.js";
 export { GENERATED, datedSections } from "./parts.js";
 export const STATE_VERSION = 1;
@@ -42,6 +43,19 @@ export const DERIVED = new Set(['made', 'opened', 'mentions']);
 export const FILE_KINDS = ['changed', 'read', 'edited', 'ran_in', 'touches'];
 export const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 export const sessionId = (name) => name.replace(/\.jsonl\.gz$/, '');
+/** Parses one archived chat file; a subagent file is read as turns of its parent session. */
+export function parseSf(sf, bytes, home, until = '') {
+    const sub = sf.name.includes('/subagents/');
+    return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub);
+}
+/** Commits reachable from the default branch: origin/HEAD if set, else main or master, else HEAD. Null when git fails. */
+export function mainShas(repo) {
+    const ref = gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
+    const raw = gitOut(repo, ['rev-list', ref]);
+    return raw === null ? null : new Set(raw.split('\n').filter(Boolean));
+}
+// Stash refs hold work in progress, not history: never read.
+export const ALL_REFS = ['--exclude=refs/stash', '--all'];
 /** The archived chats, sorted, and how many sit in projects ingest leaves out (counted, never read). */
 export function scanSessions(cfg) {
     const dir = join(cfg.memDir, 'archive/sessions');
@@ -53,7 +67,13 @@ export function scanSessions(cfg) {
         const kd = join(dir, key);
         if (!statSync(kd).isDirectory())
             continue;
-        const names = readdirSync(kd).filter((x) => x.endsWith('.jsonl.gz')).sort();
+        // Subagent chats sit in <session>/subagents/; they are named "<session>/subagents/<x>.jsonl.gz".
+        const names = readdirSync(kd, { withFileTypes: true }).flatMap((e) => {
+            if (e.isFile() && e.name.endsWith('.jsonl.gz'))
+                return [e.name];
+            const sub = join(kd, e.name, 'subagents');
+            return e.isDirectory() && existsSync(sub) ? readdirSync(sub).filter((x) => x.endsWith('.jsonl.gz')).map((x) => `${e.name}/subagents/${x}`) : [];
+        }).sort();
         if (cfg.ingestExcludeProjects.some((g) => globMatch(g, key))) {
             skipped += names.length;
             continue;
@@ -87,7 +107,46 @@ export function loadPrInputs(cfg, opts, repos, warnings) {
         return [];
     }
 }
+/** Drops cached PR lists of these GitHub repos (a forgotten project's PRs must not stay on disk). */
+export function dropPrCache(memDir, slugs) {
+    const f = join(memDir, 'prs-cache.json');
+    try {
+        const c = JSON.parse(readFileSync(f, 'utf8'));
+        if (!slugs.some((s) => s in c))
+            return;
+        for (const s of slugs)
+            delete c[s];
+        writeFileSync(`${f}.tmp`, JSON.stringify(c), { mode: 0o600 });
+        renameSync(`${f}.tmp`, f);
+    }
+    catch { }
+}
+/** The config minus forgotten and paused folders, so their commits, PRs, rules, notes and plans stay out of the store. */
+export function pruneCfg(cfg) {
+    const t = loadTombs(cfg.memDir);
+    const gone = (p) => t.folders.some((f) => underFolder(p, f)) || isOff({ off: false, offProjects: cfg.offProjects }, p);
+    const repos = cfg.repos.filter((r) => !gone(r));
+    const roots = cfg.roots.filter((r) => !gone(r));
+    const vaults = cfg.vaults.filter((v) => !gone(v));
+    // Plan snapshots and chats are keyed by Claude Code project key: by tombstoned key, or by the folder a snapshot recorded.
+    const plans = join(cfg.memDir, 'archive', 'plans');
+    const keys = new Set(t.projects);
+    for (const k of existsSync(plans) ? readdirSync(plans) : []) {
+        try {
+            if (gone(readFileSync(join(plans, k, '.folder'), 'utf8').trim()))
+                keys.add(k);
+        }
+        catch { }
+    }
+    const dropped = cfg.repos.filter((r) => gone(r));
+    if (!dropped.length && roots.length === cfg.roots.length && vaults.length === cfg.vaults.length && !keys.size)
+        return cfg;
+    const slugs = dropped.map(githubSlug).filter((s) => !!s);
+    dropPrCache(cfg.memDir, slugs);
+    return { ...cfg, repos, roots, vaults, githubRepos: cfg.githubRepos.filter((s) => !slugs.includes(s)), ingestExcludeProjects: [...cfg.ingestExcludeProjects, ...keys] };
+}
 export function ingest(cfg, opts = {}) {
+    cfg = pruneCfg(cfg);
     const dbPath = opts.db ?? join(cfg.memDir, 'graph.db');
     return withLock(dbPath, () => {
         const t0 = Date.now();
@@ -135,24 +194,25 @@ function fullBuild(cfg, opts, dbPath) {
     const fileRows = [];
     for (const sf of files) {
         const bytes = readFileSync(sf.path);
-        const s = parseSession(gunzipSync(bytes).toString('utf8'), sessionId(sf.name), cfg.home, opts.until);
+        const s = parseSf(sf, bytes, cfg.home, opts.until);
         const status = classify(cfg, s);
         counts[status]++;
         fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, sha256(bytes), status]);
         if (status === 'in')
-            sessions.push({ cwd: s.cwd, key: sf.key, file: sf.file, part: sessionPart(s, sf.key) });
+            sessions.push({ cwd: s.cwd, dirs: editDirs(s), key: sf.key, file: sf.file, part: sessionPart(s, sf.key) });
     }
     // 2. Git commits (read only), from the configured repos and the repos the chats worked in.
-    const repos = discoverRepos(cfg.repos, sessions.map((x) => x.cwd));
+    const repos = discoverRepos(cfg.repos, sessions.flatMap((x) => [x.cwd, ...workDirs(cfg, x.dirs)]));
     const trailerItems = [];
     const commits = new Map(); // full sha -> commit
     for (const repo of repos) {
-        const raw = gitOut(repo, ['log', '--all', ...LOG_FORMAT]);
+        const raw = gitOut(repo, ['log', ...ALL_REFS, ...LOG_FORMAT]);
         if (raw === null) {
             warnings.push(`git log failed in ${repo}`);
             continue;
         }
-        for (const c of parseLog(raw, repo, opts.until)) {
+        const main = mainShas(repo);
+        for (const c of parseLog(raw, repo, opts.until, main ?? undefined)) {
             const sha = c.node.extra.sha;
             if (commits.has(sha))
                 continue;
@@ -249,6 +309,7 @@ function fullBuild(cfg, opts, dbPath) {
 export const SCHEMA = `CREATE TABLE nodes(id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT, text TEXT, at TEXT, until TEXT, project TEXT, source TEXT, extra TEXT);
 CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at TEXT, extra TEXT, PRIMARY KEY(src, dst, kind));
 CREATE INDEX edges_dst ON edges(dst, kind);
+CREATE INDEX nodes_kind ON nodes(kind, source);
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE VIRTUAL TABLE nodes_fts USING fts5(title, text, content='nodes', content_rowid='rowid');`;
 const STATE_SCHEMA = `CREATE TABLE ingest_state(key TEXT PRIMARY KEY, value TEXT);

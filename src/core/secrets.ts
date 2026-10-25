@@ -31,12 +31,13 @@ const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)([^\s@/]{3,})@/gi
 // Upper-case env names ending in a secret word: `STRIPE_KEY=...`, `DB_PASSWORD=...`; Azure `AccountKey=...`.
 const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)|AccountKey|SharedAccessKey)(\s*=\s*["']?)([^\s"';]{8,})/g
 // The value after a secret-looking name: `api_key = abcd...`, `"password": "..."`, `Authorization: Bearer ...`.
-// Longer names count too: `client_secret`, `access_token`, `aws_secret_access_key`.
-const ASSIGNED = /\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+)((?:bearer|basic)\s+)?([^\s"',;]{8,})/gi
+// Longer names count too: `client_secret`, `access_token`, `aws_secret_access_key`. Plain whitespace separates only
+// before `bearer`/`basic` (or after `Bearer` itself), so prose like "token expiration" keeps its words.
+const ASSIGNED = /\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?([^\s"',;]{8,})/gi
 
 export const MASK = '[secret masked]'
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */
-export const MASK_VERSION = 4
+export const MASK_VERSION = 5
 
 export function maskSecrets(text: string): { text: string; count: number } {
   let count = 0
@@ -64,11 +65,20 @@ export function maskSecrets(text: string): { text: string; count: number } {
   out = out.replace(CURL_USER, (m, head: string, pass: string) => (pass.startsWith('[secret') ? m : (count++, `${head}${MASK}`)))
   out = out.replace(ENV, (m, name: string, sep: string, value: string) => (value.startsWith('[secret') ? m : (count++, `${name}${sep}${MASK}`)))
   out = out.replace(ASSIGNED, (m, name: string, sep: string, bearer: string | undefined, value: string) => {
-    if (value === MASK || value.startsWith('[secret') || value.startsWith('masked]')) return m
+    if (/\(\)?$/.test(value) || value === MASK || value.startsWith('[secret') || value.startsWith('masked]')) return m
     count++
 
     return `${name}${sep}${bearer ?? ''}${MASK}`
   })
 
   return { text: out, count }
+}
+
+/** Masks every string inside parsed JSON. */
+export const maskDeep = (v: unknown): unknown => {
+  if (typeof v === 'string') return maskSecrets(v).text
+  if (Array.isArray(v)) return v.map(maskDeep)
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskDeep(x)]))
+
+  return v
 }

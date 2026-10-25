@@ -13,13 +13,17 @@ const closed = (n, t, now = false) => !!n.extra?.curated && (n.until ? ms(n.unti
 const short = (id) => id.replace(/^(ses|turn|sum):(.{8}).*$/, '$1:$2');
 const cut = (s, n) => (s.length > n ? `${s.slice(0, n).trimEnd()}...` : s);
 const flat = (s) => s.replace(/\s+/g, ' ').trim();
+/** Commits not on main or gone from git carry a label; a stash is never a commit worth citing. */
+const offMain = (n) => n.kind === 'commit' && (n.extra?.onMain === false || !!n.extra?.unreachable);
+const isStash = (n) => n.kind === 'commit' && (!!n.extra?.stash || /^(WIP on|index on|On) [^\s:]+:/.test(n.title));
+const branchNote = (n) => (n.kind !== 'commit' ? '' : n.extra?.unreachable ? ' (no longer in git)' : n.extra?.onMain === false ? (n.extra.branch ? ` (on branch ${n.extra.branch}, not on main)` : ' (not on main)') : '');
 function sourceOf(n) {
     if (n.kind === 'turn' || n.kind === 'summary')
         return `session ${short(n.source)} at ${local(n.at)}`;
     if (n.kind === 'pr')
         return `PR #${n.id.split('#').pop()} ${n.extra.url ?? n.source}${n.until ? `, merged ${n.until}` : `, ${n.extra.state ?? 'open'}`}`;
     if (n.kind === 'commit')
-        return `commit ${n.id.split(':').pop().slice(0, 7)} in ${n.project}`;
+        return `commit ${n.id.split(':').pop().slice(0, 7)} in ${n.project}${branchNote(n)}`;
     if (n.kind === 'session')
         return `session ${short(n.id)} ${local(n.at)} to ${local(n.until)}`;
     if (n.kind === 'section')
@@ -40,7 +44,7 @@ export function label(g, id) {
     if (n.kind === 'pr')
         return `PR #${n.id.split('#').pop()} "${cut(n.title, 60)}"`;
     if (n.kind === 'commit')
-        return `commit ${n.id.split(':').pop().slice(0, 7)} "${cut(n.title, 60)}"`;
+        return `commit ${n.id.split(':').pop().slice(0, 7)} "${cut(n.title, 60)}"${branchNote(n)}`;
     if (n.kind === 'note')
         return `note "${n.title}"`;
     if (n.kind === 'file')
@@ -193,10 +197,10 @@ export function asof(g, date, q, limit = 5) {
     const end = ms(endOf(date));
     if (Number.isNaN(end))
         return `asof needs an ISO date first, such as 2026-10-19; got "${date}".`;
-    const s = g.search(q, { filter: (n) => !undated(n) && ms(n.at) <= end && !closed(n, end), limit: 100 });
+    const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end), limit: 100 });
     if (!s.good.length)
         return notRecorded(`"${q}" on or before ${date}`, s);
-    const top = s.good.slice(0, 12).sort((a, b) => ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1)).slice(0, limit);
+    const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node) || ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1)).slice(0, limit);
     const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, newest first`, `searched: ${s.terms.join(' ')}`, 'rules and memory files are undated and left out', CUT, `current at ${date}: ${label(g, top[0].node.id)} (${local(top[0].node.at)})`];
     const repos = commitsAt(g, end);
     if (repos.length)
@@ -210,11 +214,12 @@ export function asof(g, date, q, limit = 5) {
 /** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
 function commitsAt(g, end) {
     const best = new Map();
-    for (const n of g.nodes.values()) {
-        if (n.kind !== 'commit' || !(ms(n.at) <= end) || !g.inScope(n))
+    for (const n of g.ofKind('commit')) {
+        if (isStash(n) || !(ms(n.at) <= end) || !g.inScope(n))
             continue;
         const b = best.get(n.source);
-        if (!b || ms(n.at) > ms(b.at))
+        // On-main commits beat the rest; among equals the newest wins.
+        if (!b || +offMain(b) > +offMain(n) || (offMain(b) === offMain(n) && ms(n.at) > ms(b.at)))
             best.set(n.source, n);
     }
     return [...best.values()].sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4).map((n) => `- ${n.project}: ${label(g, n.id)}, ${local(n.at)}: git -C ${n.source} show ${String(n.extra.sha ?? n.id.split(':').pop()).slice(0, 7)}:<path>`);
@@ -223,7 +228,8 @@ function pick(g, id, keys) {
     const ps = g.passages(id);
     return ps.find((p) => keys.some((k) => k && p.text.toLowerCase().includes(k.toLowerCase()))) ?? ps[0];
 }
-export function trace(g, target, cap = 15) {
+/** `offset` skips that many of the newest items (paging); `budget` is the character budget for the items, 0 for no limit. */
+export function trace(g, target, cap = 100, offset = 0, budget = 0) {
     const ex = g.exact(target);
     if (!ex.length) {
         const s = g.search(target);
@@ -238,7 +244,7 @@ export function trace(g, target, cap = 15) {
         const t = g.nodes.get(id);
         const keys = [id.split('#').pop(), id.split(':').pop().slice(0, 7), t.title, ...(t.extra.aliases ?? [])].filter((k) => k.length >= 3);
         const seen = new Set([id]);
-        const nb = (g.adj.get(id) ?? []).filter((e) => e.kind !== 'part_of' && !g.isHub(e.to) && g.inScope(g.nodes.get(e.to)) && !seen.has(e.to) && seen.add(e.to)).sort((a, b) => ms(g.nodes.get(b.to).at) - ms(g.nodes.get(a.to).at) || (a.to < b.to ? -1 : 1));
+        const nb = (g.adj.get(id) ?? []).filter((e) => e.kind !== 'part_of' && !g.isHub(e.to) && g.inScope(g.nodes.get(e.to)) && !seen.has(e.to) && seen.add(e.to)).sort((a, b) => +offMain(g.nodes.get(a.to)) - +offMain(g.nodes.get(b.to)) || ms(g.nodes.get(b.to).at) - ms(g.nodes.get(a.to).at) || (a.to < b.to ? -1 : 1));
         if (nb.length > cap)
             out.push(`${label(g, id)} is linked to ${nb.length} items; the newest ${cap} are shown.`);
         const own = pick(g, id, []);
@@ -252,7 +258,18 @@ export function trace(g, target, cap = 15) {
         }
     }
     items.sort((a, b) => ms(b.date) - ms(a.date));
-    return [...out, ...grouped(items)].join('\n\n');
+    const from = Math.min(Math.max(0, Math.floor(offset) || 0), items.length);
+    let shown = items.length;
+    if (budget > 0) {
+        // Newest first, so the budget cuts the oldest items; the first item always stays so a page is never empty.
+        let used = out.join('\n\n').length;
+        shown = from;
+        while (shown < items.length && (shown === from || used + items[shown].text.length + 20 <= budget))
+            used += items[shown++].text.length + 20;
+    }
+    const more = items.length - shown;
+    const note = from > 0 || more > 0 ? [`items ${from + 1} to ${shown} of ${items.length}, newest first.${more > 0 ? ` ${more} older items not shown: call memory_trace again with offset=${shown}.` : ''}`] : [];
+    return [...out, ...grouped(items.slice(from, shown)), ...note].join('\n\n');
 }
 function grouped(items) {
     const out = [];
@@ -267,7 +284,7 @@ function grouped(items) {
 }
 export function resume(g, q = '') {
     const terms = queryTerms(q);
-    const sessions = [...g.nodes.values()].filter((n) => n.kind === 'session' && g.inScope(n));
+    const sessions = g.ofKind('session').filter((n) => g.inScope(n));
     let ses;
     let how = 'the newest session';
     const key = words(q).join('-');
@@ -292,7 +309,7 @@ export function resume(g, q = '') {
     if (!ses)
         return 'not recorded: the graph holds no sessions.';
     const out = [`resume${q ? ` "${q}"` : ''}: ${how}: ${label(g, ses.id)}, ${ses.at} to ${ses.until}`];
-    const kids = [...g.nodes.values()].filter((n) => n.source === ses.id && (n.kind === 'turn' || n.kind === 'summary')).sort((a, b) => ms(b.at) - ms(a.at) || (a.id < b.id ? -1 : 1));
+    const kids = g.bySource(ses.id).sort((a, b) => ms(b.at) - ms(a.at) || (a.id < b.id ? -1 : 1));
     const sum = kids.find((n) => n.kind === 'summary');
     const turns = kids.filter((n) => n.kind === 'turn').slice(0, 3);
     const lastAt = kids[0]?.at ?? ses.until;
@@ -308,26 +325,33 @@ export function resume(g, q = '') {
     }));
     const lower = (n) => `${n.title}\n${g.fullText(n.id)}`.toLowerCase();
     const on = (n) => !terms.length || terms.some((t) => lower(n).includes(t));
-    const prs = [...g.nodes.values()].filter((n) => n.kind === 'pr' && g.inScope(n) && n.extra.state === 'OPEN' && on(n)).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 8);
+    const prs = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN' && on(n)).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 8);
     out.push(`## Open PRs${prs.length ? '' : ': none recorded'}`, ...prs.map((n) => `- ${label(g, n.id)}, opened ${n.at}, ${n.extra.url}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 400)}`));
     const cwd = String(ses.extra.cwd ?? '');
-    const commits = [...g.nodes.values()].filter((n) => n.kind === 'commit' && g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10);
+    const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10);
     out.push(`## Commits after the last turn (${lastAt})${commits.length ? '' : ': none recorded'}`, ...commits.map((n) => `- ${label(g, n.id)}, ${n.at}`));
-    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : [...g.nodes.values()].filter((n) => n.kind === 'note' && g.inScope(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
+    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : g.ofKind('note').filter((n) => g.inScope(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Newest matching vault notes${notes.length ? '' : ': none recorded'}`, ...notes.map((n) => `- ${label(g, n.id)}, ${n.at}, ${n.source}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 500)}`));
     // Where the work stands is often in the release history and the "next to build" line, whatever the query words.
-    const releases = [...g.nodes.values()].filter((n) => g.inScope(n) && ((n.kind === 'commit' && /^(\w[\w-]* )?v?\d+\.\d+\.\d+\b/.test(n.title)) || (n.kind === 'pr' && /^release v?\d+\.\d+/i.test(n.title)))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
+    const releases = g.ofKind('commit', 'pr').filter((n) => g.inScope(n) && ((n.kind === 'commit' && /^(\w[\w-]* )?v?\d+\.\d+\.\d+\b/.test(n.title)) || (n.kind === 'pr' && /^release v?\d+\.\d+/i.test(n.title)))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Latest releases${releases.length ? '' : ': none recorded'}`, ...releases.map((n) => `- ${label(g, n.id)}, ${local(n.at)}`));
-    const next = [...g.nodes.values()].filter((n) => (n.kind === 'note' || n.kind === 'section') && /pending|home/i.test(n.id)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
+    const next = g.ofKind('note', 'section').filter((n) => /pending|home/i.test(n.id)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
     out.push(`## Next on the build list${next.length ? '' : ': none recorded'}`, ...[...new Set(next)].slice(0, 6));
-    for (const n of [...g.nodes.values()].filter((x) => x.kind === 'note' && /pending/i.test(x.id) && on(x)).slice(0, 2)) {
+    for (const n of g.ofKind('note').filter((x) => /pending/i.test(x.id) && on(x)).slice(0, 2)) {
         const open = g.fullText(n.id).split('\n').filter((l) => /^\s*[-*]\s+\[ \]/.test(l));
         out.push(`## Unchecked items in ${label(g, n.id)} (${n.at})`, open.length ? open.join('\n') : 'none unchecked');
     }
     const since = [lastAt, ...notes.map((n) => n.at)].sort().pop();
     out.push(`## Check against the repo (this output only knows what was recorded up to ${since})`, `- working directory of the session: ${cwd || 'unknown'}`, '- current branch: `git branch --show-current`, and compare with the branch named in the notes or PRs above', '- uncommitted changes: `git status --short`', `- commits after ${since}: \`git log --since=${since.slice(0, 10)} --oneline\``, '- open PRs still open: `gh pr list`; the PRs above may have merged since', '- trust the repo over any note above when they disagree');
-    return out.join('\n\n');
+    // The hook cuts this brief from the end, so the parts that tell what to do next come first and the oldest material last.
+    const groups = [];
+    for (const x of out.slice(1))
+        x.startsWith('## ') || !groups.length ? groups.push([x]) : groups[groups.length - 1].push(x);
+    const rank = (g0) => ORDER.findIndex((o) => g0[0].startsWith(`## ${o}`));
+    groups.sort((a, b) => rank(a) - rank(b));
+    return [out[0], ...groups.flat()].join('\n\n');
 }
+const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest'];
 /** Up to three shortest paths of at most four hops, found one at a time with the used middle nodes removed. */
 export function path(g, a, b, max = 4) {
     const resolve = (q) => g.exact(q)[0]?.id ?? g.nodes.get(q)?.id ?? g.search(q).good[0]?.node.id;
@@ -387,7 +411,7 @@ export function get(g, id) {
     const nid = p && g.nodes.has(p[1]) ? p[1] : id;
     const n = g.nodes.get(nid);
     if (!n) {
-        const near = [...g.nodes.keys()].filter((k) => k.includes(id)).slice(0, 5);
+        const near = g.idsContaining(id, 5);
         return `not recorded: no node with id "${id}".${near.length ? `\nIds containing it: ${near.join(', ')}` : ''}`;
     }
     const text = p && nid !== id ? g.passages(nid).find((x) => x.n === Number(p[2]))?.text : g.fullText(nid);

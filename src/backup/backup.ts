@@ -6,6 +6,9 @@ import { accessSync, chmodSync, constants, copyFileSync, existsSync, mkdirSync, 
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 
 import type { Config } from '../ingest/config.ts'
+import { OURS } from '../vault/user.ts'
+
+export const MARKER = '.thenwise-backup' // in a backup folder Thenwise made; lists the files it copied
 
 const DAY_MS = 864e5
 const stamp = (cfg: Config) => join(cfg.memDir, 'backup.json')
@@ -36,8 +39,9 @@ function files(vault: string, memDir: string): string[] {
   return out.sort()
 }
 
+const GIT_MS = 120_000 // a stalled push must not freeze every later sync
 function git(vault: string, args: string[]): string {
-  return execFileSync('git', ['-C', vault, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  return execFileSync('git', ['-C', vault, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_MS, killSignal: 'SIGKILL' })
 }
 
 function toGit(cfg: Config, vault: string): string[] {
@@ -59,10 +63,12 @@ function toGit(cfg: Config, vault: string): string[] {
   } catch {
     who = ['-c', 'user.name=Thenwise', '-c', 'user.email=thenwise@localhost']
   }
-  git(vault, ['add', '-A'])
-  if (git(vault, ['status', '--porcelain']).trim() === '') lines.push('git: nothing changed since the last commit')
+  // Only Thenwise's own folder: the user's other vault work is never staged or committed.
+  const mine = existsSync(join(vault, OURS)) ? [OURS] : []
+  if (mine.length) git(vault, ['add', '--', ...mine])
+  if (!mine.length || git(vault, ['status', '--porcelain', '--', ...mine]).trim() === '') lines.push('git: nothing changed since the last commit')
   else {
-    git(vault, [...who, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', `Thenwise backup ${new Date().toISOString()}`])
+    git(vault, [...who, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', `Thenwise backup ${new Date().toISOString()}`, '--', ...mine])
     lines.push('git: committed the vault')
   }
   if (cfg.backup.push) {
@@ -71,8 +77,16 @@ function toGit(cfg: Config, vault: string): string[] {
     } catch {
       throw new Error('backup.push is on but the vault repo has no remote named origin. Add one with: git remote add origin <url>')
     }
-    git(vault, ['push', '-q', 'origin', 'HEAD'])
-    lines.push('git: pushed to origin')
+    let head = true
+    try {
+      git(vault, ['rev-parse', '--verify', '-q', 'HEAD'])
+    } catch {
+      head = false
+    }
+    if (head) {
+      git(vault, ['push', '-q', 'origin', 'HEAD'])
+      lines.push('git: pushed to origin')
+    } else lines.push('git: nothing to push yet (no Thenwise notes committed)')
   } else lines.push('git: not pushed (set backup.push to true in config.json to push)')
 
   return lines
@@ -86,6 +100,13 @@ function toFolder(vault: string, memDir: string, target: string): string {
     throw new Error(`${target} is read-only`)
   }
   const dest = join(target, basename(vault))
+  const marker = join(dest, MARKER)
+  // Never touch a folder Thenwise did not make: it may hold the user's own files.
+  if (existsSync(dest) && readdirSync(dest).length && !existsSync(marker)) throw new Error(`${dest} already has files that Thenwise did not write. Use an empty folder or a new name.`)
+  let before: string[] = []
+  try {
+    before = JSON.parse(readFileSync(marker, 'utf8')).files ?? []
+  } catch {}
   const list = files(vault, memDir)
   let copied = 0
   mkdirSync(dest, { recursive: true, mode: 0o700 })
@@ -99,19 +120,17 @@ function toFolder(vault: string, memDir: string, target: string): string {
     chmodSync(to, 0o600)
     copied++
   }
-  // The copy mirrors the vault: a note removed from the vault leaves the backup too.
+  // Mirrors what Thenwise copied before: a note it copied and the vault no longer has leaves the backup. Nothing else is removed.
   const keep = new Set(list)
   let removed = 0
-  const sweep = (abs: string) => {
-    for (const e of readdirSync(abs, { withFileTypes: true })) {
-      const p = join(abs, e.name)
-      if (e.isDirectory()) {
-        sweep(p)
-        if (readdirSync(p).length === 0) rmSync(p, { recursive: true })
-      } else if (!keep.has(relative(dest, p))) (rmSync(p), removed++)
-    }
+  for (const rel of before.filter((r) => !keep.has(r))) {
+    const p = join(dest, rel)
+    if (!inside(resolve(p), dest) || !existsSync(p)) continue
+    rmSync(p)
+    removed++
+    for (let d = dirname(p); d !== dest && readdirSync(d).length === 0; d = dirname(d)) rmSync(d, { recursive: true })
   }
-  sweep(dest)
+  writeFileSync(marker, JSON.stringify({ note: 'Made by Thenwise. Only the files listed here are ever removed.', files: list }), { mode: 0o600 })
 
   return `${dest}: ${copied} copied, ${removed} removed`
 }

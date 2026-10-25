@@ -75,6 +75,6 @@ test('ingest reads answers and aliases from front matter', () => {
   writeFileSync(join(home, '.memory/config.json'), JSON.stringify({ ingest: { roots: [], repos: [], github_repos: [], vaults: [vault] } }))
   const r = ingest(loadConfig(home), { prs: undefined })
   const g = new Graph(r.db)
-  assert.deepEqual(g.nodes.get('note:Backup.md')!.extra, { answers: ['How do I preserve my records?'], aliases: ['cold storage'] })
+  assert.deepEqual(g.nodes.get('note:Backup.md')!.extra, { answers: ['How do I preserve my records?'], aliases: ['cold storage'], edited: g.nodes.get('note:Backup.md')!.extra.edited })
   assert.equal(g.search('preserve records').good[0]?.node.id, 'note:Backup.md')
 })

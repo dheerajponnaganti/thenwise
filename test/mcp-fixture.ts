@@ -21,7 +21,7 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
   const node = (id: string, kind: string, title: string, text: string, at: string, source = '', ex: object = {}, until = '') => db.prepare('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)').run(id, kind, title, text, at, until, 'p', source, JSON.stringify(ex))
   const edge = (src: string, dst: string, kind: string) => db.prepare('INSERT INTO edges VALUES (?,?,?,?,?)').run(src, dst, kind, '', '{}')
   node('ses:s1', 'session', 'work', 'work', '2026-10-05T09:00:00Z', '', { cwd }, '2026-10-07T12:00:00Z')
-  node('turn:t1', 'turn', 'single file cache', 'We tried a single cache file for the storage layer. It failed under load and we reverted it.', '2026-10-05T10:00:00Z', 'ses:s1')
+  node('turn:t1', 'turn', 'single file cache', 'We tried a single cache file for the storage layer. It failed under load and we reverted it.', '2026-10-05T10:00:00Z', 'ses:s1', { deadEnd: 'It failed under load and we reverted it.' })
   node('turn:t2', 'turn', 'storage chat', 'Decision: use eight cache shards because one big file got slow. Telugu: నమస్తే. Emoji: 🚀.', '2026-10-06T10:00:00Z', 'ses:s1')
   node('sum:s1a', 'summary', 'summary', 'The cache work moved to shards. Next: measure the shard size.', '2026-10-07T11:00:00Z', 'ses:s1')
   node('pr:proj#7', 'pr', 'Add cache module', 'Adds the cache module in src/cache.ts because the old one failed.', '2026-10-02T00:00:00Z', 'https://example.test/pull/7', { state: 'OPEN', url: 'https://example.test/pull/7' })

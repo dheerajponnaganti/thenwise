@@ -11,7 +11,7 @@ import { runDoctor } from '../src/setup/doctor.ts'
 import { discoverProjects } from '../src/setup/projects.ts'
 
 const CLI = new URL('../src/cli.ts', import.meta.url).pathname
-const MARK = '[memory-eval]'
+const MARK = '[no-memory]'
 
 function chat(dir: string, name: string, cwd: string, prompt: string) {
   mkdirSync(dir, { recursive: true })

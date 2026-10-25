@@ -52,7 +52,7 @@ function fixture() {
   writeFileSync(join(proj, 'CLAUDE.md'), '# Rules\n- Never add a co-author line\n```\n- not a rule\n```\n')
 
   mkdirSync(join(home, '.memory'), { recursive: true })
-  writeFileSync(join(home, '.memory/config.json'), JSON.stringify({ ingest: { roots: [proj], repos: [proj], github_repos: ['me/proj'], vaults: [vault] } }))
+  writeFileSync(join(home, '.memory/config.json'), JSON.stringify({ ingest: { roots: [proj], repos: [proj], github_repos: ['me/proj'], vaults: [vault], exclude_projects: ['*-eval-ws*'] } }))
 
   const dir = join(home, '.claude/projects/-home-proj')
   mkdirSync(dir, { recursive: true })
@@ -85,7 +85,7 @@ function fixture() {
   ))
   writeFileSync(join(dir, 'sdk.jsonl'), j({ ...u('k1', 'automated question', '2026-10-03T00:00:00Z'), entrypoint: 'mcp' }))
   // An interactive test chat in the real project, recognised by the marker in its prompts.
-  writeFileSync(join(dir, 'mk.jsonl'), j(u('mk1', 'what is the latest release? [memory-eval]', '2026-10-03T00:00:00Z')))
+  writeFileSync(join(dir, 'mk.jsonl'), j(u('mk1', 'what is the latest release? [no-memory]', '2026-10-03T00:00:00Z')))
   const evalKey = join(home, '.claude/projects/-home-proj-eval-ws-grep')
   mkdirSync(evalKey, { recursive: true })
   writeFileSync(join(evalKey, 'e1.jsonl'), j(u('e1', 'an eval question', '2026-10-03T00:00:00Z')))

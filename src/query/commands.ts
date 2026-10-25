@@ -51,17 +51,17 @@ export function sentence(g: Graph, src: string, dst: string, kind: string, extra
 }
 
 /** The part of a passage around its matches (the **highlights**, else the first of `keys`), about `max` characters. */
-export function excerpt(text: string, max = 360, keys: string[] = []): string {
+export function excerpt(text: string, max = 360, keys: string[] = [], idf: (word: string) => number = () => 1): string {
   if (text.length <= max) return text
   const lower = text.toLowerCase()
-  let at = [...text.matchAll(/\*\*/g)].map((m) => m.index).filter((_, i) => i % 2 === 0)
-  if (!at.length) at = keys.map((k) => lower.indexOf(k.toLowerCase())).filter((i) => i >= 0)
-  // The window that holds the most matches, starting a little before the first of them.
+  let at = [...text.matchAll(/\*\*([^*]+?)\*\*/g)].map((m) => ({ i: m.index!, w: m[1]!.toLowerCase() }))
+  if (!at.length) at = keys.map((k) => ({ i: lower.indexOf(k.toLowerCase()), w: k.toLowerCase() })).filter((a) => a.i >= 0)
+  // The window with the most weight in distinct matched words (rare words count more, a repeat counts once), starting a little before the first of them.
   let start = 0
   let most = -1
-  for (const p of at) {
-    const s = Math.max(0, p - 80)
-    const c = at.filter((q) => q >= s && q < s + max).length
+  for (const { i } of at) {
+    const s = Math.max(0, i - 80)
+    const c = [...new Set(at.filter((q) => q.i >= s && q.i < s + max).map((q) => q.w))].reduce((a, w) => a + idf(w), 0)
     if (c > most) (most = c, (start = s))
   }
   const sp = text.slice(start, start + 30).search(/\s/)
@@ -72,9 +72,30 @@ export function excerpt(text: string, max = 360, keys: string[] = []): string {
 }
 const quoted = (text: string) => text.split('\n').filter((l) => l.trim()).map((l) => `   | ${l}`).join('\n')
 
+/** Automatic dead ends (phrase rules at ingest, not curated notes) say so. */
+const deadNote = (n: Node) => (n.extra?.deadEnd ? `\n   dead end (automatic): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '')
+
 function result(i: number, h: Hit, extra = ''): string {
   const n = h.node
-  return `${i}. [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${h.project}   source: ${sourceOf(n)}   passage: ${h.pid.split('#').pop()}   found by: ${h.lanes.join('+')}${extra}\n${quoted(excerpt(h.shown))}`
+  return `${i}. [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${h.project}   source: ${sourceOf(n)}   passage: ${h.pid.split('#').pop()}   found by: ${h.lanes.join('+')}${deadNote(n)}${extra}\n${quoted(excerpt(h.shown, 360, [], h.idf))}`
+}
+/** The turn after a chat result in the same session: answers often sit next to the turn that used the question's words. */
+function nextTurn(g: Graph, n: Node): string {
+  if (n.kind !== 'turn') return ''
+  const sib = g.bySource(n.source).filter((x) => x.kind === 'turn').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+  const next = sib[sib.findIndex((x) => x.id === n.id) + 1]
+  return next ? `\n   same chat, next (${next.id}): ${cut(flat(g.passages(next.id)[0]?.text ?? next.title), 110)}` : ''
+}
+/** One line for a lower result: kind, id, date and the words around the match. */
+const brief = (i: number, h: Hit) => `${i}. ${h.node.id} ${local(h.node.at).slice(0, 10)} project: ${h.project} | ${flat(excerpt(h.shown, 80, [], h.idf)).replace(/\*\*/g, '')}`
+/** The top 3 in full (with the next turn of the same chat), then up to 7 more as one line each, so Claude has more to choose from. */
+function listing(g: Graph, items: { h: Hit; extra: string }[], limit = 10): string[] {
+  const full = items.slice(0, 3).map((x, i) => result(i + 1, x.h, x.extra + nextTurn(g, x.h.node)))
+  // One-liners stop before the tool output cap (4000 characters) would cut them mid-list.
+  let room = 3700 - full.join('\n\n').length
+  const more = items.slice(3, limit).map((x, i) => brief(i + 4, x.h)).filter((l) => (room -= l.length + 1) >= 0)
+
+  return [...full, ...(more.length ? [`more matches (get <id> prints one):\n${more.join('\n')}`] : [])]
 }
 const CUT = 'passages are cut to the words around the match ("..."); get <id>#<passage> prints one in full'
 function notRecorded(what: string, s: Search): string {
@@ -93,10 +114,10 @@ const head = (title: string, s: Search, shown: number, total: number) => {
   return out.join('\n')
 }
 
-export function search(g: Graph, q: string, limit = 6): string {
+export function search(g: Graph, q: string, limit = 10): string {
   const s = g.search(q)
   if (!s.good.length) return notRecorded(`"${q}"`, s)
-  return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...s.good.slice(0, limit).map((h, i) => result(i + 1, h, i < 3 ? newerNote(s, h) : ''))].join('\n\n')
+  return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...listing(g, s.good.slice(0, limit).map((h, i) => ({ h, extra: i < 3 ? newerNote(s, h) : '' })), limit)].join('\n\n')
 }
 
 // How final a record is: a merged PR, a commit or a dated log entry is the outcome; chat is often the discussion before it.
@@ -109,11 +130,13 @@ function newerOnTopic(s: Search, h: Hit): Hit | undefined {
   if (Number.isNaN(at) || undated(h.node)) return undefined
   // Same topic: it covers the query words about as well. The fused score alone would let an exact-title bonus hide it.
   // Rules, docs and memory files carry only a file time, so they never count as a newer record.
-  return s.good.filter((x) => x.node.id !== h.node.id && !undated(x.node) && ms(x.node.at) > at && x.cov >= 0.75 * h.cov && x.score >= top / 3).sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))[0]
+  // A sibling in the same session within 30 minutes (a crew brief next to its twin) is not a later record.
+  const sibling = (x: Hit) => ['turn', 'summary'].includes(x.node.kind) && ['turn', 'summary'].includes(h.node.kind) && x.node.source === h.node.source && ms(x.node.at) - at < 30 * 60000
+  return s.good.filter((x) => x.node.id !== h.node.id && !undated(x.node) && ms(x.node.at) > at && !sibling(x) && x.cov >= 0.75 * h.cov && x.score >= top / 3).sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))[0]
 }
 const newerNote = (s: Search, h: Hit) => {
   const n = newerOnTopic(s, h)
-  return n ? `\n   NEWER on this topic: ${n.node.kind} ${n.node.id} (${local(n.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now` : ''
+  return n ? `\n   NEWER on this topic: ${n.node.kind} ${n.node.id} (${local(n.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now\n   newer says: ${flat(excerpt(n.shown, 160, [], n.idf)).replace(/\*\*/g, "")}` : ''
 }
 
 /** current: what holds now on a topic. Relevance, times how final the record is (PRs, commits and dated log entries
@@ -144,17 +167,17 @@ export function current(g: Graph, topic: string, limit = 5): string {
 
 /** why and tried: the topic's best passages, boosted when they state a reason or an attempt. Relevance leads; markers only
  * reorder close calls, so a plain commit message that holds the answer is not thrown away. */
-function marked(g: Graph, name: string, topic: string, markers: RegExp[], limit = 5): string {
+function marked(g: Graph, name: string, topic: string, markers: RegExp[], limit = 10): string {
   const s = g.search(topic, { limit: 400 })
   if (!s.good.length) return notRecorded(`${name} for "${topic}"`, s)
   const top = Math.max(...s.good.map((h) => h.score))
   const scored = s.good
     .map((h) => {
-      const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0)
+      const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' && h.node.extra?.deadEnd ? 1 : 0)
       return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) }
     })
     .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1))
-  return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...scored.slice(0, limit).map((x, i) => result(i + 1, x.h, `   markers: ${x.m}${i < 3 ? newerNote(s, x.h) : ''}`))].join('\n\n')
+  return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...listing(g, scored.slice(0, limit).map((x, i) => ({ h: x.h, extra: `   markers: ${x.m}${i < 3 ? newerNote(s, x.h) : ''}` })), limit)].join('\n\n')
 }
 export const why = (g: Graph, topic: string) => marked(g, 'why', topic, WHY)
 export const tried = (g: Graph, topic: string) => marked(g, 'tried', topic, TRIED)
@@ -179,8 +202,8 @@ function replacedBy(g: Graph, h: Hit, q: string): string | undefined {
 
 export function asof(g: Graph, date: string, q: string, limit = 5): string {
   const end = ms(endOf(date))
-  if (Number.isNaN(end)) return `asof needs an ISO date first, such as 2026-10-19; got "${date}".`
-  const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end), limit: 100 })
+  if (Number.isNaN(end)) return `asof needs an ISO date or date and time first, such as 2026-10-19 or 2026-10-19T06:50:00Z; got "${date}".`
+  const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end) && !(n.extra?.edited && ms(String(n.extra.edited)) > end), limit: 100 })
   if (!s.good.length) return notRecorded(`"${q}" on or before ${date}`, s)
   const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node) || ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1)).slice(0, limit)
   const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, newest first`, `searched: ${s.terms.join(' ')}`, 'rules and memory files are undated and left out', CUT, `current at ${date}: ${label(g, top[0]!.node.id)} (${local(top[0]!.node.at)})`]
@@ -233,7 +256,7 @@ export function trace(g: Graph, target: string, cap = 100, offset = 0, budget = 
       const n = g.nodes.get(e.to)!
       const p = pick(g, e.to, keys)
       const rel = e.out ? sentence(g, id, e.to, e.kind, e.extra) : sentence(g, e.to, id, e.kind, e.extra)
-      items.push({ date: n.at, text: `- [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${g.projectName(n)}   source: ${sourceOf(n)}\n   link: ${rel}${p ? `\n${quoted(excerpt(p.text, 300, keys))}` : ''}` })
+      items.push({ date: n.at, text: `- [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${g.projectName(n)}   source: ${sourceOf(n)}\n   link: ${rel}${deadNote(n)}${p ? `\n${quoted(excerpt(p.text, 300, keys))}` : ''}` })
     }
   }
   items.sort((a, b) => ms(b.date) - ms(a.date))
@@ -380,7 +403,9 @@ export function get(g: Graph, id: string): string {
     const near = g.idsContaining(id, 5)
     return `not recorded: no node with id "${id}".${near.length ? `\nIds containing it: ${near.join(', ')}` : ''}`
   }
-  const text = p && nid !== id ? g.passages(nid).find((x) => x.n === Number(p[2]))?.text : g.fullText(nid)
+  const full = g.fullText(nid)
+  // A short node prints whole: its reason may sit in the next passage.
+  const text = p && nid !== id && full.length >= 3000 ? g.passages(nid).find((x) => x.n === Number(p[2]))?.text : full
   const edges = (g.adj.get(nid) ?? []).filter((e) => e.kind !== 'part_of').slice(0, 15).map((e) => `  ${e.out ? sentence(g, nid, e.to, e.kind, e.extra) : sentence(g, e.to, nid, e.kind, e.extra)}`)
   return [`[${n.kind}] ${id}\ndate: ${local(n.at)}   project: ${g.projectName(n)}   source: ${sourceOf(n)}\ntitle: ${n.title}`, text ?? `not recorded: ${id} has no such passage`, edges.length ? `links (first ${edges.length}):\n${edges.join('\n')}` : ''].filter(Boolean).join('\n\n')
 }

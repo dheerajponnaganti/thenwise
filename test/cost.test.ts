@@ -33,10 +33,8 @@ test('known usage gives known totals, a repeated message id counts once', () => 
 test('report lists interactive sessions only and honours --since', () => {
   const dir = mkdtempSync(join(tmpdir(), 'memv2-cost-'))
   mkdirSync(join(dir, '-p'))
-  mkdirSync(join(dir, '-x-eval-ws-y'))
   writeFileSync(join(dir, '-p/s1.jsonl.gz'), gzipSync(text))
   writeFileSync(join(dir, '-p/s2.jsonl.gz'), gzipSync(text.replaceAll('"cli"', '"sdk-cli"')))
-  writeFileSync(join(dir, '-x-eval-ws-y/s3.jsonl.gz'), gzipSync(text))
   const r = report(dir)
   assert.deepEqual(r.sessions.map((s) => s.session), ['s1'])
   assert.equal(r.total.output, 46)

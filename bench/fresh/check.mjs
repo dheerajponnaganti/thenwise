@@ -50,7 +50,7 @@ const sessions = {
   '-work-alpha/a1.jsonl': ['alpha', [['user', 'How should the billing exporter handle retries?'], ['assistant', [{ type: 'text', text: 'Decision: use exponential backoff with jitter for the billing exporter retries.' }]], ['user', `Here is my key ${SECRET} please keep it out of the notes`]]],
   '-work-alpha/a2.jsonl': ['alpha', [['user', 'Why did the nightly cache warmer fail?'], ['assistant', [{ type: 'text', text: 'The cache warmer failed because the TTL was shorter than the job interval.' }]]]],
   '-work-beta/b1.jsonl': ['beta', [['user', 'Pick a format for the changelog generator output'], ['assistant', [{ type: 'text', text: 'Decision: the changelog generator writes plain Markdown.' }]]]],
-  '-work-beta/b2.jsonl': ['beta', [['user', 'zebra quokka canary prompt [memory-eval]'], ['assistant', [{ type: 'text', text: 'zebra quokka answer' }]]]],
+  '-work-beta/b2.jsonl': ['beta', [['user', 'zebra quokka canary prompt [no-memory]'], ['assistant', [{ type: 'text', text: 'zebra quokka answer' }]]]],
 }
 for (const [rel, [proj, turns]] of Object.entries(sessions)) {
   const file = join(home, '.claude', 'projects', ...rel.split('/'))

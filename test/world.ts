@@ -80,7 +80,7 @@ export class World {
     writeFileSync(join(this.vault, 'Details.md'), 'Details about the plan.\n')
     writeFileSync(this.prs, '[]')
     mkdirSync(join(this.home, '.thenwise'), { recursive: true })
-    writeFileSync(join(this.home, '.thenwise/config.json'), JSON.stringify({ ingest: { roots: opts.roots ?? [this.proj, this.other, this.vault], repos: opts.repos ?? [this.proj], github_repos: opts.github ?? ['me/proj'], vaults: [this.vault] } }))
+    writeFileSync(join(this.home, '.thenwise/config.json'), JSON.stringify({ ingest: { roots: opts.roots ?? [this.proj, this.other, this.vault], repos: opts.repos ?? [this.proj], github_repos: opts.github ?? ['me/proj'], vaults: [this.vault], exclude_projects: ['*-eval-ws*'] } }))
     this.cfg = loadConfig(this.home)
     this.cfg.prs = true
   }

@@ -57,7 +57,7 @@ test('12: sdk and missing entrypoints are in, marked eval chats stay out', () =>
     w.chat('a', { turns: [{ prompt: 'one' }], entrypoint: 'sdk-cli' })
     w.chat('b', { turns: [{ prompt: 'two' }], entrypoint: 'sdk-ts' })
     w.chat('c', { turns: [{ prompt: 'three' }], entrypoint: '' })
-    w.chat('d', { turns: [{ prompt: '[memory-eval] four' }], entrypoint: 'sdk-cli' })
+    w.chat('d', { turns: [{ prompt: '[no-memory] four' }], entrypoint: 'sdk-cli' })
     w.chat('e', { turns: [{ prompt: 'five' }], entrypoint: 'sdk-cli' }, '-home-x-eval-ws-1')
     w.archive()
     assert.equal(w.ingest('inc.db').sessionsIn, 3)

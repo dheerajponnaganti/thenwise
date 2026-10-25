@@ -6,6 +6,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { join } from 'node:path'
 
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
+import { snapshotAll, snapshotBefore } from '../ingest/plans.ts'
 import { tighten } from '../privacy/perms.ts'
 
 export const TRACE_TOKENS = 600
@@ -119,6 +120,12 @@ export function syncRun(env: HookEnv) {
   const lock = join(env.dir, 'sync.lock')
   if (!takeLock(lock)) return log(env, 'sync skipped: another sync is running')
   try {
+    try {
+      const cfg = loadConfigSafe().config
+      if (cfg) log(env, `plans: ${snapshotAll(cfg)} new snapshot(s)`)
+    } catch (e) {
+      log(env, `plan scan failed: ${e instanceof Error ? e.message : e}`)
+    }
     for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : [])]) {
       const t = Date.now()
       const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', env: { ...process.env, THENWISE_HOME: env.dir } })
@@ -169,6 +176,12 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
       const block = resumeBlock(query(env, ['resume', topic, ...(cwd ? ['--project', cwd] : [])]), topic)
 
       return block === '' ? '' : reply('SessionStart', block)
+    }
+    if (name === 'plan') {
+      const file = input.tool_input?.file_path
+      if (cfg && typeof file === 'string') snapshotBefore(cfg, file, cwd)
+
+      return ''
     }
     if (name === 'read') {
       const file = input.tool_input?.file_path

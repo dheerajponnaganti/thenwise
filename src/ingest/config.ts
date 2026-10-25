@@ -22,6 +22,8 @@ export interface Config {
   githubRepos: string[]
   vaults: string[]
   prs: boolean
+  /** Keep every version of planning-with-files plans (task_plan.md, findings.md, progress.md). */
+  plans: boolean
   vault: { place: string; layout: string; path: string; commit: boolean } | null
   backup: { kind: string; folders: string[]; push: boolean }
   /** `project` (default): tools answer for the session's repository plus global notes; `all`: every project. */
@@ -42,7 +44,7 @@ const SCHEMA: Record<string, any> = {
   exclude_projects: 'string[]',
   off: 'boolean',
   off_projects: 'string[]',
-  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', prs: 'boolean' },
+  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', prs: 'boolean', plans: 'boolean' },
   vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
   backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
   views: { projects: 'object' },
@@ -148,6 +150,7 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     githubRepos: ing.github_repos ?? [],
     vaults: list(ing.vaults, []),
     prs: ing.prs ?? false,
+    plans: ing.plans ?? true,
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',

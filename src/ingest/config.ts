@@ -31,6 +31,10 @@ export interface Config {
   gitAll: boolean
   /** Keep every version of planning-with-files plans (task_plan.md, findings.md, progress.md). */
   plans: boolean
+  /** Pointers to past work before a prompt that asks about it (UserPromptSubmit). */
+  promptMap: boolean
+  /** A short brief at startup in a repo with a session in the last 7 days. */
+  startupBrief: boolean
   vault: { place: string; layout: string; path: string; commit: boolean } | null
   backup: { kind: string; folders: string[]; push: boolean }
   /** `project` (default): tools answer for the session's repository plus global notes; `all`: every project. */
@@ -57,6 +61,7 @@ const SCHEMA: Record<string, any> = {
   vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
   backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
   views: { projects: 'object' },
+  hooks: { prompt_map: 'boolean', startup_brief: 'boolean' },
   scope: 'string',
 }
 const ENUMS: Record<string, string[]> = { 'vault.place': ['central', 'project', 'obsidian'], 'vault.layout': ['shared', 'per-project'], 'backup.kind': ['none', 'git', 'folders'], scope: ['project', 'all'] }
@@ -164,6 +169,8 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     prs: ing.prs ?? false,
     gitAll: ing.git_all ?? false,
     plans: ing.plans ?? true,
+    promptMap: user.hooks?.prompt_map ?? true,
+    startupBrief: user.hooks?.startup_brief ?? true,
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',

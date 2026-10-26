@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.9" src="https://img.shields.io/badge/version-0.1.9-1E1C19">
+  <img alt="Version 0.1.10" src="https://img.shields.io/badge/version-0.1.10-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -24,6 +24,8 @@ Every project collects answers nobody wrote down. Thenwise keeps them and hands 
 
 You do not always have to ask. Some of it arrives on its own, at the right moment.
 
+- **When you ask about the past**, Claude gets up to three pointers to the records that answer it, before it even starts. A question about the work at hand gets nothing.
+- **When you open a project you worked on this week**, Claude starts with where it stood: the last session, and what landed since.
 - **After a compaction**, Claude gets a short resume brief and carries on where it left off.
 - **When Claude opens a file**, it learns that file's dead ends and decisions before touching it.
 - **Plans never vanish.** Every version of your [planning-with-files](https://github.com/othmanadi/planning-with-files) plans is saved before it gets overwritten, so last week's plan is one search away.
@@ -157,6 +159,7 @@ In Claude Code:
 
 - `/thenwise:status`: what is stored and when it last synced.
 - `/thenwise:resume [topic]`: brief Claude on past work.
+- `/thenwise:why <words>`, `/thenwise:tried <words>`, `/thenwise:asof <date> <words>`: ask the memory directly.
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.
@@ -173,7 +176,7 @@ In the terminal:
 - `thenwise off|on [--project <path>]`.
 - `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 
-Hooks: session start syncs in the background and, after a compaction, adds a resume brief of at most 1,500 tokens. Opening a file adds its dead ends and decisions, at most 600 tokens, once per file per session. A hook never fails the chat; errors go to the log.
+Hooks: session start syncs in the background; in a repo with a session in the last 7 days it adds a brief of at most 200 tokens, and after a compaction a resume brief of at most 1,500 tokens. A prompt that asks about the past gets at most three pointers (about 300 tokens); most prompts get nothing. Turn either off with `"hooks": { "prompt_map": false, "startup_brief": false }` in config.json. Opening a file adds its dead ends and decisions, at most 600 tokens, once per file per session. A hook never fails the chat; errors go to the log.
 
 </details>
 

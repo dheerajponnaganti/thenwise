@@ -170,7 +170,7 @@ if (cmd && QUERY.includes(cmd)) {
     const args = [];
     const rest = process.argv.slice(3);
     for (let i = 0; i < rest.length; i++)
-        rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
+        rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
     const cfg = loadConfig();
     const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
     if (!existsSync(dbPath))
@@ -184,7 +184,7 @@ if (cmd && QUERY.includes(cmd)) {
     const need = (ok) => ok || (console.error(USAGE), process.exit(2));
     need(cmd === 'resume' || args.length > 0);
     if (cmd === 'search')
-        console.log(c.search(g, q));
+        console.log(process.argv.includes('--pointers') ? c.pointers(g, q) : c.search(g, q));
     else if (cmd === 'current')
         console.log(c.current(g, q));
     else if (cmd === 'why')
@@ -194,7 +194,7 @@ if (cmd && QUERY.includes(cmd)) {
     else if (cmd === 'trace')
         console.log(c.trace(g, q));
     else if (cmd === 'resume')
-        console.log(c.resume(g, q));
+        console.log(process.argv.includes('--short') ? c.resumeShort(g) : c.resume(g, q));
     else if (cmd === 'get')
         console.log(c.get(g, q));
     else if (cmd === 'asof')

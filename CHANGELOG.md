@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.10
+
+Memory that shows up: pointers on questions about the past, and a brief when you open a project.
+
+- Memory that shows up: a prompt that asks about the past (why did we, last time, a date, a PR, a path) gets up to three pointers to the records that answer it, about 300 tokens. A prompt without such a cue, a slash command, or a weak match gets nothing. `hooks.prompt_map: false` turns it off.
+- A session started in a repo with a session in the last 7 days opens with a short brief: the last session's date and first prompt, the commits and merged PRs since, the open PRs. `hooks.startup_brief: false` turns it off.
+- The memory server tells Claude when to call it, with one example per question shape, and when not to. The tool descriptions are shorter and say it once.
+- `/thenwise:why`, `/thenwise:tried` and `/thenwise:asof` ask the memory directly.
+- The log records whether a memory call followed a pointer within a minute.
+
 ## 0.1.9
 
 Teams foundation: members with ids, a versioned API, and shares that never overwrite each other silently.

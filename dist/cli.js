@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Entry point: checks the runtime before anything loads SQLite, then runs main.ts.
 // The hooks on most tool calls stop here when they have nothing to do, before SQLite and the store code load.
-if (process.argv[2] === 'hook' && (process.argv[3] === 'post' || process.argv[3] === 'read')) {
+if (process.argv[2] === 'hook' && ['post', 'read', 'prompt'].includes(process.argv[3])) {
     const { hookInput, nothingToDo } = await import("./hooks/entry.js");
     if (nothingToDo(process.argv[3], await hookInput()))
         process.exit(0);

@@ -47,6 +47,8 @@ try {
         : err?.code === 'ENOENT'
           ? ` Run thenwise setup first, or check that ${dir} can be created.`
           : ''
+  const { errFields, logger } = await import('./core/log.ts')
+  logger('cli').error('failed', { cmd: process.argv[2], code: err?.code, ...errFields(e) })
   console.error(`thenwise: ${msg}.${hint}`)
   if (process.env.THENWISE_DEBUG) console.error(err?.stack)
   process.exit(1)

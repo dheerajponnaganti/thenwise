@@ -230,7 +230,7 @@ export function updateGraph(cfg: Config, opts: IngestOptions, dbPath: string): I
   } catch (e) {
     try {
       db.exec('ROLLBACK')
-    } catch {}
+    } catch {} // no transaction left to roll back; the error that matters is rethrown below
     throw e
   } finally {
     db.close()

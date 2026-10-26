@@ -29,7 +29,7 @@ const flag = (name: string) => {
 
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise views --vault <dir> [--db <file>]\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise doctor <vault> | ids <vault> [--seed <text>] | stats <vault>\n       thenwise import <vault> --sqlite <file.db> | export <file.db> <dir>\n       thenwise import <vault> --postgres <url> --scope <kind:key>\n       thenwise serve --postgres <url> --scope <kind:key> [--port N] [--host H] [--mcp]\n       thenwise token create <principal> | token revoke <token>  (with --postgres and --scope)\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise views --vault <dir> [--db <file>]\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise doctor <vault> | ids <vault> [--seed <text>] | stats <vault>\n       thenwise import <vault> --sqlite <file.db> | export <file.db> <dir>\n       thenwise import <vault> --postgres <url> --scope <kind:key>\n       thenwise serve --postgres <url> --scope <kind:key> [--port N] [--host H] [--mcp]\n       thenwise token create <principal> | token revoke <token>  (with --postgres and --scope)\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 function parseScope(text: string | undefined): Scope {
   const m = /^(personal|project|team):(.+)$/.exec(text ?? '')
@@ -42,6 +42,8 @@ function parseScope(text: string | undefined): Scope {
 }
 
 if (cmd === 'setup' || cmd === 'init') process.exit(await (await import('./setup/setup.ts')).setup(process.argv.slice(3)))
+if (cmd === 'report') process.exit(await (await import('./report/report.ts')).reportCommand(process.argv.slice(3)))
+if (cmd === 'logs') process.exit((await import('./core/log.ts')).logsCommand(process.argv.slice(3)))
 if (cmd === 'off' || cmd === 'on') process.exit((await import('./setup/off.ts')).switchCommand(cmd === 'on', process.argv.slice(3)))
 if (cmd === 'doctor' && !vaultArg) process.exit(await (await import('./setup/doctor.ts')).doctorCommand())
 
@@ -68,7 +70,9 @@ if (cmd === 'archive' || cmd === 'ingest') {
   const cfg = loadConfig()
   if (cmd === 'archive') {
     const { archive } = await import('./ingest/archive.ts')
+    const done = (await import('./core/log.ts')).logger('sync', cfg.memDir).time('archive')
     const r = archive(cfg, { prune: process.argv.includes('--prune-excluded') })
+    done({ seen: r.seen, archived: r.archived, excluded: r.excluded, unparsed: r.unparsed.length, failed: r.failed.length })
     console.log(`${r.seen} sessions seen: ${r.archived} archived, ${r.skipped} unchanged (${r.remasked} masked again), ${r.excluded} excluded; ${(r.bytes / 1e6).toFixed(1)} MB of archive; ${r.unparsed.length} lines did not parse`)
     for (const u of r.unparsed) console.log(`  unparsed: ${u.rel} line ${u.line}`)
     if (r.excludedChats || r.off) console.log(`${r.excludedChats} test chats and ${r.off} chats of paused projects were not archived`)
@@ -79,6 +83,9 @@ if (cmd === 'archive' || cmd === 'ingest') {
     const { ingest, report } = await import('./ingest/ingest.ts')
     if (flag('vault')) cfg.vaults = [resolve(xp(flag('vault'))!)]
     const r = ingest(cfg, { prs: xp(flag('prs')), db: xp(flag('db')), until: flag('until'), memoryFrom: xp(flag('memory-from')), full: process.argv.includes('--full') })
+    const log = (await import('./core/log.ts')).logger('ingest', cfg.memDir)
+    log.info(r.mode, { ms: r.ms, files: r.filesRead, sessions: r.sessionsIn, out: r.sessionsOut, excluded: r.excludedEval, warnings: r.warnings.length })
+    for (const w of r.warnings) log.warn('warning', { msg: w })
     for (const w of r.warnings) console.error(`warning: ${w}`)
     console.log(`${r.sessionsIn} sessions in scope, ${r.sessionsOut} out of scope, ${r.excludedEval} excluded as test chats, ${r.excludedEntrypoint} excluded by entrypoint, ${r.afterCutoff} after cutoff; graph at ${r.db}`)
     console.log(`${r.mode === 'full' ? 'rebuilt everything' : r.mode === 'update' ? 'updated' : 'nothing new'}: ${r.filesRead} chat files read in ${(r.ms / 1000).toFixed(1)} s`)

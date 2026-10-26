@@ -1,0 +1,16 @@
+name: Idea
+description: Something Thenwise could do, or do better.
+labels: [idea]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: The idea
+      description: What you want to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Thenwise and Claude Code, if it matters.

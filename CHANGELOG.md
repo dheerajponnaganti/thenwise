@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5
+
+A log, and a way to report issues.
+
+- Log: every tool call, hook and sync step leaves one JSON line in `logs/thenwise.log` in the data folder, rotated at 1 MB with 3 old files kept. Secrets are masked, the home folder shows as `~`, and a query is kept only as its word count and a short hash. `THENWISE_LOG=debug` (or `log.level` in config.json) shows more, `off` turns it off. Archive, ingest, distill, teams and doctor runs log their counts too.
+- A failed memory call tells Claude a short error code, such as `E4F2`, that matches its log line.
+- `thenwise logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]` and `/thenwise:logs` show the log. `thenwise doctor` and `/thenwise:status` show the errors of the last 24 hours.
+- Issue reports: `/thenwise:report` drafts what happened from the chat, and `thenwise report` adds versions, doctor, store counts, settings and the last 20 errors and warnings. Project names and paths are hidden, everything is masked twice, and the whole report is shown first. It is sent only on a yes: with `gh`, through the pre-filled GitHub form, or copied to the clipboard; it is always saved in `reports/`. GitHub issue forms for bugs and ideas.
+- The first failed memory call of a session, and a failing doctor, point to the report.
+- Tests run with their own empty data folder, so a test run can never write into a real store.
+
 ## 0.1.4
 
 Fixes from an evaluation of 0.1.3 against plain Claude Code.

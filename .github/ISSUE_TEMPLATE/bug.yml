@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Thenwise failed or answered wrong. `thenwise report` fills this in for you.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Thenwise did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest way to see it again, if you know one.
+  - type: input
+    id: code
+    attributes:
+      label: Error code
+      description: The code from the failure message, such as E4F2.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Thenwise, Claude Code, Node and OS.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor
+      description: The output of `thenwise doctor`.
+      render: text
+  - type: textarea
+    id: store
+    attributes:
+      label: Store and settings
+      description: Counts and settings only, no content.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Recent errors and warnings
+      description: From `thenwise logs --errors`. Masked; holds no chat text or queries.
+      render: text

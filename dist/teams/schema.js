@@ -2,8 +2,9 @@
 // transaction, and a file written by a newer Thenwise is refused rather than half understood.
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 // The 0.1.5 tables. A new file starts from them too, so there is one path to the current schema.
 const V0 = `CREATE TABLE IF NOT EXISTS members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
 CREATE TABLE IF NOT EXISTS notes (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY (owner, id));
@@ -30,6 +31,33 @@ const MIGRATIONS = [
       CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN INSERT INTO notes_fts (notes_fts, rowid, title, text) VALUES ('delete', old.rowid, old.title, old.text); END;
       CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN INSERT INTO notes_fts (notes_fts, rowid, title, text) VALUES ('delete', old.rowid, old.title, old.text);
         INSERT INTO notes_fts (rowid, title, text) VALUES (new.rowid, new.title, new.text); END;`);
+    },
+    // 2 (0.1.12): teams (one row for now, every row carries its id), roles, note metadata and revisions, invites,
+    // sessions, an audit log and read counts.
+    (db, now) => {
+        const team = randomBytes(16).toString('hex');
+        const col = (t) => `ALTER TABLE ${t} ADD COLUMN team_id TEXT NOT NULL DEFAULT '${team}';`;
+        db.exec(`CREATE TABLE teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, review_queue INTEGER NOT NULL DEFAULT 0);
+      INSERT INTO teams (id, name, created_at) VALUES ('${team}', 'Team', ${now});
+      ${col('members')} ${col('notes')} ${col('tombs')}
+      ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note';
+      ALTER TABLE notes ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+      ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE notes ADD COLUMN superseded_by TEXT;
+      ALTER TABLE notes ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE notes ADD COLUMN shared_by TEXT;
+      ALTER TABLE notes ADD COLUMN source TEXT NOT NULL DEFAULT '';
+      UPDATE notes SET created_at = updated_at, shared_by = owner_id;
+      -- The first member of a 0.1.9 team is its owner.
+      UPDATE members SET role = 'owner' WHERE id = (SELECT id FROM members WHERE disabled = 0 ORDER BY created_at, rowid LIMIT 1);
+      CREATE TABLE note_revisions (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, tags TEXT NOT NULL, edited_by TEXT, edited_at INTEGER NOT NULL, PRIMARY KEY (owner_id, id, rev));
+      INSERT INTO note_revisions SELECT team_id, owner_id, id, rev, title, text, kind, status, tags, owner_id, updated_at FROM notes;
+      CREATE TABLE invites (code_hash TEXT PRIMARY KEY, team_id TEXT NOT NULL, role TEXT NOT NULL, created_by TEXT, expires_at INTEGER NOT NULL, used_by TEXT, used_at INTEGER);
+      CREATE TABLE sessions (id_hash TEXT PRIMARY KEY, team_id TEXT NOT NULL, member_id TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+      CREATE TABLE audit (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT, action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '{}');
+      CREATE INDEX audit_at ON audit (at);
+      CREATE TABLE note_reads (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, id TEXT NOT NULL, day INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (team_id, owner_id, id, day));`);
     },
 ];
 /** Brings a team database to SCHEMA_VERSION. Refuses one from a newer Thenwise; returns the versions applied. */

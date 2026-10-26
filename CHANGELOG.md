@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.12
+
+Teams API for the Hub: roles, invites, browser sessions and note curation.
+
+- Teams: five roles (viewer, member, editor, admin, owner). A viewer only reads, an editor also edits, retires, supersedes and pins others' notes, an admin manages members, invites and settings. A refused call is a 403 and lands in the audit log. The first member is the owner.
+- Teams: invite codes (`POST /v1/invites`, `POST /v1/join`) and browser sessions (`POST /v1/session`) with an httpOnly cookie and a CSRF header on writes. Bearer tokens still work for the plugin.
+- Teams: notes carry a kind, status, tags, pin and source; every change keeps a revision you can read back; an optional review queue holds new shares until an admin approves. Admin routes list and change members and settings, show the audit log and 90 days of read counts, and `GET /v1/export.zip` gives the notes as Markdown in the vault format.
+- Teams: `team serve --console <folder>` serves a built Hub with a content security policy; `--allow-origin` allows a Hub on another host. `--host` beyond this machine now needs `--tls-behind-proxy` or `--allow-plain-http`.
+- Teams: the routes without `/v1` are gone; they answer a 404 that says to update Thenwise. `openapi.json` is frozen as v1, and the database migrates to schema 2 (a 0.1.9 server refuses it).
+
 ## 0.1.11
 
 Dead ends that exist: found from what happened, not from what was said.

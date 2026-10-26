@@ -77,7 +77,8 @@ export function payloadOf(n) {
     const t = maskSecrets(n.text);
     const h = maskSecrets(n.title);
     const p = maskSecrets(n.project);
-    return { payload: { title: h.text, text: t.text, project: p.text }, masked: t.count + h.count + p.count };
+    const src = n.source === undefined ? undefined : maskSecrets(n.source);
+    return { payload: { title: h.text, text: t.text, project: p.text, ...(n.kind ? { kind: n.kind } : {}), ...(src?.text ? { source: src.text } : {}) }, masked: t.count + h.count + p.count + (src?.count ?? 0) };
 }
 /** A curated note id, or a Markdown file. Chats and anything under the Claude folder are refused. */
 export function resolveNote(memDir, claudeDir, arg) {
@@ -94,7 +95,7 @@ export function resolveNote(memDir, claudeDir, arg) {
     const c = readNotes(memDir).find((n) => n.id === arg && n.status === 'active');
     if (!c)
         throw new Error(`${arg}: no such file, and no active note with that id`);
-    return { id: c.id, title: c.title, text: parseFrontMatter(readFileSync(c.path, 'utf8')).body.trim() || c.summary, project: c.project };
+    return { id: c.id, title: c.title, text: parseFrontMatter(readFileSync(c.path, 'utf8')).body.trim() || c.summary, project: c.project, kind: ['decision', 'dead_end', 'rule', 'finding'].includes(c.type) ? c.type : 'note', source: c.sources.join(', ').slice(0, 2000) };
 }
 /** Serializes load-modify-save across processes. Never wrap a network call in it. */
 export function locked(dir, fn) {

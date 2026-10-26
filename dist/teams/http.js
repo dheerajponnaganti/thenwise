@@ -58,6 +58,24 @@ export function ifMatch(h) {
         throw new HttpError(400, 'bad_request', 'If-Match must be a revision number or *');
     return Number(v);
 }
+/** One of a fixed list of words. */
+export function oneOf(v, list, name) {
+    if (typeof v !== 'string' || !list.includes(v))
+        throw new HttpError(400, 'bad_request', `${name} must be one of ${list.join(', ')}`);
+    return v;
+}
+/** A short list of short words (note tags). */
+export function tagList(v) {
+    if (!Array.isArray(v) || v.length > 20 || v.some((t) => typeof t !== 'string' || !t || t.length > 40))
+        throw new HttpError(400, 'bad_request', 'tags must be a list of up to 20 words of up to 40 characters');
+    return v;
+}
+/** A whole number field of a JSON body, within bounds. */
+export function intField(v, min, max, name) {
+    if (!Number.isSafeInteger(v) || v < min || v > max)
+        throw new HttpError(400, 'bad_request', `${name} must be a whole number from ${min} to ${max}`);
+    return v;
+}
 /** The client's own order of a change (a whole number, 0 when absent). */
 export function seqOf(v) {
     if (v === undefined || v === null || v === '')

@@ -30,6 +30,7 @@ function sourceOf(n: Node): string {
   if (n.kind === 'commit') return `commit ${n.id.split(':').pop()!.slice(0, 7)} in ${n.project}${branchNote(n)}`
   if (n.kind === 'session') return `session ${short(n.id)} ${local(n.at)} to ${local(n.until)}`
   if (n.kind === 'section') return `${n.source}, section dated ${n.at}`
+  if (n.kind === 'team') return `shared by ${n.extra?.sharedBy ?? n.source.replace(/^team:/, '')} (team)`
   if (n.kind === 'doc') return `${n.source}, section "${cut(n.title, 60)}"${n.extra?.dateFrom === 'git' ? `, file last committed ${local(n.at)}` : ''}`
   return n.source
 }
@@ -162,7 +163,7 @@ export function search(g: Graph, q: string, limit = 10): string {
 
 // How final a record is: a merged PR, a commit or a dated log entry is the outcome; chat is often the discussion before it.
 // A rule line from a CLAUDE.md is not an outcome (curated rules are); a doc section is guidance.
-const FINAL: Record<string, number> = { pr: 1.6, commit: 1.4, section: 1.4, note: 1.2, memory: 1.1, summary: 1, doc: 0.9, turn: 0.8 }
+const FINAL: Record<string, number> = { pr: 1.6, commit: 1.4, section: 1.4, note: 1.2, team: 1.2, memory: 1.1, summary: 1, doc: 0.9, turn: 0.8 }
 const final = (n: Node) => (n.kind === 'rule' && n.extra?.curated ? 1.3 : (FINAL[n.kind] ?? 1))
 // Dated by a file's mtime (a CLAUDE.md line, a doc without git history): when it was saved, not when it became true.
 const mtimeDated = (n: Node) => n.extra?.dateFrom === 'mtime' || (n.kind === 'rule' && !n.extra?.curated)

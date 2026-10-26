@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.14
+
+Teams in the tools: what teammates share is part of the memory.
+
+- Teams in the tools: what teammates share is fetched at each sync and becomes part of the memory, so Claude finds it with `memory_search` and names who shared it. Unshared or retired notes leave on the next sync; notes waiting in a review queue never arrive. Your own shares are not fetched back.
+- Opt in: `"team": { "auto_share": ["decision", "dead_end"], "auto_share_projects": ["<project>"] }` shares notes you accept in those projects; `"capture": { "auto": true }` distills new chats into inbox proposals once a day (it calls `claude -p`). Both are off by default.
+- `/thenwise:inbox` reviews the proposals and accepts or rejects them by id.
+
 ## 0.1.13
 
 Words that meet: answers in other words than the question.

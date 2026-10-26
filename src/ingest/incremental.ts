@@ -21,7 +21,7 @@ import type { Config } from './config.ts'
 import { ALL_REFS, DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
 import { plansPart } from './plans.ts'
-import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
+import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamPart } from './parts.ts'
 import type { Claim, GEdge, GNode, Look, Part, Ref, SessionPart, Status } from './parts.ts'
 import { discoverRepos } from './repos.ts'
 
@@ -296,6 +296,7 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   for (const r of prRes.removed) (S.keys.add(`pr\0${r.id.split('#').pop()}`), S.claimKeys.add(`url\0${JSON.parse(r.extra).url}`))
   S.applyLayer(['note:'], ['part_of', 'links_to'], notesPart(cfg))
   S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg))
+  S.applyLayer(['team:'], [], teamPart(cfg))
   S.applyLayer(['doc:', 'rule:'], ['part_of'], docsPart(cfg))
   S.applyLayer(['mem:'], [], memoryPart(cfg, S.all("SELECT DISTINCT project FROM nodes WHERE kind = 'session'").map((r) => r.project), opts.memoryFrom))
   S.applyLayer(['plan:'], [], plansPart(cfg))

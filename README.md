@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.13" src="https://img.shields.io/badge/version-0.1.13-1E1C19">
+  <img alt="Version 0.1.14" src="https://img.shields.io/badge/version-0.1.14-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -112,7 +112,7 @@ Memory tools remember for one person. Thenwise remembers for the whole team.
 - **Share on purpose.** Nothing is shared until someone picks a note. Each share shows a preview first.
 - **Masked on the way out.** Keys and tokens are stripped before a note leaves the machine.
 - **Chats stay home.** Raw conversations never leave anyone's laptop. Only the decisions and dead ends you choose travel.
-- **Search the team's past.** `thenwise team search` finds what a teammate decided last month.
+- **Search the team's past.** What teammates share joins your memory at each sync, so Claude finds it and names who shared it. `thenwise team search` finds it from the terminal too.
 - **Offline friendly.** If the server is down, shares wait in a queue and go out on their own.
 
 ```

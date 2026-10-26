@@ -316,6 +316,7 @@ export class Graph {
         for (const n of this.ofKind('note')) {
             const t = n.title.toLowerCase();
             const base = n.id.replace(/^.*\//, '').replace(/\.md$/, '').toLowerCase();
+            // Kept at 5 characters: raising it to 8 or two words (0.1.7 plan) cost a gold answer and gained none on the benchmark.
             if ((t.length >= 5 && lq.includes(t)) || (base.length >= 5 && lq.includes(base)))
                 add(n.id, `note title "${n.title}"`);
         }
@@ -435,8 +436,10 @@ export class Graph {
         // Subagent briefs repeat their boilerplate in the title, so they stay out of this lane.
         const ti = known.length ? this.widen((l) => tiSql.all(fts(every), l), (r) => ok(this.nodes.get(r.id)) && !this.nodes.get(r.id).extra?.subagent, 60) : [];
         lanes.set('title', ti.flatMap((r) => bestOf(r.id, false) ?? []));
-        // Lane 4: exact references. A file has no text, so its non-hub neighbours stand in, newest first.
+        // Lane 4: exact references. A named file has no text: its records (the commits and chats that touched it) join the
+        // graph lane by how well they match, then by date. Newest-first at exact weight answered with the latest touch, not the best one.
         const exactIds = [];
+        const byFile = [];
         for (const e of exact) {
             if (!ok(this.nodes.get(e.id)))
                 continue;
@@ -444,11 +447,11 @@ export class Graph {
             if (own)
                 exactIds.push(own.pid);
             else {
-                const near = [...new Set(this.neighbours(e.id).map((x) => x.to))].filter((id) => ok(this.nodes.get(id))).sort((a, b) => (this.nodes.get(b).at < this.nodes.get(a).at ? -1 : 1)).slice(0, 15);
+                const near = [...new Set(this.neighbours(e.id).map((x) => x.to))].filter((id) => ok(this.nodes.get(id))).sort((a, b) => (this.nodes.get(b).at < this.nodes.get(a).at ? -1 : 1)).slice(0, 60);
                 for (const id of near) {
                     const pid = bestOf(id, true);
                     if (pid)
-                        exactIds.push(pid);
+                        byFile.push({ pid, c: cov(row(pid)), at: this.nodes.get(id).at });
                 }
             }
         }
@@ -462,8 +465,9 @@ export class Graph {
             if (strong.length >= 5)
                 break;
         }
-        const seen = new Set(strong);
-        const graph = [];
+        const fileNear = byFile.sort((a, b) => b.c - a.c || (b.at < a.at ? -1 : 1)).slice(0, 15).map((x) => x.pid);
+        const seen = new Set([...strong, ...fileNear.map((pid) => pid.replace(/#p\d+$/, ''))]);
+        const graph = [...fileNear];
         for (const s of strong) {
             for (const e of this.neighbours(s)) {
                 if (seen.has(e.to) || !ok(this.nodes.get(e.to)))

@@ -73,7 +73,7 @@ class Store {
     index(rowid, n, extra) {
         this.run('INSERT INTO nodes_fts(rowid, title, text) VALUES (?, ?, ?)', rowid, n.title, n.text);
         this.run('INSERT INTO titles_fts(rowid, title) VALUES (?, ?)', rowid, [n.title, ...noteKeys(n.kind, extra)].join(' '));
-        if (n.kind !== 'file' && n.kind !== 'doc') {
+        if (n.kind !== 'file') {
             const parts = splitPassages(n.text || n.title || '');
             const k = noteKeys(n.kind, extra);
             if (k.length)

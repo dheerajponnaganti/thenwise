@@ -181,18 +181,19 @@ export function datedSections(body) {
     out.preamble = marks.length ? body.slice(0, marks[0].at) : body;
     return out;
 }
-/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime. */
-function fileDate(f) {
+/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime, and which one it was. */
+function fileDated(f) {
     if (repoRoot(dirname(f))) {
         try {
             const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
             if (out && !Number.isNaN(Date.parse(out)))
-                return iso(Date.parse(out));
+                return { at: iso(Date.parse(out)), from: 'git' };
         }
         catch { } // git missing or slow: the file's mtime below is the date
     }
-    return iso(statSync(f).mtimeMs);
+    return { at: iso(statSync(f).mtimeMs), from: 'mtime' };
 }
+const fileDate = (f) => fileDated(f).at;
 export function notesPart(cfg, until) {
     const nodes = [];
     const edges = [];
@@ -275,50 +276,78 @@ export function curatedPart(cfg, until) {
     }
     return out;
 }
-/** CLAUDE.md rules. Worktrees and clones carry identical files: one per content, the shortest path (the main checkout). */
+const CLAUDE_FILES = (d) => [join(d, 'CLAUDE.md'), join(d, '.claude', 'CLAUDE.md')].filter((f) => existsSync(f));
+/** The CLAUDE.md files read: each root's and configured repo's own, those one folder below a root (not a clone of
+ * someone else's project), the ones listed in `ingest.docs`, and Claude Code's own. Deeper ones are third-party
+ * checkouts more often than not; `skippedDocs` lists them. */
+export function docFiles(cfg) {
+    const files = [];
+    const configured = (d) => [...cfg.repos, ...cfg.roots].some((x) => normPath(x) === normPath(d));
+    for (const r of [...cfg.roots, ...cfg.repos]) {
+        files.push(...CLAUDE_FILES(r));
+        // The home folder or the disk root as a root would take in every project: their own files only.
+        if (normPath(r) === normPath(cfg.home) || /^([a-z]:)?\/?$/i.test(normPath(r)))
+            continue;
+        let kids = [];
+        try {
+            kids = readdirSync(r, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => join(r, e.name));
+        }
+        catch { } // an unreadable root has no children to read
+        for (const k of kids)
+            if (!existsSync(join(k, '.git')) || configured(k))
+                files.push(...CLAUDE_FILES(k));
+    }
+    for (const d of cfg.docs)
+        files.push(...(d.endsWith('.md') ? [d].filter((f) => existsSync(f)) : CLAUDE_FILES(d)));
+    if (existsSync(join(cfg.claudeDir, 'CLAUDE.md')))
+        files.push(join(cfg.claudeDir, 'CLAUDE.md'));
+    return [...new Set(files)];
+}
+/** CLAUDE.md files under the roots that are not read, for `thenwise status`. */
+export function skippedDocs(cfg) {
+    const all = [];
+    for (const r of cfg.roots)
+        if (normPath(r) !== normPath(cfg.home))
+            walk(r, (n) => n === 'CLAUDE.md', all);
+    const read = new Set(docFiles(cfg).map(normPath));
+    return all.filter((f) => !read.has(normPath(f))).sort();
+}
+/** One node per heading section of each CLAUDE.md, dated by the file's last commit (else its mtime, and then it is
+ * left out of as-of). Worktrees and clones carry identical files: one per content, the shortest path (the main checkout). */
 export function docsPart(cfg) {
     const out = { nodes: [], edges: [] };
-    const claudeFiles = [];
-    // The home folder or the disk root as a root would walk everything: read only their own CLAUDE.md files.
-    for (const r of cfg.roots) {
-        if (normPath(r) === normPath(cfg.home) || /^([a-z]:)?\/?$/i.test(normPath(r)))
-            claudeFiles.push(...[join(r, 'CLAUDE.md'), join(r, '.claude', 'CLAUDE.md')].filter((f) => existsSync(f)));
-        // A clone below a root has its own rules for its own project: not global ones, unless it is a configured repo.
-        else
-            walk(r, (n) => n === 'CLAUDE.md', claudeFiles, 0, (d) => existsSync(join(d, '.git')) && ![...cfg.repos, ...cfg.roots].some((x) => normPath(x) === normPath(d)));
-    }
-    if (existsSync(join(cfg.claudeDir, 'CLAUDE.md')))
-        claudeFiles.push(join(cfg.claudeDir, 'CLAUDE.md'));
     const seenDocs = new Set();
-    for (const f of [...new Set(claudeFiles)].sort((a, b) => a.length - b.length || (a < b ? -1 : 1))) {
+    for (const f of docFiles(cfg).sort((a, b) => a.length - b.length || (a < b ? -1 : 1))) {
         const content = readFileSync(f, 'utf8');
         if (seenDocs.has(content))
             continue;
         seenDocs.add(content);
-        const lines = content.split('\n');
-        const at = iso(statSync(f).mtimeMs);
-        out.nodes.push(fullNode({ id: `doc:${f}`, kind: 'doc', title: f, at, source: f }));
-        let fence = false;
-        let fm = lines[0] === '---';
-        lines.forEach((raw, i) => {
-            const l = raw.trim();
-            if (fm) {
-                if (i > 0 && l === '---')
-                    fm = false;
-                return;
-            }
-            if (l.startsWith('```'))
-                fence = !fence;
-            if (fence || l.startsWith('```') || !l || /^(#|\||---|<!--)/.test(l))
-                return;
-            const text = l.replace(/^(?:[-*+]|\d+[.)])\s+/, '');
-            if (text.length < 8)
-                return;
-            out.nodes.push(fullNode({ id: `rule:${f}:${i + 1}`, kind: 'rule', title: text.slice(0, 100), text, at, source: f }));
-            out.edges.push({ src: `rule:${f}:${i + 1}`, dst: `doc:${f}`, kind: 'part_of', at, extra: {} });
-        });
+        const { at, from } = fileDated(f);
+        sections(content).forEach((s, n) => out.nodes.push(fullNode({ id: `doc:${f}#${n}`, kind: 'doc', title: s.title || basename(dirname(f)), text: s.text, at, source: f, extra: { dateFrom: from } })));
     }
     return out;
+}
+/** A Markdown file cut at its headings (outside code fences and front matter); sections with no text are left out. */
+export function sections(content) {
+    const out = [{ title: '', text: [] }];
+    let fence = false;
+    const lines = content.split('\n');
+    let fm = lines[0] === '---';
+    lines.forEach((raw, i) => {
+        if (fm) {
+            if (i > 0 && raw.trim() === '---')
+                fm = false;
+            return;
+        }
+        if (raw.trim().startsWith('```'))
+            fence = !fence;
+        const h = fence ? null : /^#{1,6}\s+(.+?)\s*#*$/.exec(raw);
+        if (h)
+            out.push({ title: h[1], text: [] });
+        else
+            out.at(-1).text.push(raw);
+    });
+    return out.map((s) => ({ title: s.title, text: s.text.join('\n').trim() })).filter((s) => s.text.length >= 8);
 }
 /** Claude Code's auto-memory files of the projects that have sessions in the memory. */
 export function memoryPart(cfg, keys, memoryFrom) {

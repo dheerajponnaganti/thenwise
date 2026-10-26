@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { prStatus } from "./prs.js";
+import { skippedDocs } from "./parts.js";
 export function statusLines(cfg, dbPath) {
     if (!existsSync(dbPath))
         return [`no store at ${dbPath}: run \`thenwise ingest\``];
@@ -22,6 +23,9 @@ export function statusLines(cfg, dbPath) {
     const repos = JSON.parse(all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value ?? '[]');
     out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`);
     out.push(...prStatus(cfg, repos));
+    const skipped = skippedDocs(cfg);
+    if (skipped.length)
+        out.push(`CLAUDE.md files not read (more than one folder below a root): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}. Add one with "docs" under "ingest" in config.json.`);
     // A project folder that was moved or renamed no longer exists: its old chats keep their old project name.
     const gone = new Map();
     for (const r of all("SELECT json_extract(extra, '$.cwd') cwd, count(*) n FROM nodes WHERE kind = 'session' GROUP BY cwd"))

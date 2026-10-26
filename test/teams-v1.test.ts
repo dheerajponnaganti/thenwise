@@ -38,7 +38,7 @@ test('T9-H1: a 0.1.5 team.db migrates to the current schema, and a newer one is 
     INSERT INTO members VALUES ('alice', 'h-alice', NULL);
     INSERT INTO notes VALUES ('alice', 'n1', 1700000000000, 'One', 'first note', 'alpha'), ('gone', 'g1', 1700000000001, 'Kept', 'a removed member kept this', '');
     INSERT INTO tombs VALUES ('alice', 'n0', 1700000000002);`)
-  assert.deepEqual(migrateTeamDb(db), [1])
+  assert.deepEqual(migrateTeamDb(db), [1, 2])
   assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, SCHEMA_VERSION)
   const members = db.prepare('SELECT id, name, token_hash, disabled FROM members ORDER BY name').all() as any[]
   assert.deepEqual(members.map((m) => [m.name, m.token_hash, m.disabled]), [['alice', 'h-alice', 0], ['gone', null, 1]])
@@ -145,7 +145,7 @@ test('T9-H7: feeds give what changed after a revision, in revision order', async
 })
 
 test('T9-H8 T9-H9: a removed name is not reused by someone else; --again brings the same person back; rotate', async () => {
-  const t = await team()
+  const t = await team(['root', 'alice', 'bob'])
   try {
     const id = (await (await t.req(t.tokens.alice!, '/v1/me')).json()).id
     const rev = (await (await t.req(t.tokens.alice!, '/v1/notes/k1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })).json()).rev
@@ -159,7 +159,7 @@ test('T9-H8 T9-H9: a removed name is not reused by someone else; --again brings 
     const carol = invite(db, 'carol')
     assert.notEqual((await (await t.req(carol, '/v1/me')).json()).id, id)
     const rows = listMembers(db)
-    assert.deepEqual(rows.map((m) => m.name), ['alice', 'bob', 'carol'])
+    assert.deepEqual(rows.map((m) => m.name), ['alice', 'bob', 'carol', 'root'])
     assert.ok(rows.find((m) => m.name === 'alice')!.last_seen)
     const fresh = rotate(db, 'bob')
     db.close()
@@ -188,7 +188,7 @@ test('T9-B2: a refused token stops the syncs, logs once, and status says what to
   }
 })
 
-test('T9-B3: bad input is a 400 with a code on /v1; the old routes keep their old shape', async () => {
+test('T9-B3: bad input is a 400 with a code on /v1; the old routes are a 404 that says to update', async () => {
   const t = await team()
   try {
     const code = async (r: Response) => (assert.ok(r.status >= 400, String(r.status)), (await r.json()).error.code)
@@ -198,8 +198,9 @@ test('T9-B3: bad input is a 400 with a code on /v1; the old routes keep their ol
     assert.equal(await code(await t.req(t.tokens.alice!, '/v1/notes/x', { method: 'PUT', body: { ...NOTE, text: 'x'.repeat(300 * 1024) }, headers: { 'if-match': '*' } })), 'too_large')
     assert.equal(await code(await t.req(t.tokens.alice!, '/v1/nothing')), 'not_found')
     const old = await t.req(t.tokens.alice!, '/notes/x', { method: 'PUT', body: '{"title": 1}' })
-    assert.deepEqual(await old.json(), { error: 'bad note' })
-    for (const h of ['x-content-type-options', 'cache-control', 'referrer-policy']) assert.ok(old.headers.get(h), h)
+    assert.equal(old.status, 404)
+    assert.match((await old.json()).error, /update Thenwise/)
+    for (const h of ['x-content-type-options', 'cache-control', 'referrer-policy', 'content-security-policy']) assert.ok(old.headers.get(h), h)
   } finally {
     await t.app.close()
   }
@@ -262,6 +263,24 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
   const t = await team()
   try {
     const tok = t.tokens.alice!
+    const bob = t.tokens.bob!
+    const ids = { alice: '', bob: '' }
+    ids.alice = (await (await t.req(tok, '/v1/me')).json()).id
+    ids.bob = (await (await t.req(bob, '/v1/me')).json()).id
+    const codes: string[] = []
+    const invited = async (role: string) => {
+      const r = await t.req(tok, '/v1/invites', { method: 'POST', body: { role, days: 1 } })
+      codes.push((await r.clone().json()).code)
+
+      return r
+    }
+    const joined: { id: string; token: string }[] = []
+    const join = async (name: string) => {
+      const r = await t.req(null, '/v1/join', { method: 'POST', body: { code: codes.shift(), name } })
+      joined.push(await r.clone().json())
+
+      return r
+    }
     const rev = (await (await t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })).json()).rev
     // Thunks, run one at a time: the writes depend on each other.
     const calls: [string, string, () => Promise<Response>, number][] = [
@@ -274,6 +293,31 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
       ['/v1/notes/{owner}/{id}', 'get', () => t.req(tok, '/v1/notes/alice/none'), 404],
       ['/v1/notes/{id}', 'put', () => t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } }), 200],
       ['/v1/notes/{id}', 'put', () => t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } }), 409],
+      ['/v1/session', 'post', () => t.req(null, '/v1/session', { method: 'POST', body: { token: tok } }), 200],
+      ['/v1/session', 'delete', () => t.req(tok, '/v1/session', { method: 'DELETE' }), 200],
+      ['/v1/invites', 'post', () => invited('member'), 200],
+      ['/v1/join', 'post', () => join('dan'), 200],
+      ['/v1/join', 'post', () => t.req(null, '/v1/join', { method: 'POST', body: { code: 'twi_nope', name: 'dan' } }), 401],
+      ['/v1/invites', 'post', () => invited('viewer'), 200],
+      ['/v1/join', 'post', () => join('eve'), 200],
+      ['/v1/members', 'get', () => t.req(tok, '/v1/members'), 200],
+      ['/v1/members', 'get', () => t.req(bob, '/v1/members'), 403],
+      ['/v1/members/{id}', 'patch', () => t.req(tok, `/v1/members/${joined[0]!.id}`, { method: 'PATCH', body: { role: 'editor' } }), 200],
+      ['/v1/members/{id}/rotate', 'post', () => t.req(tok, `/v1/members/${joined[0]!.id}/rotate`, { method: 'POST' }), 200],
+      ['/v1/settings', 'get', () => t.req(tok, '/v1/settings'), 200],
+      ['/v1/settings', 'patch', () => t.req(tok, '/v1/settings', { method: 'PATCH', body: { name: 'Acme', review_queue: false } }), 200],
+      ['/v1/audit', 'get', () => t.req(tok, '/v1/audit'), 200],
+      ['/v1/stats', 'get', () => t.req(tok, '/v1/stats'), 200],
+      ['/v1/export.zip', 'get', () => t.req(tok, '/v1/export.zip'), 200],
+      ['/v1/notes/{owner}/{id}', 'patch', async () => t.req(tok, '/v1/notes/alice/c1', { method: 'PATCH', body: { title: 'Edited' }, headers: { 'if-match': String((await (await t.req(tok, '/v1/notes/alice/c1')).json()).rev) } }), 200],
+      ['/v1/notes/{owner}/{id}/revisions', 'get', () => t.req(tok, '/v1/notes/alice/c1/revisions'), 200],
+      ['/v1/notes/{owner}/{id}/pin', 'post', () => t.req(tok, '/v1/notes/alice/c1/pin', { method: 'POST' }), 200],
+      ['/v1/notes/{owner}/{id}/unpin', 'post', () => t.req(tok, '/v1/notes/alice/c1/unpin', { method: 'POST' }), 200],
+      ['/v1/notes/{owner}/{id}/approve', 'post', () => t.req(tok, '/v1/notes/alice/c1/approve', { method: 'POST' }), 409],
+      ['/v1/notes/{owner}/{id}/retire', 'post', () => t.req(tok, '/v1/notes/alice/c1/retire', { method: 'POST' }), 200],
+      ['/v1/notes/{owner}/{id}/supersede', 'post', async () => (await t.req(tok, '/v1/notes/c2', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } }), t.req(tok, '/v1/notes/alice/c1/supersede', { method: 'POST', body: { by: 'c2' } })), 200],
+      ['/v1/members/{id}', 'delete', () => t.req(tok, `/v1/members/${joined[0]!.id}?notes=keep`, { method: 'DELETE' }), 200],
+      ['/v1/members/{id}/make-owner', 'post', () => t.req(tok, `/v1/members/${joined[1]!.id}/make-owner`, { method: 'POST' }), 200],
       ['/v1/notes/{id}', 'delete', () => t.req(tok, '/v1/notes/c1', { method: 'DELETE', headers: { 'if-match': '*' } }), 200],
       ['/v1/tombs', 'get', () => t.req(tok, '/v1/tombs?since=0'), 200],
     ]
@@ -283,7 +327,8 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
       assert.equal(r.status, want, `${method} ${path}`)
       let res = spec.paths[path][method].responses[String(want)]
       if (res.$ref) res = res.$ref.slice(2).split('/').reduce((o: any, k: string) => o[k], spec)
-      assert.deepEqual(check(spec, res.content['application/json'].schema, await r.json()), [], `${method} ${path} ${want}`)
+      if (path === '/v1/export.zip') assert.equal(r.headers.get('content-type'), 'application/zip')
+      else assert.deepEqual(check(spec, res.content['application/json'].schema, await r.json()), [], `${method} ${path} ${want}`)
       covered.add(`${method} ${path}`)
     }
     for (const [path, ops] of Object.entries(spec.paths)) for (const m of Object.keys(ops as object)) assert.ok(covered.has(`${m} ${path}`), `not checked: ${m} ${path}`)

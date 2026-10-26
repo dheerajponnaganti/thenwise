@@ -20,7 +20,7 @@ let a: string, b: string, tokenA: string, tokenB: string
 const sent: string[] = []
 const realFetch = globalThis.fetch
 
-const get = (token: string | null, path: string, method = 'GET') => realFetch(`${base}${path}`, { method, headers: token ? { authorization: `Bearer ${token}` } : {} })
+const get = (token: string | null, path: string, method = 'GET') => realFetch(`${base}/v1${path}`, { method, headers: token ? { authorization: `Bearer ${token}` } : {} })
 const note = (home: string, name: string, body: string) => {
   const p = join(home, `${name}.md`)
   writeFileSync(p, `---\ntitle: ${name}\nproject: alpha\n---\n${body}\n`)
@@ -115,7 +115,7 @@ describe('teams preview', () => {
     assert.ok(!bodies.join('').includes(PRIVATE))
     assert.ok(!bodies.join('').includes('gryphon'))
     // B cannot write or delete in A's namespace: the owner is always the caller.
-    await realFetch(`${base}/notes/sh1?rev=${Date.now() + 1e9}`, { method: 'DELETE', headers: { authorization: `Bearer ${tokenB}` } })
+    await realFetch(`${base}/v1/notes/sh1?seq=${Date.now() + 1e9}`, { method: 'DELETE', headers: { authorization: `Bearer ${tokenB}`, 'if-match': '*' } })
     assert.equal((await get(tokenB, '/notes/alice/sh1')).status, 200)
   })
 
@@ -142,9 +142,9 @@ describe('teams preview', () => {
     for (const t of [null, 'tw_wrong', '', expired]) {
       const r = await get(t, '/notes')
       assert.equal(r.status, 401)
-      assert.deepEqual(await r.json(), { error: 'unauthorized' })
+      assert.equal(((await r.json()) as any).error.code, 'unauthorized')
     }
-    assert.equal((await realFetch(`${base}/notes`, { headers: { authorization: 'Basic abc' } })).status, 401)
+    assert.equal((await realFetch(`${base}/v1/notes`, { headers: { authorization: 'Basic abc' } })).status, 401)
   })
 
   test('T-B4: a removed member stops at once', async () => {
@@ -160,7 +160,7 @@ describe('teams preview', () => {
     const db = openTeamDb(serverDir)
     const tk = invite(db, 'kim')
     const td = invite(db, 'lee')
-    for (const [t, id] of [[tk, 'kn1'], [td, 'ln1']] as const) await realFetch(`${base}/notes/${id}`, { method: 'PUT', headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' }, body: JSON.stringify({ title: id, text: 'osprey body', project: '', rev: 1 }) })
+    for (const [t, id] of [[tk, 'kn1'], [td, 'ln1']] as const) await realFetch(`${base}/v1/notes/${id}`, { method: 'PUT', headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json', 'if-match': '*' }, body: JSON.stringify({ title: id, text: 'osprey body', project: '' }) })
     assert.deepEqual(removeMember(db, 'kim', true), { removed: true, notes: 1 })
     assert.deepEqual(removeMember(db, 'lee'), { removed: true, notes: 1 })
     db.close()
@@ -207,7 +207,7 @@ describe('teams preview', () => {
     const code = await new Promise((res) => spawn(process.execPath, ['src/main.ts', 'hook', 'sync-run'], { env: { ...process.env, HOME: home, THENWISE_HOME: home }, stdio: 'ignore' }).on('exit', res))
     assert.equal(code, 0)
     assert.equal(JSON.parse(readFileSync(join(home, 'team.json'), 'utf8')).queue.length, 0)
-    assert.equal((await realFetch(`http://127.0.0.1:${p2}/notes/erin/w1`, { headers: { authorization: `Bearer ${tok}` } })).status, 200)
+    assert.equal((await realFetch(`http://127.0.0.1:${p2}/v1/notes/erin/w1`, { headers: { authorization: `Bearer ${tok}` } })).status, 200)
     await s3.close()
   })
 
@@ -236,9 +236,9 @@ describe('teams preview', () => {
     }
     // The server sees the delete first, then the older share.
     const rev = Date.now() + 5e6
-    const h = { authorization: `Bearer ${tokenA}`, 'content-type': 'application/json' }
-    await realFetch(`${base}/notes/late?rev=${rev}`, { method: 'DELETE', headers: h })
-    const r = await realFetch(`${base}/notes/late`, { method: 'PUT', headers: h, body: JSON.stringify({ title: 't', text: 'x', project: '', rev: rev - 1 }) })
+    const h = { authorization: `Bearer ${tokenA}`, 'content-type': 'application/json', 'if-match': '*' }
+    await realFetch(`${base}/v1/notes/late?seq=${rev}`, { method: 'DELETE', headers: h })
+    const r = await realFetch(`${base}/v1/notes/late`, { method: 'PUT', headers: h, body: JSON.stringify({ title: 't', text: 'x', project: '', seq: rev - 1 }) })
     assert.equal(r.status, 409)
     assert.equal((await get(tokenB, '/notes/alice/late')).status, 404)
   })

@@ -2,13 +2,13 @@
 
 import { createInterface } from 'node:readline/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { loadConfig } from '../ingest/config.ts'
 import { flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from './client.ts'
 import { createTeamServer, invite, listMembers, openTeamDb, removeMember, rotate } from './server.ts'
 
-export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>]   (${LABEL})
+export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>] [--console <hub folder>] [--allow-origin <origin>] [--tls-behind-proxy | --allow-plain-http]   (${LABEL})
 thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name>   (run where the server runs)
 thenwise team join <url> <token> | search <words> | sync | pull
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`
@@ -27,7 +27,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
   const cfg = loadConfig(homedir())
   const dir = cfg.memDir
   const serverDir = flag('dir') ?? join(dir, 'team-server')
-  const BOOL = ['--keep-notes', '--delete-notes', '--yes', '--again']
+  const BOOL = ['--keep-notes', '--delete-notes', '--yes', '--again', '--tls-behind-proxy', '--allow-plain-http']
   const words = rest.filter((w, i) => !w.startsWith('--') && (!rest[i - 1]?.startsWith('--') || BOOL.includes(rest[i - 1]!)))
   try {
     if (cmd === 'share' || cmd === 'unshare') {
@@ -44,7 +44,15 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
     }
     if (cmd !== 'team') return 2
     if (sub === 'serve') {
-      const app = createTeamServer({ dir: serverDir, ...(flag('host') ? { host: flag('host')! } : {}), port: Number(flag('port') ?? 8788) })
+      const app = createTeamServer({
+        dir: serverDir,
+        ...(flag('host') ? { host: flag('host')! } : {}),
+        port: Number(flag('port') ?? 8788),
+        ...(flag('console') ? { console: resolve(flag('console')!) } : {}),
+        allowOrigins: (flag('allow-origin') ?? '').split(',').filter(Boolean),
+        tlsBehindProxy: process.argv.includes('--tls-behind-proxy'),
+        allowPlainHttp: process.argv.includes('--allow-plain-http'),
+      })
       const { host, port } = await app.listen()
       console.log(`thenwise team server (${LABEL}) listening on http://${host}:${port}, data in ${serverDir}\nThere is no TLS here. For other hosts, put an https proxy in front.`)
       const stop = () => void app.close().then(() => process.exit(0))

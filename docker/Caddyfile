@@ -1,0 +1,3 @@
+{$THENWISE_DOMAIN} {
+	reverse_proxy thenwise:8788
+}

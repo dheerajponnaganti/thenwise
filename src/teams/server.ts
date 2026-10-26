@@ -4,11 +4,11 @@
 // revision only grows (If-Match), and feeds read in that order. Roles decide who may write; refusals are audited.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 
 import { quote } from '../core/frontmatter.ts'
 import { VAULT_FORMAT } from '../vault/vault.ts'
@@ -586,7 +586,47 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
   return {
     // 127.0.0.1 unless the owner chooses otherwise (see the check above).
-    listen: () => new Promise((ok) => server.listen(opts.port ?? 0, host, () => ok({ host, port: (server.address() as { port: number }).port }))),
-    close: () => new Promise((ok) => (server.closeAllConnections(), server.close(() => (db.close(), ok())))),
+    // server.pid tells `team restore` that the database is in use.
+    listen: () => new Promise((ok) => server.listen(opts.port ?? 0, host, () => (writeFileSync(join(opts.dir, 'server.pid'), String(process.pid), { mode: 0o600 }), ok({ host, port: (server.address() as { port: number }).port })))),
+    close: () => new Promise((ok) => (server.closeAllConnections(), server.close(() => (db.close(), rmSync(join(opts.dir, 'server.pid'), { force: true }), ok())))),
+  }
+}
+
+/** An online copy of team.db (VACUUM INTO), readable by the owner only. Safe while the server runs. */
+export function backupTeam(dir: string, file: string): void {
+  if (existsSync(file)) throw new Error(`${file} exists; choose a new file name`)
+  const db = openTeamDb(dir)
+  try {
+    db.prepare('VACUUM INTO ?').run(file)
+  } finally {
+    db.close()
+  }
+  chmodSync(file, 0o600)
+}
+
+/** Puts a backup in place of team.db. Refused while a server runs on the folder, and for a file from a newer Thenwise. */
+export function restoreTeam(dir: string, file: string): number {
+  const pid = existsSync(join(dir, 'server.pid')) ? Number(readFileSync(join(dir, 'server.pid'), 'utf8')) : 0
+  // A stale pid file can name this very process (a new container starts its command as pid 1).
+  if (pid && pid !== process.pid && alive(pid)) throw new Error(`a team server (pid ${pid}) runs on ${dir}; stop it first`)
+  const src = new DatabaseSync(file, { readOnly: true })
+  const at = Number((src.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
+  src.close()
+  if (at > SCHEMA_VERSION) throw new Error(`${file} was written by a newer Thenwise (schema ${at}, this one knows ${SCHEMA_VERSION}). Update Thenwise.`)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  for (const f of ['team.db-wal', 'team.db-shm']) rmSync(join(dir, f), { force: true })
+  copyFileSync(file, join(dir, 'team.db'))
+  chmodSync(join(dir, 'team.db'), 0o600)
+  openTeamDb(dir).close() // an older backup migrates now
+  return at
+}
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+
+    return true
+  } catch {
+    return false
   }
 }

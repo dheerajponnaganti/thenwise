@@ -1,0 +1,23 @@
+# The team server behind Caddy, which gets and renews the TLS certificate for THENWISE_DOMAIN on its own.
+services:
+  thenwise:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - thenwise-data:/data
+    restart: unless-stopped
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      THENWISE_DOMAIN: ${THENWISE_DOMAIN:?set THENWISE_DOMAIN to the server's DNS name}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+volumes:
+  thenwise-data: {}
+  caddy-data: {}

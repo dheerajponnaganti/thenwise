@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15
+
+Self-host kit: a team server with the Hub and TLS, and team backups.
+
+- Self-host kit: `team backup <file>` (an online copy, safe while the server runs) and `team restore <file>` (refused while a server runs on the folder, and for a file from a newer Thenwise). `docker/` runs the team server and the Hub behind Caddy with automatic TLS; `docs/teams.md` covers running, inviting, joining, the Hub, backup and restore, removing a member, and what leaves which machine.
+
 ## 0.1.14
 
 Teams in the tools: what teammates share is part of the memory.

@@ -47,6 +47,7 @@ export const GOOD = 0.5 // idf-weighted query coverage a passage needs to count 
 const K = 60 // RRF constant
 const SUBAGENT = 0.5 // weight of a subagent turn in ranking: crew briefs share boilerplate and crowd out the real answers
 const DUP = 0.8 // word overlap above which two passages of one session count as the same text
+const TERM_CACHE = 256 // words whose passage sets a server keeps; a long-lived one would otherwise keep every word ever asked
 const HUB = 30 // a file touched by more than this many nodes is a hub
 
 export const words = (q: string): string[] => q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -260,6 +261,8 @@ export class Graph {
   }
   private term(t: string) {
     let v = this.idfCache.get(t)
+    // Least recently used goes first: a hit moves to the end, and past TERM_CACHE words the oldest is dropped.
+    if (v) (this.idfCache.delete(t), this.idfCache.set(t, v))
     if (!v) {
       const m = `"${t}"`
       // Lazy: sorted rowids in a typed array, so a word in half the passages costs 4 bytes each, not a Set entry (and a row object) each.
@@ -272,6 +275,7 @@ export class Graph {
       } else set = new Set((this.db.prepare('SELECT rowid FROM passages_fts WHERE passages_fts MATCH ?').all(m) as any[]).map((r) => r.rowid as number))
       v = { set, idf: Math.log(1 + (this.passageCount - set.size + 0.5) / (set.size + 0.5)) }
       this.idfCache.set(t, v)
+      if (this.idfCache.size > TERM_CACHE) this.idfCache.delete(this.idfCache.keys().next().value!)
     }
     return v
   }
@@ -296,7 +300,9 @@ export class Graph {
     const tg = trigrams(word)
     const cands = this.vocab.filter((v) => Math.abs(v.word.length - word.length) <= 3 && v.word !== word).map((v) => ({ ...v, sim: similarity(tg, trigrams(v.word)) })).filter((v) => v.sim >= TYPO_MIN)
 
-    return cands.sort((a, b) => b.sim - a.sim || b.df - a.df || (a.word < b.word ? -1 : 1)).find((v) => this.term(v.word).set.size > 0)?.word
+    // Checked without the term cache: a long list of near misses would push out the words actually asked.
+    const occurs = this.db.prepare('SELECT 1 FROM passages_fts WHERE passages_fts MATCH ? LIMIT 1')
+    return cands.sort((a, b) => b.sim - a.sim || b.df - a.df || (a.word < b.word ? -1 : 1)).find((v) => (this.idfCache.get(v.word)?.set.size ?? (occurs.get(`"${v.word}"`) ? 1 : 0)) > 0)?.word
   }
 
   /** Nodes named exactly in the query: PR numbers, shas, paths, note titles. Each comes with the reason. */
@@ -349,7 +355,6 @@ export class Graph {
   /** Ranked passages for a query. `filter` keeps only nodes it accepts (as-of dates, kinds). */
   search(q: string, opts: { filter?: (n: Node) => boolean; limit?: number } = {}): Search {
     const terms = queryTerms(q)
-    if (this.idfCache.size > 16) this.idfCache.clear() // a long-lived server would otherwise keep every word ever asked
     const sets = this.termSets(terms)
     type Alt = { t: string; set: { size: number; has(r: number): boolean } }
     const known = sets.filter((s) => s.set.size > 0).map((s) => ({ ...s, alt: [] as Alt[] }))

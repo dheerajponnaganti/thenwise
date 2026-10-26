@@ -5,11 +5,12 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { maskSecrets } from "../core/secrets.js";
+import { hasPlanFiles, STEMS } from "../hooks/entry.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { fullNode } from "./parts.js";
 import { repoRoot } from "./repos.js";
-export const STEMS = ['task_plan', 'findings', 'progress'];
+export { hasPlanFiles, STEMS };
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 /** The Claude Code project key of a folder, the same one the chat archive uses. */
 export const keyOf = (folder) => folder.replace(/[^A-Za-z0-9]/g, '-');
@@ -71,7 +72,6 @@ export function snapshotNear(cfg, cwd) {
     return n;
 }
 /** True when `cwd` holds a plan file, so a hook can skip the config load when it does not. */
-export const hasPlanFiles = (cwd) => STEMS.some((s) => existsSync(join(cwd, `${s}.md`))) || existsSync(join(cwd, '.planning'));
 /** Snapshots the plan files in each root and the folders directly inside it. shortcut: two levels only, deeper projects need their own root. */
 export function snapshotAll(cfg) {
     if (!cfg.plans)

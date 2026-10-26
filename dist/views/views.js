@@ -1,22 +1,11 @@
-// `thenwise views --vault <dir>`: generated Obsidian notes, written to <dir>/Memory v2/Generated/.
-// Timelines per project, a page per busy file, and an index. Deterministic: the same graph gives the same files,
-// and a file is only rewritten when its text changes. Only files this command made (front matter `generated: true`)
-// are ever removed. No model.
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
-import { GENERATED } from "../ingest/ingest.js";
-import { Graph, local } from "../query/engine.js";
-const TOP_FILES = 30;
-const PASSAGE = 300;
+// Helpers for the vault writer: the project of each chat, source lines and cuts. The `views` command that also used
+// them is gone; the vault writer replaced it.
+import { basename } from 'node:path';
 const flat = (s) => s.replace(/\[\[|\]\]/g, '').replace(/\s+/g, ' ').trim();
 export const cut = (s, n) => (flat(s).length > n ? `${flat(s).slice(0, n).trimEnd()}...` : flat(s));
-export const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'untitled';
 const short = (id) => id.replace(/^(ses|turn|sum):(.{8}).*$/, '$1:$2');
 // A private mirror repo named "<name>-private" shares its timeline with the repo it mirrors.
 export const repo = (p) => p.replace(/-private$/, '');
-const ms = (n) => Date.parse(n.at) || 0;
-const MARK = (built) => `---\ngenerated: true\n---\n\n> Generated and rebuilt by \`memory views\` (graph built ${built}). Do not edit: changes are overwritten.\n\n`;
 export function sourceOf(n) {
     if (n.kind === 'pr')
         return `[PR #${n.id.split('#').pop()}](${n.extra.url ?? n.source})`;
@@ -77,90 +66,4 @@ export function sessionProjects(g, projects = []) {
         projectOf.set(s.id, chosen ?? best ?? folder ?? (basename(String(s.extra.cwd ?? '')) || s.project));
     }
     return { projectOf, touchedBy };
-}
-export function writeViews(dbPath, vault, opts = {}) {
-    const g = new Graph(dbPath);
-    const built = local(opts.builtAt ?? statSync(dbPath).mtime.toISOString());
-    const root = join(vault, GENERATED);
-    const out = new Map(); // relative path -> text
-    const { projectOf, touchedBy } = sessionProjects(g, opts.projects);
-    // Timelines.
-    const lines = new Map();
-    const add = (project, n, text) => (lines.get(project) ?? lines.set(project, []).get(project)).push({ n, text });
-    for (const n of g.nodes.values()) {
-        if (n.kind === 'pr')
-            add(repo(n.project), n, `PR #${n.id.split('#').pop()}: ${cut(n.title, 140)}${n.until ? ` (merged ${local(n.until).slice(0, 10)})` : ` (${String(n.extra.state ?? 'open').toLowerCase()})`}`);
-        else if (n.kind === 'commit') {
-            const t = n.extra.trailers;
-            if (t?.decision)
-                add(repo(n.project), n, `decision: ${cut(t.decision.join('; '), 160)} (commit "${cut(n.title, 80)}")`);
-        }
-        else if (n.kind === 'session')
-            add(projectOf.get(n.id), n, `session began: "${cut(n.title, 140)}"`);
-        else if (n.kind === 'summary')
-            add(projectOf.get(n.source) ?? n.project, n, `compaction summary: ${cut(g.fullText(n.id), 140)}`);
-    }
-    for (const [project, items] of lines) {
-        const body = items.sort((a, b) => ms(a.n) - ms(b.n) || (a.n.id < b.n.id ? -1 : 1)).map((x) => `- ${local(x.n.at)}  ${x.text}  (${sourceOf(x.n)})`);
-        out.set(`Timelines/${slug(project)}.md`, `${MARK(built)}# Timeline: ${project}\n\n${body.join('\n')}\n`);
-    }
-    // Files with the most history. A turn counts as its session.
-    const histories = new Map();
-    const touch = (file, n) => (histories.get(file) ?? histories.set(file, new Map()).get(file)).set(n.id, n);
-    for (const [file, ids] of touchedBy)
-        for (const id of ids)
-            touch(file, g.nodes.get(id));
-    for (const n of g.nodes.values()) {
-        if (!['pr', 'commit', 'note', 'summary'].includes(n.kind))
-            continue;
-        for (const e of g.adj.get(n.id) ?? [])
-            if (e.out && g.nodes.get(e.to)?.kind === 'file' && ['touches', 'changed', 'mentions'].includes(e.kind))
-                touch(e.to, n);
-    }
-    const used = new Set();
-    const top = [...histories].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1)).slice(0, TOP_FILES);
-    const index = [];
-    for (const [file, items] of top) {
-        const f = g.nodes.get(file);
-        const name = f.extra.aliases?.[0] ?? file.slice(5);
-        let s = slug(name);
-        if (used.has(s))
-            s = `${s}-${createHash('sha1').update(file).digest('hex').slice(0, 6)}`;
-        used.add(s);
-        const body = [...items.values()].sort((a, b) => ms(b) - ms(a) || (a.id < b.id ? -1 : 1)).map((n) => {
-            const text = n.kind === 'pr' || n.kind === 'commit' ? `${n.title}${g.fullText(n.id) ? `: ${g.fullText(n.id)}` : ''}` : g.fullText(n.id) || n.title;
-            return `- ${local(n.at)}  ${n.kind} (${sourceOf(n)}): ${cut(text, PASSAGE)}`;
-        });
-        out.set(`Files/${s}.md`, `${MARK(built)}# File: ${name}\n\n${items.size} records touched it, newest first.\n\n${body.join('\n')}\n`);
-        index.push(`- [[${GENERATED}Files/${s}|${name}]] (${items.size})`);
-    }
-    const tl = [...out.keys()].filter((k) => k.startsWith('Timelines/')).sort();
-    out.set('Index.md', `${MARK(built)}# Memory v2 views\n\nBuilt from the graph of ${built}.\n\n## Timelines\n\n${tl.map((k) => `- [[${GENERATED}${k.replace(/\.md$/, '')}|${k.slice(10, -3)}]]`).join('\n')}\n\n## Files with the most history\n\n${index.join('\n')}\n`);
-    // Write what changed; remove stale files that this command made, inside the Generated folder only.
-    let written = 0;
-    let removed = 0;
-    for (const [rel, text] of out) {
-        const p = join(root, rel);
-        if (existsSync(p) && readFileSync(p, 'utf8') === text)
-            continue;
-        mkdirSync(dirname(p), { recursive: true });
-        writeFileSync(p, text);
-        written++;
-    }
-    const sweep = (dir) => {
-        if (!existsSync(dir))
-            return;
-        for (const e of readdirSync(dir, { withFileTypes: true })) {
-            const p = join(dir, e.name);
-            if (e.isDirectory()) {
-                sweep(p);
-                if (!readdirSync(p).length)
-                    rmdirSync(p);
-            }
-            else if (e.isFile() && !out.has(p.slice(root.length)) && /^---\ngenerated: true\n/.test(readFileSync(p, 'utf8')))
-                (rmSync(p), removed++);
-        }
-    };
-    sweep(root);
-    return { dir: root, files: [...out.keys()].sort(), written, removed };
 }

@@ -10,6 +10,7 @@ import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from "../inge
 import { repoRoot } from "../ingest/repos.js";
 import { parseSession } from "../ingest/transcript.js";
 import { tighten } from "../privacy/perms.js";
+import { READERS } from "./entry.js";
 export const TRACE_TOKENS = 600;
 export const RESUME_TOKENS = 1500;
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
@@ -126,9 +127,20 @@ export function syncRun(env) {
         catch (e) {
             log(env, `plan scan failed: ${e instanceof Error ? e.message : e}`, 'error', 'sync_plans_failed');
         }
+        let changed = true;
+        const vaultStamp = join(env.dir, 'vault.json');
         for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : [])]) {
+            // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
+            if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
+                log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault');
+                continue;
+            }
             const t = Date.now();
             const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } });
+            if (verb === 'ingest')
+                changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout);
+            if (verb === 'vault write' && r.status === 0)
+                writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 });
             log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`);
         }
     }
@@ -168,7 +180,6 @@ function fileHint(env, input, file, event = 'PostToolUse') {
         markSeen(env, session, input.agent_id, file);
     return block === '' ? '' : reply(event, block);
 }
-const READERS = /^(?:cat|head|tail|less|bat|sed)$/;
 /** The one file a plain read command (cat, head, tail, sed -n, less, bat) opens, or undefined for anything else. */
 export function readTarget(cmd, cwd) {
     if (/[|;&<>`$()\n]/.test(cmd))
@@ -286,15 +297,4 @@ export function runHook(name, input, env) {
         log(env, `hook ${name} failed: ${e instanceof Error ? `${e.message} ${e.stack?.split('\n')[1]?.trim() ?? ''}` : e}`, 'error', 'failed');
     }
     return '';
-}
-export async function readStdin() {
-    let raw = '';
-    for await (const d of process.stdin)
-        raw += d;
-    try {
-        return JSON.parse(raw || '{}');
-    }
-    catch {
-        return {};
-    }
 }

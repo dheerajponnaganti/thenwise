@@ -23,7 +23,8 @@ import { discoverRepos, githubSlug } from "./repos.js";
 import { parseSession } from "./transcript.js";
 export { GENERATED, datedSections } from "./parts.js";
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
-export const STATE_VERSION = 2;
+// 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
+export const STATE_VERSION = 3;
 /** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
 export const STORE_FORMAT = 1;
 /** One value from a store's meta table; undefined when the store or the key is missing. */
@@ -53,7 +54,10 @@ export function storeFormat(dbPath) {
     }
 }
 /** Everything in the config that decides what enters the memory. A change rebuilds the store. */
-export const signatureOf = (cfg) => JSON.stringify({ v: STATE_VERSION, home: cfg.home, claude: cfg.claudeDir, roots: cfg.roots, repos: cfg.repos, vaults: cfg.vaults, entry: cfg.includeEntrypoints, excl: cfg.ingestExcludeProjects, marks: cfg.ingestExcludeMarkers });
+/** The roots and repos a store was built with; an update that sees others re-checks which chats are in scope. */
+export const rootsKey = (cfg) => JSON.stringify([cfg.roots, cfg.repos]);
+// Roots and repos found from the chats are left out: a new project folder is an update (incremental.ts re-checks scope), not a rebuild.
+export const signatureOf = (cfg) => JSON.stringify({ v: STATE_VERSION, home: cfg.home, claude: cfg.claudeDir, roots: cfg.rootsAuto ? 'auto' : cfg.roots, repos: cfg.reposAuto ? 'auto' : cfg.repos, vaults: cfg.vaults, git: cfg.gitAll, entry: cfg.includeEntrypoints, excl: cfg.ingestExcludeProjects, marks: cfg.ingestExcludeMarkers });
 export const DERIVED = new Set(['made', 'opened', 'mentions']);
 export const FILE_KINDS = ['changed', 'read', 'edited', 'ran_in', 'touches'];
 export const sha256 = (b) => createHash('sha256').update(b).digest('hex');
@@ -63,11 +67,58 @@ export function parseSf(sf, bytes, home, until = '') {
     const sub = sf.name.includes('/subagents/');
     return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub);
 }
-/** Commits reachable from the default branch: origin/HEAD if set, else main or master, else HEAD. Null when git fails. */
+/** The default branch: origin/HEAD if set, else main or master, else HEAD. */
+const defaultRef = (repo) => gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
+/** Commits reachable from the default branch. Null when git fails. */
 export function mainShas(repo) {
-    const ref = gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
-    const raw = gitOut(repo, ['rev-list', ref]);
+    const raw = gitOut(repo, ['rev-list', defaultRef(repo)]);
     return raw === null ? null : new Set(raw.split('\n').filter(Boolean));
+}
+/** History before the first chat that is worth keeping: 90 days of it. */
+export const HISTORY_DAYS = 90;
+/** The start of the earliest chat, in ms; Infinity when there is none (then nothing bounds the history). */
+export const firstChat = (ats) => Math.min(...ats.map((a) => Date.parse(a)).filter((t) => !Number.isNaN(t)));
+/** Whose first-parent line is history: the local default branch (origin/HEAD's name, else main or master), which
+ * holds commits not pushed yet, and the checked-out HEAD, which holds the work in progress. */
+function lineRefs(repo) {
+    const remote = gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim();
+    const local = [remote?.replace('refs/remotes/origin/', 'refs/heads/'), 'refs/heads/main', 'refs/heads/master'].find((r) => r && gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null);
+    return [...new Set([local ?? remote, 'HEAD'].filter((r) => !!r))];
+}
+/**
+ * The commits a repo gives the memory: the first-parent line of `lineRefs` since `since`, and every commit the chats
+ * name (a printed or mentioned sha) that the repo has. `ingest.git_all` reads every branch instead. Null when git fails.
+ * A clone of a large project would otherwise add its whole history, every branch of it.
+ */
+export function repoShas(repo, cfg, since, named) {
+    if (cfg.gitAll)
+        return gitOut(repo, ['rev-list', ...ALL_REFS])?.split('\n').filter(Boolean) ?? null;
+    const line = gitOut(repo, ['rev-list', '--first-parent', ...(Number.isFinite(since) ? [`--since=${Math.floor(since / 1000)}`] : []), ...lineRefs(repo)]);
+    if (line === null)
+        return null;
+    const out = new Set(line.split('\n').filter(Boolean));
+    if (named.size) {
+        const found = gitOut(repo, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], `${[...named].join('\n')}\n`) ?? '';
+        for (const l of found.split('\n'))
+            if (l.endsWith(' commit'))
+                out.add(l.split(' ')[0]);
+    }
+    return [...out];
+}
+/** The shas the chats name: printed by a commit they made, or mentioned in a turn. Commit messages do not count, so a
+ * full build (which reads commits after this) and an update name the same ones. */
+export function namedShas(parts, home) {
+    const out = new Set();
+    for (const p of parts) {
+        for (const c of p.claims)
+            if (c.kind === 'sha')
+                out.add(c.val.slice(0, 7)); // as the claims table keeps them
+        for (const n of p.nodes)
+            for (const r of extractRefs(n.kind, n.title, n.text, home))
+                if (r.type === 'sha')
+                    out.add(r.val);
+    }
+    return out;
 }
 // Stash refs hold work in progress, not history: never read.
 export const ALL_REFS = ['--exclude=refs/stash', '--all'];
@@ -227,8 +278,11 @@ function fullBuild(cfg, opts, dbPath) {
     const repos = discoverRepos(cfg.repos, sessions.flatMap((x) => [x.cwd, ...workDirs(cfg, x.dirs)]));
     const trailerItems = [];
     const commits = new Map(); // full sha -> commit
+    const named = namedShas(sessions.map((x) => x.part), cfg.home);
+    const since = firstChat(sessions.flatMap((x) => x.part.nodes.filter((n) => n.kind === 'session').map((n) => n.at))) - HISTORY_DAYS * 864e5;
     for (const repo of repos) {
-        const raw = gitOut(repo, ['log', ...ALL_REFS, ...LOG_FORMAT]);
+        const shas = repoShas(repo, cfg, since, named);
+        const raw = shas === null ? null : shas.length ? gitOut(repo, ['log', '--no-walk=unsorted', '--stdin', ...LOG_FORMAT], `${shas.join('\n')}\n`) : '';
         if (raw === null) {
             warnings.push(`git log failed in ${repo}`);
             continue;
@@ -324,7 +378,7 @@ function fullBuild(cfg, opts, dbPath) {
             (g.edges.delete(k), DERIVED.has(e.kind) || pending.push(e));
     const excludedEval = skipped + counts.marker;
     const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT, ...(opts.until ? { until: opts.until } : {}) };
-    const state = opts.until ? null : { signature: signatureOf(cfg), repos, files: fileRows, owners, refs: refRows, claims: claimRows, commits: [...commits].map(([sha, c]) => [sha, c.id, c.repo, c.title, c.ms]), aliases: aliasRows, pending };
+    const state = opts.until ? null : { signature: signatureOf(cfg), roots: rootsKey(cfg), repos, files: fileRows, owners, refs: refRows, claims: claimRows, commits: [...commits].map(([sha, c]) => [sha, c.id, c.repo, c.title, c.ms]), aliases: aliasRows, pending };
     writeDb(dbPath, g, meta, state);
     return { db: dbPath, sessionsIn: counts.in, sessionsOut: counts.out, excludedEval, excludedEntrypoint: counts.entry, afterCutoff: counts.empty, warnings, mode: 'full', filesRead: files.length, ms: 0 };
 }
@@ -371,7 +425,7 @@ function writeDb(path, g, meta, state) {
             for (const r of rows)
                 st.run(...r);
         };
-        put('INSERT INTO ingest_state VALUES (?,?)', [['signature', state.signature], ['repos', JSON.stringify(state.repos)]]);
+        put('INSERT INTO ingest_state VALUES (?,?)', [['signature', state.signature], ['repos', JSON.stringify(state.repos)], ['roots', state.roots]]);
         put('INSERT INTO ingest_files VALUES (?,?,?,?,?,?,?)', state.files);
         put('INSERT INTO owners VALUES (?,?,?,?)', state.owners.map((o) => [o.node, o.file, o.len, o.data]));
         put('INSERT INTO refs VALUES (?,?,?,?,?)', state.refs);

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 // Entry point: checks the runtime before anything loads SQLite, then runs main.ts.
 
+// The hooks on most tool calls stop here when they have nothing to do, before SQLite and the store code load.
+if (process.argv[2] === 'hook' && (process.argv[3] === 'post' || process.argv[3] === 'read')) {
+  const { hookInput, nothingToDo } = await import('./hooks/entry.ts')
+  if (nothingToDo(process.argv[3], await hookInput())) process.exit(0)
+}
+
 const origEmit = process.emitWarning.bind(process) as (w: unknown, ...a: unknown[]) => void
 // Silence only the SQLite ExperimentalWarning.
 process.emitWarning = ((w: unknown, ...a: unknown[]) => {

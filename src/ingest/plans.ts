@@ -7,6 +7,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { maskSecrets } from '../core/secrets.ts'
+import { hasPlanFiles, STEMS } from '../hooks/entry.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
@@ -14,7 +15,7 @@ import { fullNode } from './parts.ts'
 import { repoRoot } from './repos.ts'
 import type { Part } from './parts.ts'
 
-export const STEMS = ['task_plan', 'findings', 'progress']
+export { hasPlanFiles, STEMS }
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 /** The Claude Code project key of a folder, the same one the chat archive uses. */
 export const keyOf = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
@@ -72,7 +73,6 @@ export function snapshotNear(cfg: Config, cwd: string): number {
 }
 
 /** True when `cwd` holds a plan file, so a hook can skip the config load when it does not. */
-export const hasPlanFiles = (cwd: string) => STEMS.some((s) => existsSync(join(cwd, `${s}.md`))) || existsSync(join(cwd, '.planning'))
 
 /** Snapshots the plan files in each root and the folders directly inside it. shortcut: two levels only, deeper projects need their own root. */
 export function snapshotAll(cfg: Config): number {

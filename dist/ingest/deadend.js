@@ -30,3 +30,43 @@ export function deadEnd(text) {
 }
 /** A commit: `Revert "..."` in the subject, else a phrase in the body. */
 export const commitDeadEnd = (subject, body) => (/^Revert\b/.test(subject) ? subject : deadEnd(body));
+const alias = (p) => p.split('/').slice(-2).join('/');
+const short = (id) => id.slice(0, 8);
+/**
+ * Dead ends from what happened in one session, not from what was said: an edit that a later edit puts back (the new
+ * text hashes to an earlier old text), and a failed test run followed by work on another file. Keyed by the later
+ * turn. Sessions do not cross: an undo next week is a new decision, not this attempt failing.
+ */
+export function structural(turns) {
+    const out = new Map();
+    const seen = new Map(); // file -> earlier old texts
+    let lastEdited;
+    let failedAfter; // the file edited before a failed run
+    for (const t of turns) {
+        const events = [...(t.changes ?? []).map((c) => ({ at: c.at, c })), ...(t.tests ?? []).map((x) => ({ at: x.at, x }))].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+        for (const e of events) {
+            if ('x' in e) {
+                if (e.x.failed && lastEdited)
+                    failedAfter = lastEdited;
+                else if (!e.x.failed)
+                    failedAfter = undefined;
+                continue;
+            }
+            const c = e.c;
+            const before = seen.get(c.file) ?? [];
+            const back = c.newHash ? before.find((b) => b.hash === c.newHash && b.turn !== t.id) : undefined;
+            if (back && !out.has(t.id))
+                out.set(t.id, { text: `undone edit to ${alias(c.file)} (made in turn ${short(back.turn)}, put back in turn ${short(t.id)})`, kind: 'undone', file: c.file });
+            if (c.oldHash)
+                seen.set(c.file, [...before, { hash: c.oldHash, turn: t.id }]);
+            if (failedAfter && c.file !== failedAfter && !out.has(t.id))
+                out.set(t.id, { text: `tests failed after editing ${alias(failedAfter)}; moved on to ${alias(c.file)}`, kind: 'failed-test', file: failedAfter });
+            if (failedAfter && c.file !== failedAfter)
+                failedAfter = undefined;
+            lastEdited = c.file;
+        }
+    }
+    return out;
+}
+/** A prompt line `[dead-end] text`: the person says this attempt failed. */
+export const markedDeadEnd = (prompt) => /^\s*\[dead-end\]\s*(\S.*)$/im.exec(prompt)?.[1]?.trim().slice(0, 300);

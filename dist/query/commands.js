@@ -54,7 +54,7 @@ export function label(g, id) {
         return n.extra.aliases?.[0] ?? id.slice(5);
     return `${n.kind} ${cut(n.title || n.id, 60)}`;
 }
-const VERB = { derived_from: 'was derived from', supersedes: 'supersedes', touches: 'touches', changed: 'changed', read: 'read', edited: 'edited', ran_in: 'ran a command in', made: 'made', opened: 'opened', merged_as: 'was merged as', links_to: 'links to', continued_from: 'continues', mentions: 'mentions' };
+const VERB = { dead_end: 'records a dead end on', derived_from: 'was derived from', supersedes: 'supersedes', touches: 'touches', changed: 'changed', read: 'read', edited: 'edited', ran_in: 'ran a command in', made: 'made', opened: 'opened', merged_as: 'was merged as', links_to: 'links to', continued_from: 'continues', mentions: 'mentions' };
 export function sentence(g, src, dst, kind, extra) {
     const why = kind === 'mentions' && extra?.match ? ` (as "${extra.match}")` : '';
     return `${label(g, src)} ${VERB[kind] ?? kind} ${label(g, dst)}${why}`;
@@ -86,7 +86,9 @@ export function excerpt(text, max = 360, keys = [], idf = () => 1) {
 }
 const quoted = (text) => text.split('\n').filter((l) => l.trim()).map((l) => `   | ${l}`).join('\n');
 /** Automatic dead ends (phrase rules at ingest, not curated notes) say so. */
-const deadNote = (n) => (n.extra?.deadEnd ? `\n   dead end (automatic): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '');
+const deadNote = (n) => (n.extra?.deadEnd ? `\n   dead end (automatic, ${n.extra.deadEndKind ?? 'phrase'}): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '');
+/** Dead ends from what happened (an undo, a failed test, a revert, a closed PR, the person's own mark) weigh more than a phrase. */
+export const deadWeight = (n) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?? 'phrase') === 'phrase' ? 1 : 2);
 function result(i, h, extra = '') {
     const n = h.node;
     return `${i}. [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${h.project}   source: ${sourceOf(n)}   passage: ${h.pid.split('#').pop()}   found by: ${h.lanes.join('+')}${deadNote(n)}${extra}\n${quoted(excerpt(h.shown, 360, [], h.idf))}`;
@@ -254,7 +256,7 @@ function rankMarked(g, name, topic, markers) {
     const top = Math.max(...s.good.map((h) => h.score));
     const scored = s.good
         .map((h) => {
-        const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' && h.node.extra?.deadEnd ? 1 : 0);
+        const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' ? deadWeight(h.node) : 0);
         return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) };
     })
         .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1));

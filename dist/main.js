@@ -9,9 +9,35 @@ const flag = (name) => {
     const i = process.argv.indexOf(`--${name}`);
     return i > 0 ? process.argv[i + 1] : undefined;
 };
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
 if (cmd === 'setup' || cmd === 'init')
     process.exit(await (await import("./setup/setup.js")).setup(process.argv.slice(3)));
+if (cmd === 'deadend' || cmd === 'decide') {
+    // A note the person writes on purpose: active at once, tied to the newest chat in scope and its project.
+    const text = process.argv.slice(3).filter((a) => !a.startsWith('--')).join(' ').trim();
+    if (!text)
+        (console.error(`usage: thenwise ${cmd} "<what>" [--here]`), process.exit(2));
+    const { loadConfig } = await import("./ingest/config.js");
+    const { makeId, saveNote } = await import("./capture/notes.js");
+    const { Graph } = await import("./query/engine.js");
+    const cfg = loadConfig();
+    const db = join(cfg.memDir, 'graph.db');
+    let source = '';
+    let project = '';
+    if (existsSync(db)) {
+        const g = new Graph(db, { lazy: true });
+        if (process.argv.includes('--here'))
+            g.scopeTo(process.cwd());
+        const ses = g.ofKind('session').filter((n) => g.inScope(n)).sort((a, b) => Date.parse(b.until || b.at) - Date.parse(a.until || a.at))[0];
+        if (ses)
+            [source, project] = [ses.id, ses.project];
+    }
+    const type = cmd === 'deadend' ? 'dead_end' : 'decision';
+    const now = new Date().toISOString();
+    const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '' });
+    console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}The next sync adds it to the memory.`);
+    process.exit(0);
+}
 if (cmd === 'report')
     process.exit(await (await import("./report/report.js")).reportCommand(process.argv.slice(3)));
 if (cmd === 'logs')

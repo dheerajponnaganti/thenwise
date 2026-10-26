@@ -1,4 +1,5 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { normPath } from "../core/vault-index.js";
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users)\/[^\s"'`;|&)<>]+)/g;
@@ -6,6 +7,8 @@ const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|sys
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`);
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`);
 const AGENT_TOOLS = /^(Agent|Task)$/;
+const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node --test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/;
+const h = (s) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '');
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i;
 export function normalizePath(path, home, cwd = '/') {
     const p = normPath(path);
@@ -86,6 +89,8 @@ export function parseSession(text, id, home, until = '', sub = false) {
                     const out = textOf(b.content);
                     if (hit.kind === 'agent')
                         out && hit.turn.reply.push(out.slice(0, 8000)); // a subagent's report to the turn that asked
+                    else if (hit.kind === 'test')
+                        hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true });
                     else if (hit.kind === 'commit')
                         for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\]/g))
                             hit.turn.commitShas.add(m[1]);
@@ -96,7 +101,7 @@ export function parseSession(text, id, home, until = '', sub = false) {
             }
             const p = d.isMeta ? null : promptText(content);
             if (p && typeof d.uuid === 'string') {
-                turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set() };
+                turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] };
                 s.turns.push(turn);
             }
         }
@@ -113,6 +118,14 @@ export function parseSession(text, id, home, until = '', sub = false) {
                     s.paths.add(p);
                     if (turn)
                         (b.name === 'Read' ? turn.reads : /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name) ? turn.edits : turn.reads).add(p);
+                    const at = d.timestamp ?? turn?.at ?? '';
+                    if (turn && b.name === 'Edit')
+                        turn.changes.push({ file: p, oldHash: h(inp.old_string), newHash: h(inp.new_string), at });
+                    if (turn && b.name === 'MultiEdit' && Array.isArray(inp.edits))
+                        for (const e of inp.edits)
+                            turn.changes.push({ file: p, oldHash: h(e?.old_string), newHash: h(e?.new_string), at });
+                    if (turn && b.name === 'Write')
+                        turn.changes.push({ file: p, oldHash: '', newHash: h(inp.content), at });
                 }
                 if (turn && AGENT_TOOLS.test(b.name))
                     pending.set(b.id, { turn, kind: 'agent' });
@@ -121,6 +134,8 @@ export function parseSession(text, id, home, until = '', sub = false) {
                         s.paths.add(p);
                         turn?.ran.add(p);
                     }
+                    if (turn && TEST_RUN.test(inp.command))
+                        pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at });
                     if (turn && /\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(inp.command)) {
                         pending.set(b.id, { turn, kind: 'commit' });
                         const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command);

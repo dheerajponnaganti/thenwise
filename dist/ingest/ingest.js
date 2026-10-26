@@ -78,26 +78,25 @@ export function mainShas(repo) {
 export const HISTORY_DAYS = 90;
 /** The start of the earliest chat, in ms; Infinity when there is none (then nothing bounds the history). */
 export const firstChat = (ats) => Math.min(...ats.map((a) => Date.parse(a)).filter((t) => !Number.isNaN(t)));
-/** Whose first-parent line is history: the local default branch (origin/HEAD's name, else main or master), which
- * holds commits not pushed yet, and the checked-out HEAD, which holds the work in progress. */
-function lineRefs(repo) {
-    const remote = gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim();
-    const local = [remote?.replace('refs/remotes/origin/', 'refs/heads/'), 'refs/heads/main', 'refs/heads/master'].find((r) => r && gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null);
-    return [...new Set([local ?? remote, 'HEAD'].filter((r) => !!r))];
-}
 /**
- * The commits a repo gives the memory: the first-parent line of `lineRefs` since `since`, and every commit the chats
- * name (a printed or mentioned sha) that the repo has. `ingest.git_all` reads every branch instead. Null when git fails.
- * A clone of a large project would otherwise add its whole history, every branch of it.
+ * The commits a repo gives the memory: every branch since `since` (90 days before the first chat), and any older commit
+ * the chats name (a printed or mentioned sha). A clone of a large project would otherwise add its whole history;
+ * branches stay because squash-merged work keeps its detail only there. `ingest.git_all` drops the date bound.
+ * Null when git fails.
  */
 export function repoShas(repo, cfg, since, named) {
-    if (cfg.gitAll)
-        return gitOut(repo, ['rev-list', ...ALL_REFS])?.split('\n').filter(Boolean) ?? null;
-    const line = gitOut(repo, ['rev-list', '--first-parent', ...(Number.isFinite(since) ? [`--since=${Math.floor(since / 1000)}`] : []), ...lineRefs(repo)]);
-    if (line === null)
+    // Filtered here, not with --since: git stops walking at the first older commit, and a skewed clock would hide newer ones.
+    const raw = gitOut(repo, ['rev-list', '--timestamp', ...ALL_REFS]);
+    if (raw === null)
         return null;
-    const out = new Set(line.split('\n').filter(Boolean));
-    if (named.size) {
+    const bounded = !cfg.gitAll && Number.isFinite(since);
+    const out = new Set();
+    for (const l of raw.split('\n')) {
+        const [t, sha] = l.split(' ');
+        if (sha && (!bounded || Number(t) * 1000 >= since))
+            out.add(sha);
+    }
+    if (bounded && named.size) {
         const found = gitOut(repo, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], `${[...named].join('\n')}\n`) ?? '';
         for (const l of found.split('\n'))
             if (l.endsWith(' commit'))

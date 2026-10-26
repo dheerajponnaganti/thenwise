@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.11
+
+Dead ends that exist: found from what happened, not from what was said.
+
+- Dead ends from what happened: an edit that a later edit in the same chat puts back, and tests that fail after an edit before work moves to another file. They are linked to the file, rank above phrase matches in `tried`, and lead the file hint. A prompt line `[dead-end] <what failed>` marks one by hand.
+- `thenwise deadend "<what failed>"` and `thenwise decide "<what was decided>"` (also `/thenwise:deadend` and `/thenwise:decide`) save a note at once, tied to the current project.
+- The file hint lists what happened first, then decisions and dead ends you kept, the Decision lines of recent commits, and the file's last change. Phrase matches only fill what is left.
+- Git history keeps every branch again, since 90 days before your first chat. 0.1.8 kept only the main line and named commits, which dropped the detail of squash-merged branches.
+
 ## 0.1.10
 
 Memory that shows up: pointers on questions about the past, and a brief when you open a project.

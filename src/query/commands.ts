@@ -46,7 +46,7 @@ export function label(g: Graph, id: string): string {
   if (n.kind === 'file') return (n.extra.aliases as string[] | undefined)?.[0] ?? id.slice(5)
   return `${n.kind} ${cut(n.title || n.id, 60)}`
 }
-const VERB: Record<string, string> = { derived_from: 'was derived from', supersedes: 'supersedes', touches: 'touches', changed: 'changed', read: 'read', edited: 'edited', ran_in: 'ran a command in', made: 'made', opened: 'opened', merged_as: 'was merged as', links_to: 'links to', continued_from: 'continues', mentions: 'mentions' }
+const VERB: Record<string, string> = { dead_end: 'records a dead end on', derived_from: 'was derived from', supersedes: 'supersedes', touches: 'touches', changed: 'changed', read: 'read', edited: 'edited', ran_in: 'ran a command in', made: 'made', opened: 'opened', merged_as: 'was merged as', links_to: 'links to', continued_from: 'continues', mentions: 'mentions' }
 export function sentence(g: Graph, src: string, dst: string, kind: string, extra: any): string {
   const why = kind === 'mentions' && extra?.match ? ` (as "${extra.match}")` : ''
   return `${label(g, src)} ${VERB[kind] ?? kind} ${label(g, dst)}${why}`
@@ -75,7 +75,9 @@ export function excerpt(text: string, max = 360, keys: string[] = [], idf: (word
 const quoted = (text: string) => text.split('\n').filter((l) => l.trim()).map((l) => `   | ${l}`).join('\n')
 
 /** Automatic dead ends (phrase rules at ingest, not curated notes) say so. */
-const deadNote = (n: Node) => (n.extra?.deadEnd ? `\n   dead end (automatic): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '')
+const deadNote = (n: Node) => (n.extra?.deadEnd ? `\n   dead end (automatic, ${n.extra.deadEndKind ?? 'phrase'}): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '')
+/** Dead ends from what happened (an undo, a failed test, a revert, a closed PR, the person's own mark) weigh more than a phrase. */
+export const deadWeight = (n: Node) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?? 'phrase') === 'phrase' ? 1 : 2)
 
 function result(i: number, h: Hit, extra = ''): string {
   const n = h.node
@@ -251,7 +253,7 @@ function rankMarked(g: Graph, name: string, topic: string, markers: RegExp[]): R
   const top = Math.max(...s.good.map((h) => h.score))
   const scored = s.good
     .map((h) => {
-      const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' && h.node.extra?.deadEnd ? 1 : 0)
+      const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' ? deadWeight(h.node) : 0)
       return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) }
     })
     .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1))

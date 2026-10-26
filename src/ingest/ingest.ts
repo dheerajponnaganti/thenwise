@@ -55,9 +55,22 @@ export interface IngestOptions {
   ghTimeoutMs?: number // how long a `gh pr list` may take (default: the config's gh_timeout_s)
 }
 
-export const STATE_VERSION = 1
+// 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
+export const STATE_VERSION = 2
 /** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
 export const STORE_FORMAT = 1
+
+/** One value from a store's meta table; undefined when the store or the key is missing. */
+function storeMeta(dbPath: string, key: string): string | undefined {
+  const db = new DatabaseSync(dbPath, { readOnly: true })
+  try {
+    return (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
 
 /** The format a store file says it has. */
 export function storeFormat(dbPath: string): number {
@@ -202,6 +215,8 @@ export function ingest(cfg: Config, opts: IngestOptions = {}): IngestResult {
     let r: IngestResult | undefined
     let failed = ''
     const format = existsSync(dbPath) ? storeFormat(dbPath) : STORE_FORMAT
+    // A store frozen at a cutoff stays frozen: a later run (forget, a sync) rebuilds it with the same cutoff.
+    if (!opts.until && existsSync(dbPath)) opts = { ...opts, until: storeMeta(dbPath, 'until') }
     if (format > STORE_FORMAT) throw new Error(`${dbPath} was written by a newer Thenwise (store format ${format}, this one reads ${STORE_FORMAT}). Update Thenwise.`)
     if (!opts.full && !opts.until && format === STORE_FORMAT && existsSync(dbPath)) {
       try {
@@ -343,7 +358,7 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const pending: GEdge[] = []
   for (const [k, e] of g.edges) if (!g.nodes.has(e.src) || !g.nodes.has(e.dst)) (g.edges.delete(k), DERIVED.has(e.kind) || pending.push(e))
   const excludedEval = skipped + counts.marker
-  const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT }
+  const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT, ...(opts.until ? { until: opts.until } : {}) }
   const state = opts.until ? null : { signature: signatureOf(cfg), repos, files: fileRows, owners, refs: refRows, claims: claimRows, commits: [...commits].map(([sha, c]) => [sha, c.id, c.repo, c.title, c.ms]), aliases: aliasRows, pending }
   writeDb(dbPath, g, meta, state)
 
@@ -383,7 +398,7 @@ CREATE TABLE file_alias(alias TEXT NOT NULL, file TEXT NOT NULL, PRIMARY KEY(ali
 CREATE TABLE pending_edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at TEXT, extra TEXT, PRIMARY KEY(src, dst, kind));
 CREATE INDEX pending_dst ON pending_edges(dst);`
 
-function writeDb(path: string, g: Graph, meta: Record<string, number>, state: State | null) {
+function writeDb(path: string, g: Graph, meta: Record<string, number | string>, state: State | null) {
   const tmp = `${path}.tmp`
   rmSync(tmp, { force: true })
   const db = new DatabaseSync(tmp)

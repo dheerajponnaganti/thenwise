@@ -144,7 +144,9 @@ export function parseSession(text: string, id: string, home: string, until = '',
           if (turn && /\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(inp.command)) {
             pending.set(b.id, { turn, kind: 'commit' })
             const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command)
-            const subject = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n')[0]!.trim()
+            const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n')
+            // -m "$(cat <<'EOF' ... EOF)": the subject is the first line after the heredoc opener.
+            const subject = (/^\$\(cat\s*<</.test(msg[0]!) ? (msg.slice(1).find((l) => l.trim()) ?? '') : msg[0]!).trim()
             if (subject) turn.commitMsgs.push({ subject, at: d.timestamp ?? turn.at })
           }
           if (turn && !/\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(inp.command) && /\bgh\s+pr\s+create\b/.test(inp.command)) pending.set(b.id, { turn, kind: 'pr' })

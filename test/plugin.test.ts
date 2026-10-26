@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
 import { cap, runHook, takeLock, trimTrace } from '../src/hooks/hook.ts'
+import { readLog } from '../src/core/log.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
 
 const cli = resolve('src/cli.ts')
@@ -16,7 +17,9 @@ const withStore = () => {
 }
 // An empty projects folder keeps the background sync away from any real history.
 const emptyConfig = (dir: string) => writeFileSync(join(dir, 'config.json'), JSON.stringify({ exclude_projects: ['*'] }))
-const logOf = (dir: string) => (existsSync(join(dir, 'hooks.log')) ? readFileSync(join(dir, 'hooks.log'), 'utf8') : '')
+// The hook messages from the structured log, one per line. Logging is on here: these tests read it.
+delete process.env.THENWISE_LOG
+const logOf = (dir: string) => readLog(dir).filter((e) => e.msg).map((e) => e.msg).join('\n')
 const wait = async (ok: () => boolean, ms = 8000) => {
   for (let t = 0; t < ms && !ok(); t += 100) await new Promise((r) => setTimeout(r, 100))
 }

@@ -303,8 +303,12 @@ export class Graph {
   exact(q: string): { id: string; why: string }[] {
     const out = new Map<string, string>()
     const add = (id: string, why: string) => out.has(id) || out.set(id, why)
-    for (const m of q.matchAll(/(?:\bPRs?\s*#?|pull request\s*#?|#)(\d{1,5})\b/gi)) {
-      for (const r of this.db.prepare("SELECT id FROM nodes WHERE kind = 'pr' AND id LIKE ? ORDER BY id").all(`pr:%#${m[1]}`) as any[]) add(r.id, `PR #${m[1]}`)
+    // A bare #n ("the #1 cause", "step #2") is a PR only when the query also says PR or pull, or names the PR's repo.
+    const prSaid = /\b(?:PRs?|pull)\b/i.test(q)
+    const qWords = q.toLowerCase().split(/[^\w.-]+/)
+    const repoNamed = (id: string) => qWords.includes(id.slice(3).split('#')[0]!.split('/').pop()!.toLowerCase())
+    for (const m of q.matchAll(/(\bPRs?\s*#?|pull request\s*#?|#)(\d{1,5})\b/gi)) {
+      for (const r of this.db.prepare("SELECT id FROM nodes WHERE kind = 'pr' AND id LIKE ? ORDER BY id").all(`pr:%#${m[2]}`) as any[]) if (m[1] !== '#' || prSaid || repoNamed(r.id)) add(r.id, `PR #${m[2]}`)
     }
     for (const m of q.matchAll(/\b[0-9a-f]{7,40}\b/g)) {
       if (!/\d/.test(m[0]) || !/[a-f]/.test(m[0])) continue

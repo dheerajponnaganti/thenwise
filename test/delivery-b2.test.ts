@@ -11,6 +11,7 @@ import { keyOf, plansPart } from '../src/ingest/plans.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
 import { Graph } from '../src/query/engine.ts'
 import { asof, resume, trace } from '../src/query/commands.ts'
+import { readLog } from '../src/core/log.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
 import { World } from './world.ts'
 
@@ -36,7 +37,9 @@ const repo = (dir: string, name: string) => {
 
   return realpathSync(p)
 }
-const logOf = (dir: string) => (existsSync(join(dir, 'hooks.log')) ? readFileSync(join(dir, 'hooks.log'), 'utf8') : '')
+// The hook messages from the structured log, one per line. Logging is on here: these tests read it.
+delete process.env.THENWISE_LOG
+const logOf = (dir: string) => readLog(dir).filter((e) => e.msg).map((e) => e.msg).join('\n')
 
 test('B2-13/14: a common file name prefers the session repo; absolute, spaced, bracketed and note: paths match', () => {
   const dir = tempDir()

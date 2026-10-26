@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6
+
+A ruler for retrieval, and six small fixes.
+
+- A retrieval benchmark: `bench/gold/run.ts` ranks 88 questions with known answer records and reports R@1, R@3, R@10 and MRR per command, in under 5 seconds and with no model. `--compare` lists every question whose rank moved. The commands and the benchmark share one ranking function.
+- A bare `#7` ("the #1 cause", "step #2") no longer pulls in PR 7; it still does next to "PR", "pull" or the repo's name.
+- File hints are marked once per file even when Claude reads several files at once.
+- A commit made with `-m "$(cat <<'EOF' ...)"` keeps its real subject line.
+- `hooks.log` is gone; the status shows the last lines of the log instead.
+- A store built with `--until` keeps its cutoff: a later forget or sync rebuilds it with the same cutoff instead of adding newer chats.
+- `forget` also removes the hint state of the chat's subagents.
+- Every store rebuilds once, so chats left out by older versions are read again.
+
 ## 0.1.5
 
 A log, and a way to report issues.

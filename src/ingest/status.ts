@@ -8,6 +8,7 @@ import type { Config } from './config.ts'
 import type { ManifestEntry } from './archive.ts'
 import { prStatus } from './prs.ts'
 import { skippedDocs } from './parts.ts'
+import { teamStatus } from '../teams/client.ts'
 
 export function statusLines(cfg: Config, dbPath: string): string[] {
   if (!existsSync(dbPath)) return [`no store at ${dbPath}: run \`thenwise ingest\``]
@@ -28,6 +29,7 @@ export function statusLines(cfg: Config, dbPath: string): string[] {
   const repos: string[] = JSON.parse((all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value as string | undefined) ?? '[]')
   out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`)
   out.push(...prStatus(cfg, repos))
+  out.push(...teamStatus(cfg.memDir))
   const skipped = skippedDocs(cfg)
   if (skipped.length) out.push(`CLAUDE.md files not read (more than one folder below a root): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}. Add one with "docs" under "ingest" in config.json.`)
 

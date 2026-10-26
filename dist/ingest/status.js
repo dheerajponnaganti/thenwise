@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { prStatus } from "./prs.js";
 import { skippedDocs } from "./parts.js";
+import { teamStatus } from "../teams/client.js";
 export function statusLines(cfg, dbPath) {
     if (!existsSync(dbPath))
         return [`no store at ${dbPath}: run \`thenwise ingest\``];
@@ -23,6 +24,7 @@ export function statusLines(cfg, dbPath) {
     const repos = JSON.parse(all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value ?? '[]');
     out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`);
     out.push(...prStatus(cfg, repos));
+    out.push(...teamStatus(cfg.memDir));
     const skipped = skippedDocs(cfg);
     if (skipped.length)
         out.push(`CLAUDE.md files not read (more than one folder below a root): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}. Add one with "docs" under "ingest" in config.json.`);

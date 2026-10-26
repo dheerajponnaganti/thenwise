@@ -5,12 +5,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { loadConfig } from '../ingest/config.ts'
-import { flush, joinTeam, LABEL, payloadOf, resolveNote, search, sharedIds, share, unshare } from './client.ts'
-import { createTeamServer, invite, openTeamDb, removeMember } from './server.ts'
+import { flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from './client.ts'
+import { createTeamServer, invite, listMembers, openTeamDb, removeMember, rotate } from './server.ts'
 
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>]   (${LABEL})
-thenwise team invite <name> [--days N] | remove <name> [--keep-notes | --delete-notes]   (run where the server runs)
-thenwise team join <url> <token> | search <words> | sync
+thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name>   (run where the server runs)
+thenwise team join <url> <token> | search <words> | sync | pull
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`
 
 async function confirm(q: string): Promise<boolean> {
@@ -27,7 +27,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
   const cfg = loadConfig(homedir())
   const dir = cfg.memDir
   const serverDir = flag('dir') ?? join(dir, 'team-server')
-  const BOOL = ['--keep-notes', '--delete-notes', '--yes']
+  const BOOL = ['--keep-notes', '--delete-notes', '--yes', '--again']
   const words = rest.filter((w, i) => !w.startsWith('--') && (!rest[i - 1]?.startsWith('--') || BOOL.includes(rest[i - 1]!)))
   try {
     if (cmd === 'share' || cmd === 'unshare') {
@@ -51,19 +51,24 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       process.once('SIGINT', stop)
       process.once('SIGTERM', stop)
       await new Promise(() => undefined)
-    } else if (sub === 'invite' || sub === 'remove') {
+    } else if (sub === 'members') {
+      const db = openTeamDb(serverDir)
+      const day = (ms: number | null) => (ms ? new Date(ms).toISOString().slice(0, 10) : '-')
+      for (const m of listMembers(db)) console.log(`${m.name.padEnd(20)} ${m.role.padEnd(8)} expires ${day(m.expires_at)}  last seen ${day(m.last_seen)}${m.disabled ? '  removed, notes kept' : ''}`)
+      db.close()
+    } else if (sub === 'invite' || sub === 'remove' || sub === 'rotate') {
       if (!words[0]) return (console.error(TEAM_USAGE), 2)
       const db = openTeamDb(serverDir)
-      if (sub === 'invite') {
-        const token = invite(db, words[0], flag('days') ? Date.now() + Number(flag('days')) * 864e5 : undefined)
-        console.log(`token for ${words[0]} (shown once, ${LABEL}):\n${token}\nThey join with: thenwise team join <server url> ${token}`)
+      if (sub === 'invite' || sub === 'rotate') {
+        const token = sub === 'rotate' ? rotate(db, words[0]) : invite(db, words[0], flag('days') ? Date.now() + Number(flag('days')) * 864e5 : undefined, { again: rest.includes('--again') })
+        console.log(`${sub === 'rotate' ? 'new ' : ''}token for ${words[0]} (shown once, ${LABEL})${sub === 'rotate' ? '; the old one no longer works' : ''}:\n${token}\nThey join with: thenwise team join <server url> ${token}`)
       } else {
         const keep = rest.includes('--keep-notes')
         if (keep && rest.includes('--delete-notes')) return (db.close(), console.error(TEAM_USAGE), 2)
         let doKeep = keep
         if (!keep && !rest.includes('--delete-notes')) {
           if (!process.stdin.isTTY) return (db.close(), console.error(TEAM_USAGE), 2)
-          const n = Number((db.prepare('SELECT COUNT(*) AS n FROM notes WHERE owner = ?').get(words[0]) as any).n)
+          const n = Number((db.prepare('SELECT COUNT(*) AS n FROM notes n JOIN members m ON m.id = n.owner_id WHERE m.name = ?').get(words[0]) as any).n)
           console.log(`${words[0]} shared ${n} note${n === 1 ? '' : 's'}`)
           doKeep = await confirm('Keep them for the team? [y/N] ')
         }
@@ -79,6 +84,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       const r = await search(dir, words.join(' '))
       console.log(r.length ? `${r.join('\n')}\n(${LABEL})` : `no shared notes match (${LABEL})`)
     } else if (sub === 'sync') console.log(await flush(dir))
+    else if (sub === 'pull') console.log(await pull(dir))
     else return (console.error(TEAM_USAGE), 2)
   } catch (e) {
     console.error(e instanceof Error ? e.message : e)

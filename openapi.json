@@ -1,0 +1,82 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Thenwise team server",
+    "version": "1",
+    "description": "Draft. The /v1 routes of the team server; frozen for the Hub in 0.1.12. Every route but /v1/health needs `Authorization: Bearer <token>`. Errors are { error: { code, message } }."
+  },
+  "paths": {
+    "/v1/health": {
+      "get": { "summary": "Liveness and schema version", "security": [], "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } } }
+    },
+    "/v1/me": {
+      "get": { "summary": "The member the token belongs to", "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Member" } } } }, "401": { "$ref": "#/components/responses/Error" } } }
+    },
+    "/v1/search": {
+      "get": {
+        "summary": "Full-text search over shared notes, best match first, with a snippet around the hit",
+        "parameters": [{ "$ref": "#/components/parameters/q" }, { "$ref": "#/components/parameters/limit" }, { "$ref": "#/components/parameters/offset" }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteList" } } } }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/notes": {
+      "get": {
+        "summary": "Shared notes: newest first, or with since, every note changed after that revision in revision order",
+        "parameters": [{ "$ref": "#/components/parameters/since" }, { "$ref": "#/components/parameters/limit" }, { "$ref": "#/components/parameters/offset" }, { "name": "owner", "in": "query", "schema": { "enum": ["me"] } }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteList" } } } }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/notes/{owner}/{id}": {
+      "get": {
+        "summary": "One shared note in full",
+        "parameters": [{ "name": "owner", "in": "path", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/id" }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/notes/{id}": {
+      "put": {
+        "summary": "Share a note or a new version of it. If-Match is the revision last seen, or * for a note new to the team",
+        "parameters": [{ "$ref": "#/components/parameters/id" }, { "$ref": "#/components/parameters/ifMatch" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteIn" } } } },
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Rev" } } } }, "400": { "$ref": "#/components/responses/Error" }, "409": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Stale" } } } } }
+      },
+      "delete": {
+        "summary": "Unshare a note. A tomb records it for the feeds",
+        "parameters": [{ "$ref": "#/components/parameters/id" }, { "$ref": "#/components/parameters/ifMatch" }, { "name": "seq", "in": "query", "schema": { "type": "integer" } }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Rev" } } } }, "409": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Stale" } } } } }
+      }
+    },
+    "/v1/tombs": {
+      "get": {
+        "summary": "Unshares after a revision, in revision order",
+        "parameters": [{ "$ref": "#/components/parameters/since" }, { "$ref": "#/components/parameters/limit" }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TombList" } } } } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "token": { "type": "http", "scheme": "bearer" } },
+    "parameters": {
+      "id": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:#-]{0,119}$" } },
+      "q": { "name": "q", "in": "query", "schema": { "type": "string" } },
+      "limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200 } },
+      "offset": { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0 } },
+      "since": { "name": "since", "in": "query", "schema": { "type": "integer", "minimum": 0 } },
+      "ifMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string" } }
+    },
+    "responses": { "Error": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } },
+    "schemas": {
+      "Error": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } } } },
+      "Stale": { "type": "object", "required": ["error"], "properties": { "error": { "$ref": "#/components/schemas/Error/properties/error" }, "rev": { "type": ["integer", "null"] }, "updated_at": { "type": ["integer", "null"] } } },
+      "Health": { "type": "object", "required": ["ok", "schema", "version"], "properties": { "ok": { "type": "boolean" }, "schema": { "type": "integer" }, "version": { "type": "string" } } },
+      "Member": { "type": "object", "required": ["id", "name", "role"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "role": { "type": "string" } } },
+      "Rev": { "type": "object", "required": ["rev"], "properties": { "rev": { "type": "integer" } } },
+      "NoteIn": { "type": "object", "required": ["title", "text", "project"], "properties": { "title": { "type": "string" }, "text": { "type": "string" }, "project": { "type": "string" }, "seq": { "type": "integer" } } },
+      "NoteBrief": { "type": "object", "required": ["owner", "id", "rev", "title", "project", "updated_at", "snippet"], "properties": { "owner": { "type": "string" }, "id": { "type": "string" }, "rev": { "type": "integer" }, "title": { "type": "string" }, "project": { "type": "string" }, "updated_at": { "type": "integer" }, "snippet": { "type": "string" } } },
+      "Note": { "type": "object", "required": ["owner", "id", "rev", "title", "project", "updated_at", "text"], "properties": { "owner": { "type": "string" }, "id": { "type": "string" }, "rev": { "type": "integer" }, "title": { "type": "string" }, "project": { "type": "string" }, "updated_at": { "type": "integer" }, "text": { "type": "string" } } },
+      "NoteList": { "type": "object", "required": ["notes"], "properties": { "notes": { "type": "array", "items": { "$ref": "#/components/schemas/NoteBrief" } } } },
+      "TombList": { "type": "object", "required": ["tombs"], "properties": { "tombs": { "type": "array", "items": { "type": "object", "required": ["owner", "id", "rev"], "properties": { "owner": { "type": "string" }, "id": { "type": "string" }, "rev": { "type": "integer" } } } } } }
+    }
+  },
+  "security": [{ "token": [] }]
+}

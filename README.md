@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.8" src="https://img.shields.io/badge/version-0.1.8-1E1C19">
+  <img alt="Version 0.1.9" src="https://img.shields.io/badge/version-0.1.9-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -180,9 +180,9 @@ Hooks: session start syncs in the background and, after a compaction, adds a res
 <details>
 <summary><b>Teams, in full</b></summary>
 
-Nothing is shared by default, and raw chats never leave the machine. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`). If the server is down, shares wait in a queue and retry at the next session start.
+Nothing is shared by default, and raw chats never leave the machine. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`); a removed name is never handed to someone else, and `team invite --again <name>` brings the same person back to their notes. `team members` lists everyone, `team rotate <name>` replaces a token at once, and `team pull` restores what a machine shared. If the server is down, shares wait in a queue and retry at the next session start. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
 
-The server binds to 127.0.0.1. For a network, put an https reverse proxy in front of it; the client refuses plain http except to localhost.
+The server binds to 127.0.0.1. For a network, put an https reverse proxy in front of it, at the root or under a path such as `/thenwise`; the client refuses plain http except to localhost. The API is versioned under `/v1` and described in `openapi.json`.
 
 </details>
 

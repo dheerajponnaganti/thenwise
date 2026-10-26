@@ -1,0 +1,294 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createServer, request } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { test } from 'node:test'
+
+import { readLog } from '../src/core/log.ts'
+import { flush, joinTeam, pull, resolveNote, share, sharedIds, teamStatus, unshare } from '../src/teams/client.ts'
+import { migrateTeamDb, openTeamDb, SCHEMA_VERSION } from '../src/teams/schema.ts'
+import { createTeamServer, invite, LIMITS, listMembers, removeMember, rotate } from '../src/teams/server.ts'
+
+delete process.env.THENWISE_LOG // B2 reads the client's log
+const tmp = (p: string) => mkdtempSync(join(tmpdir(), `tw9-${p}-`))
+
+async function team(names = ['alice', 'bob']) {
+  const dir = tmp('srv')
+  const app = createTeamServer({ dir, version: 'test' })
+  const { port } = await app.listen()
+  const base = `http://127.0.0.1:${port}`
+  const db = openTeamDb(dir)
+  const tokens: Record<string, string> = Object.fromEntries(names.map((n) => [n, invite(db, n)]))
+  db.close()
+  const req = (token: string | null, path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) =>
+    fetch(`${base}${path}`, { method: init.method ?? 'GET', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(init.body === undefined ? {} : { 'content-type': 'application/json' }), ...(init.headers ?? {}) }, ...(init.body === undefined ? {} : { body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body) }) })
+
+  return { dir, app, base, tokens, req }
+}
+const NOTE = { title: 'Cache plan', text: 'Eight shards for the exporter.', project: 'alpha' }
+
+test('T9-H1: a 0.1.5 team.db migrates to the current schema, and a newer one is refused', () => {
+  const dir = tmp('old')
+  const db = new DatabaseSync(join(dir, 'team.db'))
+  db.exec(`CREATE TABLE members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
+    CREATE TABLE notes (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY (owner, id));
+    CREATE TABLE tombs (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, PRIMARY KEY (owner, id));
+    INSERT INTO members VALUES ('alice', 'h-alice', NULL);
+    INSERT INTO notes VALUES ('alice', 'n1', 1700000000000, 'One', 'first note', 'alpha'), ('gone', 'g1', 1700000000001, 'Kept', 'a removed member kept this', '');
+    INSERT INTO tombs VALUES ('alice', 'n0', 1700000000002);`)
+  assert.deepEqual(migrateTeamDb(db), [1])
+  assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, SCHEMA_VERSION)
+  const members = db.prepare('SELECT id, name, token_hash, disabled FROM members ORDER BY name').all() as any[]
+  assert.deepEqual(members.map((m) => [m.name, m.token_hash, m.disabled]), [['alice', 'h-alice', 0], ['gone', null, 1]])
+  assert.ok(members.every((m) => /^[0-9a-f]{32}$/.test(m.id)))
+  assert.equal((db.prepare('SELECT count(*) n FROM notes WHERE owner_id IS NULL').get() as any).n, 0)
+  assert.equal((db.prepare("SELECT n.text FROM notes n JOIN members m ON m.id = n.owner_id WHERE m.name = 'gone'").get() as any).text, 'a removed member kept this')
+  assert.equal((db.prepare("SELECT count(*) n FROM notes_fts WHERE notes_fts MATCH 'removed'").get() as any).n, 1)
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`)
+  db.close()
+  assert.throws(() => openTeamDb(dir), /newer Thenwise/)
+})
+
+test('T9-H3: a share takes If-Match and answers with the new revision as an ETag; a stale one is a 409', async () => {
+  const t = await team()
+  try {
+    const r1 = await t.req(t.tokens.alice!, '/v1/notes/n1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })
+    const rev1 = (await r1.json()).rev
+    assert.equal(r1.headers.get('etag'), `"${rev1}"`)
+    const r2 = await t.req(t.tokens.alice!, '/v1/notes/n1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev1) } })
+    const rev2 = (await r2.json()).rev
+    assert.ok(rev2 > rev1)
+    const r3 = await t.req(t.tokens.alice!, '/v1/notes/n1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev1) } })
+    assert.equal(r3.status, 409)
+    const j = await r3.json()
+    assert.equal(j.error.code, 'stale')
+    assert.equal(j.rev, rev2)
+    assert.equal((await t.req(t.tokens.alice!, '/v1/notes/n1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })).status, 409, 'a note on the team is not new')
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-H4: two machines of one person never overwrite each other silently', async () => {
+  const t = await team()
+  try {
+    const [m1, m2] = [tmp('m1'), tmp('m2')]
+    await joinTeam(m1, t.base, t.tokens.alice!)
+    await joinTeam(m2, t.base, t.tokens.alice!)
+    assert.match(await share(m1, 'x', { ...NOTE, text: 'from the laptop' }), /^1 sent/)
+    // The desktop never saw the laptop's revision; its change is newer, so it goes over the team's copy once.
+    assert.match(await share(m2, 'x', { ...NOTE, text: 'from the desktop' }), /^1 sent/)
+    const now = await (await t.req(t.tokens.bob!, '/v1/notes/alice/x')).json()
+    assert.equal(now.text, 'from the desktop')
+    // A change the laptop made before the desktop's arrives late: the team keeps the newer copy and says so.
+    const s = JSON.parse(readFileSync(join(m1, 'team.json'), 'utf8'))
+    s.queue = [{ op: 'put', id: 'x', rev: s.lastRev + 1, at: now.updated_at - 1000, note: { ...NOTE, text: 'stale laptop edit' } }]
+    writeFileSync(join(m1, 'team.json'), JSON.stringify(s))
+    assert.match(await flush(m1), /the team has a newer copy of x/)
+    assert.equal((await (await t.req(t.tokens.bob!, '/v1/notes/alice/x')).json()).text, 'from the desktop')
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-H5: a server behind a path prefix can be joined', async () => {
+  const t = await team()
+  const target = new URL(t.base)
+  const proxy = createServer((req, res) => {
+    if (!req.url?.startsWith('/thenwise/')) return res.writeHead(404).end()
+    const up = request({ host: target.hostname, port: target.port, path: req.url.slice('/thenwise'.length), method: req.method, headers: req.headers }, (r) => (res.writeHead(r.statusCode ?? 502, r.headers), r.pipe(res)))
+    req.pipe(up)
+  })
+  await new Promise<void>((ok) => proxy.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = tmp('pre')
+    assert.equal(await joinTeam(dir, `http://127.0.0.1:${(proxy.address() as any).port}/thenwise/`, t.tokens.alice!), 'alice')
+    assert.match(await share(dir, 'p1', NOTE), /^1 sent/)
+  } finally {
+    proxy.close()
+    await t.app.close()
+  }
+})
+
+test('T9-H6: search folds accents, matches whole words, and shows the hit in a snippet', async () => {
+  const t = await team()
+  try {
+    const put = (id: string, title: string, text: string) => t.req(t.tokens.alice!, `/v1/notes/${id}`, { method: 'PUT', body: { title, text, project: '' }, headers: { 'if-match': '*' } })
+    await put('r', 'Résumé of the plan', `${'Long opening words about other things. '.repeat(20)}The résumé lists the shard count.`)
+    await put('g', 'Gear', 'Only part of the gear is here.')
+    const find = async (q: string) => (await (await t.req(t.tokens.bob!, `/v1/search?q=${encodeURIComponent(q)}`)).json()).notes
+    const hit = await find('resume')
+    assert.deepEqual(hit.map((n: any) => n.id), ['r'])
+    assert.match(hit[0].snippet, /\*\*résumé\*\*/i)
+    assert.deepEqual(await find('art'), [])
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-H7: feeds give what changed after a revision, in revision order', async () => {
+  const t = await team()
+  try {
+    const h = (m: string) => ({ 'if-match': m })
+    const start = (await (await t.req(t.tokens.alice!, '/v1/notes/z0', { method: 'PUT', body: NOTE, headers: h('*') })).json()).rev
+    for (const id of ['n1', 'n2', 'n3']) await t.req(t.tokens.alice!, `/v1/notes/${id}`, { method: 'PUT', body: NOTE, headers: h('*') })
+    await t.req(t.tokens.alice!, '/v1/notes/n1', { method: 'DELETE', headers: h('*') })
+    const notes = (await (await t.req(t.tokens.bob!, `/v1/notes?since=${start}`)).json()).notes
+    assert.deepEqual(notes.map((n: any) => n.id), ['n2', 'n3'])
+    assert.ok(notes[0].rev < notes[1].rev)
+    assert.deepEqual((await (await t.req(t.tokens.bob!, `/v1/tombs?since=${start}`)).json()).tombs.map((x: any) => x.id), ['n1'])
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-H8 T9-H9: a removed name is not reused by someone else; --again brings the same person back; rotate', async () => {
+  const t = await team()
+  try {
+    const id = (await (await t.req(t.tokens.alice!, '/v1/me')).json()).id
+    const rev = (await (await t.req(t.tokens.alice!, '/v1/notes/k1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })).json()).rev
+    const db = openTeamDb(t.dir)
+    removeMember(db, 'alice', true)
+    assert.equal((await t.req(t.tokens.alice!, '/v1/me')).status, 401)
+    assert.throws(() => invite(db, 'alice'), /--again/)
+    const back = invite(db, 'alice', undefined, { again: true })
+    assert.equal((await (await t.req(back, '/v1/me')).json()).id, id)
+    assert.equal((await t.req(back, '/v1/notes/k1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } })).status, 200, 'the old notes are hers')
+    const carol = invite(db, 'carol')
+    assert.notEqual((await (await t.req(carol, '/v1/me')).json()).id, id)
+    const rows = listMembers(db)
+    assert.deepEqual(rows.map((m) => m.name), ['alice', 'bob', 'carol'])
+    assert.ok(rows.find((m) => m.name === 'alice')!.last_seen)
+    const fresh = rotate(db, 'bob')
+    db.close()
+    assert.equal((await t.req(t.tokens.bob!, '/v1/me')).status, 401)
+    assert.equal((await t.req(fresh, '/v1/me')).status, 200)
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-B2: a refused token stops the syncs, logs once, and status says what to do', async () => {
+  const t = await team()
+  try {
+    const dir = tmp('bob')
+    await joinTeam(dir, t.base, t.tokens.bob!)
+    const db = openTeamDb(t.dir)
+    removeMember(db, 'bob', true)
+    db.close()
+    await share(dir, 'q1', NOTE)
+    for (let i = 0; i < 10; i++) assert.match(await flush(dir), /refused your token/)
+    assert.equal(readLog(dir).filter((e) => e.ev === 'token_refused').length, 1)
+    assert.match(teamStatus(dir)[0]!, /ask for a new invite/)
+    assert.equal(JSON.parse(readFileSync(join(dir, 'team.json'), 'utf8')).queue.length, 1, 'the change waits')
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-B3: bad input is a 400 with a code on /v1; the old routes keep their old shape', async () => {
+  const t = await team()
+  try {
+    const code = async (r: Response) => (assert.ok(r.status >= 400, String(r.status)), (await r.json()).error.code)
+    assert.equal(await code(await t.req(t.tokens.alice!, '/v1/notes?limit=abc')), 'bad_request')
+    assert.equal(await code(await t.req(t.tokens.alice!, '/v1/notes?offset=-5')), 'bad_request')
+    assert.equal(await code(await t.req(t.tokens.alice!, '/v1/notes/x', { method: 'PUT', body: NOTE, headers: { 'if-match': 'soon' } })), 'bad_request')
+    assert.equal(await code(await t.req(t.tokens.alice!, '/v1/notes/x', { method: 'PUT', body: { ...NOTE, text: 'x'.repeat(300 * 1024) }, headers: { 'if-match': '*' } })), 'too_large')
+    assert.equal(await code(await t.req(t.tokens.alice!, '/v1/nothing')), 'not_found')
+    const old = await t.req(t.tokens.alice!, '/notes/x', { method: 'PUT', body: '{"title": 1}' })
+    assert.deepEqual(await old.json(), { error: 'bad note' })
+    for (const h of ['x-content-type-options', 'cache-control', 'referrer-policy']) assert.ok(old.headers.get(h), h)
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-B4: past the read limit a token gets 429 with Retry-After; another token is not affected', async () => {
+  const t = await team()
+  try {
+    for (let i = 0; i < LIMITS.reads; i++) assert.equal((await t.req(t.tokens.alice!, '/v1/me')).status, 200)
+    const r = await t.req(t.tokens.alice!, '/v1/me')
+    assert.equal(r.status, 429)
+    assert.ok(Number(r.headers.get('retry-after')) > 0)
+    assert.equal((await t.req(t.tokens.bob!, '/v1/me')).status, 200)
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('T9-B7: a rejoin keeps what was shared, and pull restores it so an unshare works without the file', async () => {
+  const t = await team()
+  try {
+    const dir = tmp('re')
+    await joinTeam(dir, t.base, t.tokens.alice!)
+    const file = join(dir, 'plan.md')
+    writeFileSync(file, '---\nid: plan-1\ntitle: Plan\n---\nthe plan\n')
+    const n = resolveNote(dir, join(dir, 'claude'), file)
+    await share(dir, n.id, n)
+    unlinkSync(file)
+    await joinTeam(dir, t.base, t.tokens.alice!)
+    assert.deepEqual(sharedIds(dir), ['plan-1'], 'a rejoin keeps the list')
+    const s = JSON.parse(readFileSync(join(dir, 'team.json'), 'utf8'))
+    writeFileSync(join(dir, 'team.json'), JSON.stringify({ ...s, shared: {} })) // as a 0.1.5 rejoin left it
+    assert.match(await pull(dir), /^1 shared note/)
+    assert.match(await unshare(dir, 'plan-1'), /^unshared/)
+    assert.equal((await t.req(t.tokens.bob!, '/v1/notes/alice/plan-1')).status, 404)
+  } finally {
+    await t.app.close()
+  }
+})
+
+// A small validator for the JSON Schema the spec uses: type (also a list), required, properties, items, enum, $ref.
+function check(spec: any, schema: any, v: unknown, at = '$'): string[] {
+  if (schema.$ref) return check(spec, schema.$ref.slice(2).split('/').reduce((o: any, k: string) => o[k], spec), v, at)
+  const types = [schema.type ?? []].flat()
+  const kind = v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v
+  if (types.length && !types.includes(kind) && !(kind === 'integer' && types.includes('number'))) return [`${at}: ${kind}, not ${types.join(' or ')}`]
+  if (schema.enum && !schema.enum.includes(v)) return [`${at}: not one of ${schema.enum}`]
+  const errs: string[] = []
+  if (kind === 'object') {
+    for (const k of schema.required ?? []) if (!(k in (v as object))) errs.push(`${at}.${k}: missing`)
+    for (const [k, s] of Object.entries(schema.properties ?? {})) if (k in (v as object)) errs.push(...check(spec, s, (v as any)[k], `${at}.${k}`))
+  }
+  if (kind === 'array' && schema.items) (v as unknown[]).forEach((x, i) => errs.push(...check(spec, schema.items, x, `${at}[${i}]`)))
+
+  return errs
+}
+
+test('T9-B5: every /v1 route in openapi.json answers as its spec says, and others are 404', async () => {
+  const spec = JSON.parse(readFileSync('openapi.json', 'utf8'))
+  const t = await team()
+  try {
+    const tok = t.tokens.alice!
+    const rev = (await (await t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': '*' } })).json()).rev
+    // Thunks, run one at a time: the writes depend on each other.
+    const calls: [string, string, () => Promise<Response>, number][] = [
+      ['/v1/health', 'get', () => t.req(null, '/v1/health'), 200],
+      ['/v1/me', 'get', () => t.req(tok, '/v1/me'), 200],
+      ['/v1/me', 'get', () => t.req('nope', '/v1/me'), 401],
+      ['/v1/search', 'get', () => t.req(tok, '/v1/search?q=shards'), 200],
+      ['/v1/notes', 'get', () => t.req(tok, '/v1/notes?since=0&owner=me'), 200],
+      ['/v1/notes/{owner}/{id}', 'get', () => t.req(tok, '/v1/notes/alice/c1'), 200],
+      ['/v1/notes/{owner}/{id}', 'get', () => t.req(tok, '/v1/notes/alice/none'), 404],
+      ['/v1/notes/{id}', 'put', () => t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } }), 200],
+      ['/v1/notes/{id}', 'put', () => t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } }), 409],
+      ['/v1/notes/{id}', 'delete', () => t.req(tok, '/v1/notes/c1', { method: 'DELETE', headers: { 'if-match': '*' } }), 200],
+      ['/v1/tombs', 'get', () => t.req(tok, '/v1/tombs?since=0'), 200],
+    ]
+    const covered = new Set<string>()
+    for (const [path, method, p, want] of calls) {
+      const r = await p()
+      assert.equal(r.status, want, `${method} ${path}`)
+      let res = spec.paths[path][method].responses[String(want)]
+      if (res.$ref) res = res.$ref.slice(2).split('/').reduce((o: any, k: string) => o[k], spec)
+      assert.deepEqual(check(spec, res.content['application/json'].schema, await r.json()), [], `${method} ${path} ${want}`)
+      covered.add(`${method} ${path}`)
+    }
+    for (const [path, ops] of Object.entries(spec.paths)) for (const m of Object.keys(ops as object)) assert.ok(covered.has(`${m} ${path}`), `not checked: ${m} ${path}`)
+    assert.equal((await t.req(tok, '/v1/nothing')).status, 404)
+  } finally {
+    await t.app.close()
+  }
+})

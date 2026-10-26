@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.9
+
+Teams foundation: members with ids, a versioned API, and shares that never overwrite each other silently.
+
+- Teams: members have ids. A removed member's name is never given to someone else; `team invite --again <name>` brings the same person back to their notes. New: `team members`, `team rotate <name>`, `team pull`.
+- Teams: the server numbers every change, and each share says which version it replaces. Two machines of one person no longer overwrite each other silently: the newer copy wins, and an older one is reported. An unshare still wins over a share made before it.
+- Teams: search uses full-text matching, folds accents, matches whole words and shows the words around the hit.
+- Teams: the API is versioned under `/v1`, with one error shape, a health route and feeds of what changed since a revision; `openapi.json` describes it. The old routes answer for one more release, so a 0.1.8 client still shares.
+- Teams: a server behind a path prefix can be joined. Large shares get 20 seconds instead of 3. A refused token stops the syncs instead of retrying each session, and `thenwise status` says to ask for a new invite. A rejoin keeps what the machine shared.
+- Teams: the database has a schema version and migrates on start; a file from a newer Thenwise is refused. Answers carry security headers, and each token has a rate limit.
+
 ## 0.1.8
 
 Lean and quiet: less code, syncs that do only what changed, and hooks that cost little.

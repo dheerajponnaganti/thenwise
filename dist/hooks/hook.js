@@ -1,8 +1,9 @@
 // `thenwise hook <name>`: the Claude Code hooks. The hook JSON arrives on stdin; the reply is one JSON line on stdout.
-// A hook never fails the chat: every error goes to <data folder>/hooks.log and the exit code stays 0.
+// A hook never fails the chat: every error goes to the log (logs/thenwise.log, and hooks.log for one more release) and the exit code stays 0.
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
+import { logger, recentErrors } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
 import { isOff, loadConfigSafe } from "../ingest/config.js";
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from "../ingest/plans.js";
@@ -54,12 +55,13 @@ export const shortPath = (path, cwd) => {
     return (win ? p.toLowerCase().startsWith(base.toLowerCase()) : p.startsWith(base)) ? p.slice(base.length) : p;
 };
 const logFile = (env) => join(env.dir, 'hooks.log');
-export function log(env, msg) {
+export function log(env, msg, lvl = 'info', ev = 'note') {
+    logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg });
     try {
         mkdirSync(env.dir, { recursive: true, mode: 0o700 });
         appendFileSync(logFile(env), `${new Date().toISOString()} ${msg}\n`, { mode: 0o600 });
     }
-    catch { }
+    catch { } // the old hooks.log is best effort; the real log line is already written
 }
 const alive = (pid) => {
     try {
@@ -99,7 +101,7 @@ export function takeLock(file, pid = process.pid) {
 function query(env, args) {
     const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, env: { ...process.env, THENWISE_HOME: env.dir } });
     if (r.status !== 0) {
-        log(env, `${args[0]} did not answer: ${r.error?.message ?? (r.stderr.trim().split('\n')[0] || `exit ${r.status}`)}`);
+        log(env, `${args[0]} did not answer: ${r.error?.message ?? (r.stderr.trim().split('\n')[0] || `exit ${r.status}`)}`, 'warn', 'query_failed');
         return '';
     }
     return r.stdout;
@@ -115,7 +117,7 @@ function startSync(env) {
     const fd = openSync(logFile(env), 'a');
     spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, THENWISE_HOME: env.dir } }).unref();
     closeSync(fd);
-    log(env, 'sync started');
+    log(env, 'sync started', 'info', 'sync_started');
 }
 /** The detached worker: archive, then ingest, one at a time across sessions. */
 export function syncRun(env) {
@@ -129,12 +131,12 @@ export function syncRun(env) {
                 log(env, `plans: ${snapshotAll(cfg)} new snapshot(s)`);
         }
         catch (e) {
-            log(env, `plan scan failed: ${e instanceof Error ? e.message : e}`);
+            log(env, `plan scan failed: ${e instanceof Error ? e.message : e}`, 'error', 'sync_plans_failed');
         }
         for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : [])]) {
             const t = Date.now();
             const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } });
-            log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`);
+            log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`);
         }
     }
     finally {
@@ -165,7 +167,7 @@ function markSeen(env, session, agent, file) {
     try {
         list = JSON.parse(readFileSync(path, 'utf8'));
     }
-    catch { }
+    catch { } // first hint of this session: no state file yet
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify([...new Set([...list, file])]), { mode: 0o600 });
     renameSync(tmp, path);
@@ -242,7 +244,7 @@ export function runHook(name, input, env) {
             if (!existsSync(graph))
                 return `No memory yet in ${env.dir}. The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}\n${tail}`;
             const s = statSync(graph);
-            return `${query(env, ['status']).trim() || `Memory in ${env.dir}: ${(s.size / 1e6).toFixed(1)} MB, updated ${s.mtime.toISOString()}.`}${syncing ? '\nA sync is running now.' : ''}\nRecent log:\n${tail}`;
+            return `${query(env, ['status']).trim() || `Memory in ${env.dir}: ${(s.size / 1e6).toFixed(1)} MB, updated ${s.mtime.toISOString()}.`}${syncing ? '\nA sync is running now.' : ''}\nErrors: ${recentErrors(env.dir)}\nRecent log:\n${tail}`;
         }
         const cwd = String(input.cwd ?? '');
         const cfg = loadConfigSafe().config;
@@ -299,7 +301,7 @@ export function runHook(name, input, env) {
         log(env, `unknown hook ${name}`);
     }
     catch (e) {
-        log(env, `hook ${name} failed: ${e instanceof Error ? e.message : e}`);
+        log(env, `hook ${name} failed: ${e instanceof Error ? `${e.message} ${e.stack?.split('\n')[1]?.trim() ?? ''}` : e}`, 'error', 'failed');
     }
     return '';
 }

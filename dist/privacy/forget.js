@@ -27,7 +27,7 @@ function lockSync(file, waitMs) {
             if (takeLock(file))
                 return;
         }
-        catch { }
+        catch { } // a lock file half written by another process: try again until the wait ends
         if (Date.now() > until)
             throw new Error(`another sync holds ${file}; try again when it ends`);
         sleep(100);
@@ -48,7 +48,7 @@ function chatsOf(cfg) {
             add(rel.split('/')[0], sessionOf(rel));
         }
     }
-    catch { }
+    catch { } // no manifest yet: the folder scan below still finds every chat
     for (const root of [join(base, 'sessions'), join(base, 'claude-projects'), join(cfg.claudeDir, 'projects')]) {
         for (const p of list(root).filter((e) => e.isDirectory()))
             for (const e of list(join(root, p.name)))

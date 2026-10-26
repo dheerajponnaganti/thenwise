@@ -7,6 +7,7 @@ import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveDataDir } from '../core/home.ts'
+import { logger, recentErrors } from '../core/log.ts'
 import { readConfigFile } from '../ingest/config.ts'
 
 export interface Check {
@@ -107,6 +108,9 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
 export async function doctorCommand(home: string = homedir()): Promise<number> {
   const checks = await runDoctor(home)
   for (const c of checks) console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${c.name.padEnd(12)} ${c.detail}`)
+  console.log(`log  ${'errors'.padEnd(12)} ${recentErrors()}`)
+  if (checks.some((c) => !c.ok)) console.log('\nStuck? `thenwise report` builds an issue report you can check before sending.')
+  logger('setup').info('doctor', { failed: checks.filter((c) => !c.ok).map((c) => c.name).join(',') })
 
   return checks.every((c) => c.ok) ? 0 : 1
 }

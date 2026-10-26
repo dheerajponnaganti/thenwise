@@ -5,6 +5,7 @@ import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { basename, join, resolve, sep } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
+import { logger } from '../core/log.ts'
 import { takeLock } from '../hooks/hook.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
@@ -128,6 +129,7 @@ export async function share(dir: string, id: string, payload: Payload): Promise<
     enqueue(s, { op: 'put', id, rev: 0, note: payload })
     save(dir, s)
   })
+  logger('teams', dir).info('queued', { id, op: 'put' })
 
   return flush(dir)
 }
@@ -138,6 +140,7 @@ export async function unshare(dir: string, id: string): Promise<string> {
     enqueue(s, { op: 'del', id, rev: 0 })
     save(dir, s)
   })
+  logger('teams', dir).info('queued', { id, op: 'del' })
 
   const msg = await flush(dir)
 
@@ -158,14 +161,17 @@ export async function flush(dir: string): Promise<string> {
       ;({ status, json } = o.op === 'put' ? await call(s, 'PUT', `/notes/${encodeURIComponent(o.id)}`, { ...payloadOf(o.note!).payload, rev: o.rev }) : await call(s, 'DELETE', `/notes/${encodeURIComponent(o.id)}?rev=${o.rev}`))
     } catch {
       const left = load(dir).queue.length
+      logger('teams', dir).warn('unreachable', { sent, waiting: left })
 
       return `${sent} sent; server not reachable, ${left} change${left === 1 ? '' : 's'} waiting${tail()}`
     }
-    if (status === 401) return `${sent} sent; the server refused the token${tail()}`
+    if (status === 401) return (logger('teams', dir).error('token_refused', { sent }), `${sent} sent; the server refused the token${tail()}`)
+    if (status >= 500) logger('teams', dir).warn('server_error', { status, sent })
     if (status >= 500) return `${sent} sent; the server answered ${status}, ${load(dir).queue.length} waiting${tail()}`
     const ok = status >= 200 && status < 300
     // A refused share must not stay marked as shared.
     const drop = status >= 400 && status !== 409
+    if (drop) logger('teams', dir).warn('refused', { id: o.id, op: o.op, status })
     if (drop) refused.push(`${o.id} (${status}${json?.error ? ` ${json.error}` : ''})`)
     locked(dir, () => {
       const after = load(dir)
@@ -175,6 +181,8 @@ export async function flush(dir: string): Promise<string> {
     })
     if (ok) sent++
   }
+
+  if (sent || refused.length) logger('teams', dir).info('sent', { sent, refused: refused.length })
 
   return `${sent} sent; nothing waiting${tail()}`
 }

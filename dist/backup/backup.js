@@ -106,7 +106,7 @@ function toFolder(vault, memDir, target) {
     try {
         before = JSON.parse(readFileSync(marker, 'utf8')).files ?? [];
     }
-    catch { }
+    catch { } // first copy into this folder: nothing to clean up
     const list = files(vault, memDir);
     let copied = 0;
     mkdirSync(dest, { recursive: true, mode: 0o700 });
@@ -145,7 +145,7 @@ export function backup(cfg, opts = {}) {
             if (Date.now() - Date.parse(JSON.parse(readFileSync(stamp(cfg), 'utf8')).last) < DAY_MS)
                 return res;
         }
-        catch { }
+        catch { } // an unreadable stamp means back up again
     }
     const vault = cfg.vault?.path ? resolve(cfg.vault.path) : '';
     if (!vault || !existsSync(vault))

@@ -231,7 +231,7 @@ export function updateGraph(cfg, opts, dbPath) {
         try {
             db.exec('ROLLBACK');
         }
-        catch { }
+        catch { } // no transaction left to roll back; the error that matters is rethrown below
         throw e;
     }
     finally {

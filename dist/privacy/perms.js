@@ -3,6 +3,7 @@
 import { chmodSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { legacyDir } from "../core/home.js";
+import { errFields, logger } from "../core/log.js";
 export function tighten(dir) {
     let fixed = 0;
     const walk = (p) => {
@@ -21,6 +22,10 @@ export function tighten(dir) {
             if (d)
                 walk(d);
         }
-        catch { }
+        catch (e) {
+            // A file removed mid-walk is fine; anything else may leave files readable by others.
+            if (e.code !== 'ENOENT')
+                logger('privacy', dir).warn('tighten_failed', errFields(e));
+        }
     return fixed;
 }

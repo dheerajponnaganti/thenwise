@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.4" src="https://img.shields.io/badge/version-0.1.4-1E1C19">
+  <img alt="Version 0.1.5" src="https://img.shields.io/badge/version-0.1.5-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -160,16 +160,20 @@ In Claude Code:
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.
+- `/thenwise:logs`: the latest log lines, errors first.
+- `/thenwise:report [what happened]`: report a problem or an idea. Claude drafts it, you read every line, nothing is sent without your yes.
 
 In the terminal:
 
 - `thenwise setup`, `thenwise doctor`, `thenwise status`.
+- `thenwise logs [--errors] [--since 1h]`: what Thenwise did and what failed, also as `/thenwise:logs`.
+- `thenwise report [--what <text>] [--send | --open | --copy]`: an issue report with versions, doctor and recent errors, never chat text. Shown in full first; sent only when you say yes.
 - `thenwise archive`, `thenwise ingest [--full]`.
 - `thenwise search|current|why|tried|trace <words>`, `thenwise asof <date> <words>`, `thenwise resume [words]`, with `--here`, `--project <folder>` or `--all`.
 - `thenwise off|on [--project <path>]`.
 - `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 
-Hooks: session start syncs in the background and, after a compaction, adds a resume brief of at most 1,500 tokens. Opening a file adds its dead ends and decisions, at most 600 tokens, once per file per session. A hook never fails the chat; errors go to `hooks.log`.
+Hooks: session start syncs in the background and, after a compaction, adds a resume brief of at most 1,500 tokens. Opening a file adds its dead ends and decisions, at most 600 tokens, once per file per session. A hook never fails the chat; errors go to the log.
 
 </details>
 
@@ -190,11 +194,11 @@ The server binds to 127.0.0.1. For a network, put an https reverse proxy in fron
 - `archive/`: a masked copy of your Claude Code chats, and `archive/plans/` for plan versions.
 - `graph.db`: the search store, built from the archive, git history and notes.
 - `notes/`: notes you accepted from `distill`, with its state and log.
-- `prs-cache.json` (only if PRs are on), `backup.json`, `team-server/` (only if you host a team), `config.json`, `hooks.log`, `hook-state/`, `forgotten.json`, `team.json` (only if you join a team).
+- `prs-cache.json` (only if PRs are on), `backup.json`, `team-server/` (only if you host a team), `config.json`, `logs/` (no chat text, notes or queries), `hooks.log`, `hook-state/`, `forgotten.json`, `team.json` (only if you join a team).
 
 Claude Code's own chat files are only read, never changed.
 
-**What leaves the machine.** Nothing, until you switch on one of three things: PR lookups through `gh`, `distill` (through `claude -p`), and Teams (only the notes you share).
+**What leaves the machine.** Nothing, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes you share), and an issue report you approve line by line.
 
 **Forget.**
 

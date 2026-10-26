@@ -2,9 +2,11 @@
 // One store connection per server, reopened when the graph file is replaced on disk (ingest renames a new file in).
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
+import { errFields, errorCode, logger, queryFields, redact } from "../core/log.js";
 import { isOff, loadConfigSafe } from "../ingest/config.js";
 import { Graph } from "../query/engine.js";
 import * as c from "../query/commands.js";
+const log = logger('mcp');
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
 const NEWER = 'A result marked NEWER may be outdated: read the newer record or call memory_current before saying what holds now.';
@@ -62,7 +64,7 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
             try {
                 graph?.db.close();
             }
-            catch { }
+            catch { } // the old handle may already be closed
             ;
             [graph, sig] = [g, now];
         }
@@ -72,15 +74,17 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
         try {
             graph?.db.close();
         }
-        catch { }
+        catch { } // already closed
         graph = undefined;
     };
+    let nudged = false;
     function call(name, a0) {
         const t = TOOLS[name];
         const need = name === 'memory_asof' ? ['date', 'query'] : [field(name)];
         const vals = need.map((k) => (typeof a0[k] === 'string' ? a0[k].trim() : ''));
         if (vals.some((v) => v === ''))
             return text(`Missing argument: ${need.join(' and ')} must be non-empty text.`, true);
+        const done = log.time('tool_ok', { tool: name, ...queryFields(vals.join(' ')) });
         try {
             const g = open();
             if (!g)
@@ -101,11 +105,21 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
                 if (!/^not recorded/.test(all))
                     out = `Nothing in this project; from all projects:\n${all}`;
             }
+            done({ chars: out.length, found: !/^not recorded/.test(out) });
             return text(cut(out, name === 'memory_read' ? 12000 : CAP));
         }
         catch (e) {
-            process.stderr.write(`thenwise mcp: ${name} failed: ${e instanceof Error ? e.message : e}\n`);
-            return text('The memory could not answer this call. If an ingest is running, try again in a moment; if it keeps failing, run `thenwise ingest`.', true);
+            const f = errFields(e);
+            // The error may echo the query: its words are cut before anything is logged.
+            for (const k of ['err', 'stack'])
+                if (typeof f[k] === 'string')
+                    f[k] = redact(f[k], vals);
+            const code = errorCode(name, String(f.err));
+            log.error('tool_failed', { tool: name, code, ...f });
+            process.stderr.write(`thenwise mcp: ${name} failed (${code}): ${f.err}\n`);
+            const nudge = nudged ? '' : ' To tell us, run /thenwise:report.';
+            nudged = true;
+            return text(`The memory could not answer this call (error ${code}). If an ingest is running, try again in a moment; if it keeps failing, run \`thenwise ingest\`. Details: \`thenwise logs --errors\`.${nudge}`, true);
         }
     }
     /** The reply to one message, or null for a notification. */
@@ -123,6 +137,7 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
         const p = typeof m.params === 'object' && m.params !== null ? m.params : {};
         if (m.method === 'initialize') {
             ready = true;
+            log.info('start', { v: version() });
             const asked = typeof p.protocolVersion === 'string' ? p.protocolVersion : '';
             return ok(m.id, { protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'thenwise', version: version() }, instructions: INSTRUCTIONS });
         }

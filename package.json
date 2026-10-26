@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local memory of your past Claude Code work: search, history and a resume brief. No model in retrieval.",
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/store-postgres/schema.sql','dist/store-postgres/schema.sql')\"",
-    "test": "node --test 'test/*.test.ts'",
+    "test": "node --import ./test/isolate.mjs --test 'test/*.test.ts'",
     "check": "tsc -p .",
     "bench": "node bench/run.ts",
     "perf": "node bench/perf.ts",

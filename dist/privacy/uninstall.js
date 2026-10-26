@@ -18,7 +18,7 @@ export function uninstall(home = homedir(), print = console.log) {
             if (/thenwise|memory-v2/i.test(cmd))
                 (process.kill(pid, 'SIGTERM'), (stopped = true));
         }
-        catch { }
+        catch { } // no ps, or the process is already gone: `stopped` stays false and the output says so
     }
     print(stopped ? 'Stopped the background sync.' : 'No background sync is running.');
     print('Delete these by hand. Thenwise removes nothing itself.');

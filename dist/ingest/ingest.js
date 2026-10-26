@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync } from 'node:zlib';
 import { syncTrailers } from "../capture/notes.js";
+import { errFields, logger } from "../core/log.js";
 import { buildLanguage } from "../query/language.js";
 import { buildPassageIndex } from "../query/passages.js";
 import { loadTombs, underFolder } from "../privacy/tombstones.js";
@@ -119,7 +120,11 @@ export function dropPrCache(memDir, slugs) {
         writeFileSync(`${f}.tmp`, JSON.stringify(c), { mode: 0o600 });
         renameSync(`${f}.tmp`, f);
     }
-    catch { }
+    catch (e) {
+        // No cache is fine; a cache that could not be rewritten still holds a forgotten repo's PRs.
+        if (e.code !== 'ENOENT')
+            logger('privacy', memDir).warn('pr_cache_drop_failed', errFields(e));
+    }
 }
 /** The config minus forgotten and paused folders, so their commits, PRs, rules, notes and plans stay out of the store. */
 export function pruneCfg(cfg) {
@@ -136,7 +141,7 @@ export function pruneCfg(cfg) {
             if (gone(readFileSync(join(plans, k, '.folder'), 'utf8').trim()))
                 keys.add(k);
         }
-        catch { }
+        catch { } // a snapshot folder without .folder is matched by its key alone
     }
     const dropped = cfg.repos.filter((r) => gone(r));
     if (!dropped.length && roots.length === cfg.roots.length && vaults.length === cfg.vaults.length && !keys.size)

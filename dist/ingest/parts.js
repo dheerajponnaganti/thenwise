@@ -189,7 +189,7 @@ function fileDate(f) {
             if (out && !Number.isNaN(Date.parse(out)))
                 return iso(Date.parse(out));
         }
-        catch { }
+        catch { } // git missing or slow: the file's mtime below is the date
     }
     return iso(statSync(f).mtimeMs);
 }

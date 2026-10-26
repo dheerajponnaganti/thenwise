@@ -5,6 +5,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { logger } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
 import { globMatch } from "../ingest/config.js";
 import { parseSession } from "../ingest/transcript.js";
@@ -87,7 +88,12 @@ export function distill(cfg, opts = {}) {
         if (ex.length)
             res.lines.push(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`);
     }
-    const log = (o) => appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 });
+    const events = logger('distill', cfg.memDir);
+    const log = (o) => {
+        ;
+        (o.error ? events.error : events.info)(String(o.kind), o);
+        appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 }); // read for one more release
+    };
     const root = join(cfg.memDir, 'archive/sessions');
     const under = (p, r) => p === r || p.startsWith(`${r}/`);
     for (const key of existsSync(root) ? readdirSync(root).sort() : []) {

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
+import { logger } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import type { Config } from '../ingest/config.ts'
 import { globMatch } from '../ingest/config.ts'
@@ -118,7 +119,11 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
     const ex = expireInbox(cfg.memDir, now)
     if (ex.length) res.lines.push(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`)
   }
-  const log = (o: object) => appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 })
+  const events = logger('distill', cfg.memDir)
+  const log = (o: Record<string, string | number | boolean | null>) => {
+    ;(o.error ? events.error : events.info)(String(o.kind), o)
+    appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 }) // read for one more release
+  }
   const root = join(cfg.memDir, 'archive/sessions')
   const under = (p: string, r: string) => p === r || p.startsWith(`${r}/`)
 

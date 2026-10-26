@@ -12,6 +12,7 @@ import { gunzipSync } from 'node:zlib'
 
 import { syncTrailers } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
+import { errFields, logger } from '../core/log.ts'
 import { buildLanguage } from '../query/language.ts'
 import { buildPassageIndex } from '../query/passages.ts'
 import { loadTombs, underFolder } from '../privacy/tombstones.ts'
@@ -163,7 +164,10 @@ export function dropPrCache(memDir: string, slugs: string[]) {
     for (const s of slugs) delete c[s]
     writeFileSync(`${f}.tmp`, JSON.stringify(c), { mode: 0o600 })
     renameSync(`${f}.tmp`, f)
-  } catch {}
+  } catch (e) {
+    // No cache is fine; a cache that could not be rewritten still holds a forgotten repo's PRs.
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') logger('privacy', memDir).warn('pr_cache_drop_failed', errFields(e))
+  }
 }
 
 /** The config minus forgotten and paused folders, so their commits, PRs, rules, notes and plans stay out of the store. */
@@ -179,7 +183,7 @@ export function pruneCfg(cfg: Config): Config {
   for (const k of existsSync(plans) ? readdirSync(plans) : []) {
     try {
       if (gone(readFileSync(join(plans, k, '.folder'), 'utf8').trim())) keys.add(k)
-    } catch {}
+    } catch {} // a snapshot folder without .folder is matched by its key alone
   }
   const dropped = cfg.repos.filter((r) => gone(r))
   if (!dropped.length && roots.length === cfg.roots.length && vaults.length === cfg.vaults.length && !keys.size) return cfg

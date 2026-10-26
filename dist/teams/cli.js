@@ -4,9 +4,9 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadConfig } from "../ingest/config.js";
 import { fetchShared, flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from "./client.js";
-import { createTeamServer, invite, listMembers, openTeamDb, removeMember, rotate } from "./server.js";
+import { backupTeam, createTeamServer, invite, listMembers, openTeamDb, removeMember, restoreTeam, rotate } from "./server.js";
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>] [--console <hub folder>] [--allow-origin <origin>] [--tls-behind-proxy | --allow-plain-http]   (${LABEL})
-thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name>   (run where the server runs)
+thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name> | backup <file> | restore <file>   (run where the server runs)
 thenwise team join <url> <token> | search <words> | sync | pull
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`;
 async function confirm(q) {
@@ -57,6 +57,14 @@ export async function teamMain(argv, flag) {
             process.once('SIGINT', stop);
             process.once('SIGTERM', stop);
             await new Promise(() => undefined);
+        }
+        else if (sub === 'backup' || sub === 'restore') {
+            if (!words[0])
+                return (console.error(TEAM_USAGE), 2);
+            if (sub === 'backup')
+                (backupTeam(serverDir, words[0]), console.log(`team backed up to ${words[0]} (notes, members and audit; mode 0600)`));
+            else
+                console.log(`team restored from ${words[0]} (schema ${restoreTeam(serverDir, words[0])}) into ${serverDir}`);
         }
         else if (sub === 'members') {
             const db = openTeamDb(serverDir);

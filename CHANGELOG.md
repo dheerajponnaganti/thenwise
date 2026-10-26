@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+A new README, drawn as a geological survey of your repository.
+
+- README: seven survey plates replace the old art: the hero section, the same question asked twice, three questions, measurements, how the store is laid, the notebook and teams. The text adds Thenwise Hub, the Docker kit, team backup and restore, the inbox and auto-share, and the measurements add plain Claude Code without git.
+
 ## 0.1.15
 
 Self-host kit: a team server with the Hub and TLS, and team backups.

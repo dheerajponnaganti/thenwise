@@ -215,6 +215,55 @@ export async function flush(dir) {
         logger('teams', dir).info('sent', { sent, refused: refused.length });
     return `${sent} sent; nothing waiting${tail()}`;
 }
+export const cacheFile = (dir) => join(dir, 'team-cache.json');
+/** The teammates' notes this machine holds, keyed `owner/id`, and the newest team revision it has seen. */
+export function readCache(dir) {
+    try {
+        return JSON.parse(readFileSync(cacheFile(dir), 'utf8'));
+    }
+    catch {
+        return { since: 0, notes: {} };
+    }
+}
+/** Fetches what teammates shared or unshared since the last fetch, in revision order, into team-cache.json, so the
+ * next ingest makes them searchable. This machine's own shares are left out: they are in the memory already. */
+export async function fetchShared(dir) {
+    const s = load(dir);
+    if (s.refused)
+        return `the server refused your token; ask for a new invite (${LABEL})`;
+    const me = s.me ?? (await call(s, 'GET', '/me')).json?.name;
+    const cache = readCache(dir);
+    const changes = [];
+    for (const kind of ['notes', 'tombs']) {
+        for (let since = cache.since;;) {
+            const r = await call(s, 'GET', `/${kind}?since=${since}&limit=200${kind === 'notes' ? '&full=1' : ''}`);
+            if (r.status !== 200)
+                throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`);
+            const rows = r.json[kind];
+            for (const x of rows)
+                changes.push(kind === 'notes' ? { rev: x.rev, note: x } : { rev: x.rev, tomb: x });
+            if (rows.length < 200)
+                break;
+            since = rows.at(-1).rev;
+        }
+    }
+    let got = 0;
+    for (const ch of changes.sort((a, b) => a.rev - b.rev)) {
+        const key = `${(ch.note ?? ch.tomb).owner}/${(ch.note ?? ch.tomb).id}`;
+        cache.since = Math.max(cache.since, ch.rev);
+        // Retired notes leave; pending ones never come (the feed holds them back).
+        if (ch.tomb || ch.note.status === 'retired' || ch.note.owner === me)
+            delete cache.notes[key];
+        else
+            (cache.notes[key] = ch.note), got++;
+    }
+    const tmp = `${cacheFile(dir)}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
+    renameSync(tmp, cacheFile(dir));
+    if (me && !s.me)
+        locked(dir, () => save(dir, { ...load(dir), me }));
+    return `${got} team note${got === 1 ? '' : 's'} fetched, ${Object.keys(cache.notes).length} held (${LABEL})`;
+}
 export async function search(dir, q) {
     const r = await call(load(dir), 'GET', `/search?q=${encodeURIComponent(q)}`);
     if (r.status !== 200)
@@ -232,4 +281,17 @@ export function teamStatus(dir) {
         return ['team: the server refused your token; ask for a new invite, then `thenwise team join`'];
     const shared = Object.values(s.shared).filter((v) => v.rev > 0).length;
     return [`team: ${shared} note${shared === 1 ? '' : 's'} shared${s.queue.length ? `, ${s.queue.length} change${s.queue.length === 1 ? '' : 's'} waiting to send` : ''} (${LABEL})`];
+}
+/** Shares notes just accepted when config.team names their type and project. Off by default: a share cannot be taken
+ * back from a teammate's machine once it synced, so it is a choice per project. */
+export async function autoShare(cfg, accepted) {
+    if (!cfg.autoShare.length || !existsSync(stateFile(cfg.memDir)))
+        return [];
+    const out = [];
+    for (const n of accepted) {
+        if (!cfg.autoShare.includes(n.type) || !cfg.autoShareProjects.some((p) => n.project === p || n.project.endsWith(p)))
+            continue;
+        out.push(`${n.id} shared: ${await share(cfg.memDir, n.id, { title: n.title, text: parseFrontMatter(readFileSync(n.path, 'utf8')).body.trim() || n.summary, project: n.project, kind: n.type, source: n.sources.join(',') })}`);
+    }
+    return out;
 }

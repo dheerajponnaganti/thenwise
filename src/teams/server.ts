@@ -459,7 +459,8 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       if (feed) (where.push('n.rev > ?', "n.status != 'pending'"), args.push(since()))
       const rows = db.prepare(`SELECT n.* FROM notes n WHERE ${where.join(' AND ')} ORDER BY ${feed ? 'n.rev' : 'n.rev DESC, n.owner, n.id'} LIMIT ? OFFSET ?`).all(...args, limit(), feed ? 0 : offset()) as Row[]
 
-      return [200, { notes: rows.map((r) => out(r, false)) }]
+      // full=1 carries each note's text, so a feed reader needs no request per note.
+      return [200, { notes: rows.map((r) => out(r, u.searchParams.get('full') === '1')) }]
     }
     // /notes/:owner/:id and what hangs off it. The owner is a name here, the id is the note's.
     if (b && c && ((!d && (m === 'GET' || m === 'PATCH')) || (m === 'GET' && d === 'revisions') || (m === 'POST' && ['retire', 'supersede', 'pin', 'unpin', 'approve'].includes(d ?? '')))) {

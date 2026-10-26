@@ -165,6 +165,18 @@ function startSync(env: HookEnv) {
   log(env, 'sync started', 'info', 'sync_started')
 }
 
+const distillStamp = (dir: string) => join(dir, 'distill-auto.json')
+/** When the last automatic distill ran (a day ago when it never did, so the first run reads one day of chats). */
+const lastDistill = (dir: string) => {
+  try {
+    return JSON.parse(readFileSync(distillStamp(dir), 'utf8')).last as string
+  } catch {
+    return new Date(Date.now() - 864e5).toISOString()
+  }
+}
+/** Once a day, and only with `claude` on the PATH: distill asks it to propose notes. */
+const distillDue = (dir: string) => Date.now() - Date.parse(lastDistill(dir)) >= 864e5 && (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').some((p) => p && ['claude', 'claude.cmd', 'claude.exe'].some((c) => existsSync(join(p, c))))
+
 /** The detached worker: archive, then ingest, one at a time across sessions. */
 export function syncRun(env: HookEnv) {
   const lock = join(env.dir, 'sync.lock')
@@ -178,16 +190,19 @@ export function syncRun(env: HookEnv) {
     }
     let changed = true
     const vaultStamp = join(env.dir, 'vault.json')
-    for (const verb of ['archive', 'ingest', ...(loadConfigSafe().config?.vault ? ['vault write'] : []), 'backup --daily', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : [])]) {
+    // The team's notes are fetched before the ingest, so this sync already makes them searchable.
+    const cfgNow = loadConfigSafe().config
+    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
       // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
       if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
         continue
       }
       const t = Date.now()
-      const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } })
+      const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || verb.startsWith('distill') ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } })
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
+      if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
     }
   } finally {

@@ -16,7 +16,7 @@ import { loadTombs, underFolder } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { updateGraph } from "./incremental.js";
 import { withLock } from "./lock.js";
-import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
+import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamPart } from "./parts.js";
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
@@ -317,7 +317,7 @@ function fullBuild(cfg, opts, dbPath) {
     // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
     if (!opts.until)
         syncTrailers(cfg.memDir, trailerItems);
-    layers.push(curatedPart(cfg, opts.until), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until));
+    layers.push(curatedPart(cfg, opts.until), teamPart(cfg), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until));
     for (const l of layers) {
         for (const n of l.nodes)
             g.node(n);

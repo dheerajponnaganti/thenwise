@@ -16,7 +16,7 @@ import { fillSynonyms, keepWord, toks } from "../query/language.js";
 import { noteKeys, splitPassages } from "../query/passages.js";
 import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from "./ingest.js";
 import { plansPart } from "./plans.js";
-import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from "./parts.js";
+import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamPart } from "./parts.js";
 import { discoverRepos } from "./repos.js";
 const SESSION_KINDS = ['part_of', 'read', 'edited', 'ran_in', 'continued_from'];
 const LABELLED = new Set(['note', 'section', 'commit', 'pr']);
@@ -302,6 +302,7 @@ function update(db, cfg, opts, dbPath) {
         (S.keys.add(`pr\0${r.id.split('#').pop()}`), S.claimKeys.add(`url\0${JSON.parse(r.extra).url}`));
     S.applyLayer(['note:'], ['part_of', 'links_to'], notesPart(cfg));
     S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg));
+    S.applyLayer(['team:'], [], teamPart(cfg));
     S.applyLayer(['doc:', 'rule:'], ['part_of'], docsPart(cfg));
     S.applyLayer(['mem:'], [], memoryPart(cfg, S.all("SELECT DISTINCT project FROM nodes WHERE kind = 'session'").map((r) => r.project), opts.memoryFrom));
     S.applyLayer(['plan:'], [], plansPart(cfg));

@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Local memory of your past Claude Code work: search, history and a resume brief. No model in retrieval.",
   "type": "module",
   "engines": {

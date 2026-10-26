@@ -156,13 +156,14 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
             console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`);
         console.log(`${inbox.length} note(s) in the inbox`);
     }
-    else if (cmd === 'accept' && flag('all-of')) {
-        for (const m of notes.accept(cfg.memDir, { type: flag('all-of') }, new Date().toISOString()))
+    else if (cmd === 'accept') {
+        const active = new Set(notes.readNotes(cfg.memDir).filter((n) => n.status === 'active').map((n) => n.id));
+        for (const m of notes.accept(cfg.memDir, flag('all-of') ? { type: flag('all-of') } : { ids: args }, new Date().toISOString()))
+            console.log(m);
+        const { autoShare } = await import("./teams/client.js");
+        for (const m of await autoShare(cfg, notes.readNotes(cfg.memDir).filter((n) => n.status === 'active' && !active.has(n.id))))
             console.log(m);
     }
-    else if (cmd === 'accept')
-        for (const m of notes.accept(cfg.memDir, { ids: args }, new Date().toISOString()))
-            console.log(m);
     else if (cmd === 'reject')
         for (const m of notes.reject(cfg.memDir, args))
             console.log(m);

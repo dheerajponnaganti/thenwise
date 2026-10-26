@@ -437,3 +437,18 @@ export function resolveRefs(id, at, refs, look) {
     }
     return [...out.values()];
 }
+/** Notes teammates shared, from team-cache.json (written by `team sync`). Global: a team note belongs to no folder here. */
+export function teamPart(cfg) {
+    const out = { nodes: [], edges: [] };
+    let notes = {};
+    try {
+        notes = JSON.parse(readFileSync(join(cfg.memDir, 'team-cache.json'), 'utf8')).notes ?? {};
+    }
+    catch { } // not on a team, or nothing fetched yet
+    for (const key of Object.keys(notes).sort()) {
+        const n = notes[key];
+        const at = iso(Number(n.updated_at) || 0);
+        out.nodes.push(fullNode({ id: `team:${key}`, kind: 'team', title: String(n.title ?? ''), text: String(n.text ?? ''), at, until: n.status === 'superseded' ? at : '', project: String(n.project ?? ''), source: `team:${n.owner}`, extra: { kind: n.kind, sharedBy: n.owner, status: n.status, ...(n.superseded_by ? { supersededBy: n.superseded_by } : {}) } }));
+    }
+    return out;
+}

@@ -19,6 +19,8 @@ const SCHEMA = {
     views: { projects: 'object' },
     hooks: { prompt_map: 'boolean', startup_brief: 'boolean' },
     tools: { output_chars: 'number' },
+    capture: { auto: 'boolean' },
+    team: { auto_share: 'string[]', auto_share_projects: 'string[]' },
     scope: 'string',
 };
 const ENUMS = { 'vault.place': ['central', 'project', 'obsidian'], 'vault.layout': ['shared', 'per-project'], 'backup.kind': ['none', 'git', 'folders'], scope: ['project', 'all'] };
@@ -124,6 +126,9 @@ export function loadConfigSafe(home = homedir()) {
         promptMap: user.hooks?.prompt_map ?? true,
         startupBrief: user.hooks?.startup_brief ?? true,
         outputChars: user.tools?.output_chars ?? 0,
+        captureAuto: user.capture?.auto ?? false,
+        autoShare: user.team?.auto_share ?? [],
+        autoShareProjects: user.team?.auto_share_projects ?? [],
         vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
         backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
         scope: user.scope ?? 'project',

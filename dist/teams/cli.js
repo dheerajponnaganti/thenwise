@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadConfig } from "../ingest/config.js";
-import { flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from "./client.js";
+import { fetchShared, flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from "./client.js";
 import { createTeamServer, invite, listMembers, openTeamDb, removeMember, rotate } from "./server.js";
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>] [--console <hub folder>] [--allow-origin <origin>] [--tls-behind-proxy | --allow-plain-http]   (${LABEL})
 thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name>   (run where the server runs)
@@ -101,8 +101,15 @@ export async function teamMain(argv, flag) {
             const r = await search(dir, words.join(' '));
             console.log(r.length ? `${r.join('\n')}\n(${LABEL})` : `no shared notes match (${LABEL})`);
         }
-        else if (sub === 'sync')
+        else if (sub === 'sync') {
             console.log(await flush(dir));
+            try {
+                console.log(await fetchShared(dir));
+            }
+            catch (e) {
+                console.log(`team notes not fetched: ${e instanceof Error ? e.message : e} (${LABEL})`);
+            }
+        }
         else if (sub === 'pull')
             console.log(await pull(dir));
         else

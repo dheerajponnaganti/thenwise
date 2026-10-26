@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.13
+
+Words that meet: answers in other words than the question.
+
+- Words that meet: when a search finds no match, the rare words its first three results share are searched too, at synonym weight, and the answer says which. On the gold benchmark this finds 6 answers that were "not recorded" (R@10 67% to 72%) and moves no other question.
+- A chat result reads as one unit: what was asked, when the match is further down the turn, and how the next turn answered.
+- The output budget of a memory answer is 4,000 characters, or `THENWISE_OUTPUT_CHARS` / `tools.output_chars` in config.json; at 8,000 or more, five results are shown in full. The default stays until a judged run picks one.
+- Not taken from the plan, by the benchmark: synonyms mined per chat (10 pairs instead of 1,094 and no gain; expansion stays off, as it lowers R@1 from 36% to 33%), and split camelCase words (the tokenizer already splits snake_case, and no gold question needs camelCase).
+
 ## 0.1.12
 
 Teams API for the Hub: roles, invites, browser sessions and note curation.

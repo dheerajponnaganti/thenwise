@@ -35,6 +35,8 @@ export interface Config {
   promptMap: boolean
   /** A short brief at startup in a repo with a session in the last 7 days. */
   startupBrief: boolean
+  /** The output budget of one memory answer in characters; 0 means the default. */
+  outputChars: number
   vault: { place: string; layout: string; path: string; commit: boolean } | null
   backup: { kind: string; folders: string[]; push: boolean }
   /** `project` (default): tools answer for the session's repository plus global notes; `all`: every project. */
@@ -62,6 +64,7 @@ const SCHEMA: Record<string, any> = {
   backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
   views: { projects: 'object' },
   hooks: { prompt_map: 'boolean', startup_brief: 'boolean' },
+  tools: { output_chars: 'number' },
   scope: 'string',
 }
 const ENUMS: Record<string, string[]> = { 'vault.place': ['central', 'project', 'obsidian'], 'vault.layout': ['shared', 'per-project'], 'backup.kind': ['none', 'git', 'folders'], scope: ['project', 'all'] }
@@ -171,6 +174,7 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     plans: ing.plans ?? true,
     promptMap: user.hooks?.prompt_map ?? true,
     startupBrief: user.hooks?.startup_brief ?? true,
+    outputChars: user.tools?.output_chars ?? 0,
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',

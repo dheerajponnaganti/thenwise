@@ -83,21 +83,30 @@ function result(i: number, h: Hit, extra = ''): string {
   const n = h.node
   return `${i}. [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${h.project}   source: ${sourceOf(n)}   passage: ${h.pid.split('#').pop()}   found by: ${h.lanes.join('+')}${deadNote(n)}${extra}\n${quoted(excerpt(h.shown, 360, [], h.idf))}`
 }
-/** The turn after a chat result in the same session: answers often sit next to the turn that used the question's words. */
-function nextTurn(g: Graph, n: Node): string {
+/** A chat turn read as one unit: what was asked (when the match is further down the turn) and how the next turn answered.
+ * The question and the answer are often in different passages from the words that matched. */
+function turnAround(g: Graph, h: Hit): string {
+  const n = h.node
   if (n.kind !== 'turn') return ''
+  const asked = h.pid.endsWith('#p0') ? '' : `\n   asked: ${cut(flat(g.fullText(n.id).split('\n\n')[0] ?? n.title), 200)}`
   const sib = g.bySource(n.source).filter((x) => x.kind === 'turn').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
   const next = sib[sib.findIndex((x) => x.id === n.id) + 1]
-  return next ? `\n   same chat, next (${next.id}): ${cut(flat(g.passages(next.id)[0]?.text ?? next.title), 110)}` : ''
+  const reply = next ? flat(g.fullText(next.id).split('\n\n').slice(1).join(' ')) || flat(next.title) : ''
+
+  return `${asked}${next ? `\n   same chat, next (${next.id}): ${cut(reply, 150)}` : ''}`
 }
+/** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable
+ * from `tools.output_chars` in config.json). More room shows more results in full. */
+export const outputChars = () => Math.max(2000, Math.min(Number(process.env.THENWISE_OUTPUT_CHARS) || 4000, 20000))
 /** One line for a lower result: kind, id, date and the words around the match. */
 const brief = (i: number, h: Hit) => `${i}. ${h.node.id} ${local(h.node.at).slice(0, 10)} project: ${h.project} | ${flat(excerpt(h.shown, 80, [], h.idf)).replace(/\*\*/g, '')}`
 /** The top 3 in full (with the next turn of the same chat), then up to 7 more as one line each, so Claude has more to choose from. */
 function listing(g: Graph, items: { h: Hit; extra: string }[], limit = 10): string[] {
-  const full = items.slice(0, 3).map((x, i) => result(i + 1, x.h, x.extra + nextTurn(g, x.h.node)))
-  // One-liners stop before the tool output cap (4000 characters) would cut them mid-list.
-  let room = 3700 - full.join('\n\n').length
-  const more = items.slice(3, limit).map((x, i) => brief(i + 4, x.h)).filter((l) => (room -= l.length + 1) >= 0)
+  const budget = outputChars()
+  const full = items.slice(0, budget >= 8000 ? 5 : 3).map((x, i) => result(i + 1, x.h, x.extra + turnAround(g, x.h)))
+  // One-liners stop before the tool output cap would cut them mid-list.
+  let room = budget - 300 - full.join('\n\n').length
+  const more = items.slice(full.length, limit).map((x, i) => brief(i + full.length + 1, x.h)).filter((l) => (room -= l.length + 1) >= 0)
 
   return [...full, ...(more.length ? [`more matches (get <id> prints one):\n${more.join('\n')}`] : [])]
 }
@@ -109,7 +118,7 @@ function notRecorded(what: string, s: Search): string {
   return out.join('\n')
 }
 /** Says what the search changed: synonyms it also searched, and spellings it corrected. */
-const rewording = (s: Search) => [...(s.expanded.length ? [`also searched: ${s.expanded.map((e) => `${e.to.join(', ')} (for ${e.from})`).join('; ')}`] : []), ...(s.fixed.length ? [`did you mean: ${s.fixed.map((f) => f.to).join(', ')} (for ${s.fixed.map((f) => f.from).join(', ')})`] : [])]
+const rewording = (s: Search) => [...(s.feedback?.length ? [`also searched (from the first results): ${s.feedback.join(', ')}`] : []), ...(s.expanded.length ? [`also searched: ${s.expanded.map((e) => `${e.to.join(', ')} (for ${e.from})`).join('; ')}`] : []), ...(s.fixed.length ? [`did you mean: ${s.fixed.map((f) => f.to).join(', ')} (for ${s.fixed.map((f) => f.from).join(', ')})`] : [])]
 const head = (title: string, s: Search, shown: number, total: number) => {
   const out = [`${title}: ${shown} of ${total} matching passages`, `searched: ${s.terms.join(' ') || '(exact references only)'}`]
   out.push(...rewording(s))

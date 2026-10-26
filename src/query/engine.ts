@@ -36,6 +36,7 @@ export interface Search {
   missing: string[] // query words that appear nowhere in the corpus (and have no close spelling)
   expanded: { from: string; to: string[] }[] // synonyms searched at a lower weight (corpus-mined)
   fixed: { from: string; to: string }[] // misspelt query words replaced by their closest vocabulary word
+  feedback: string[] // rare words of the first results, searched again when nothing matched well (pseudo-relevance feedback)
   hits: Hit[] // fused order
   good: Hit[] // hits whose coverage is high enough to count as a match
 }
@@ -97,6 +98,8 @@ export class Graph {
   // Off by default: mined pairs are often topical neighbours, not synonyms, and expansion is untested on the real
   // questions. `--expand` turns it on; typo fixes stay on, since they only replace words that appear nowhere.
   expand = false
+  /** Pseudo-relevance feedback on weak queries. */
+  feedback = true
   /** The project folder results are limited to (plus global notes); undefined searches everything. */
   scope: string | undefined
   /** Roots to leave out even when the scope is everything (paused projects in the all-projects fallback). */
@@ -352,8 +355,22 @@ export class Graph {
     }
   }
 
-  /** Ranked passages for a query. `filter` keeps only nodes it accepts (as-of dates, kinds). */
+  /** Ranked passages for a query. `filter` keeps only nodes it accepts (as-of dates, kinds). When no early result covers
+   * half the query, the rare words that the first three results share are searched too, at synonym weight: the answer
+   * often says it in other words than the question. */
   search(q: string, opts: { filter?: (n: Node) => boolean; limit?: number } = {}): Search {
+    const first = this.run(q, opts, [])
+    if (!this.feedback || first.hits.length < 3 || first.good.length > 0) return first
+    const asked = new Set(first.terms)
+    const top = first.hits.slice(0, 3).map((h) => new Set(words(h.text).filter((w) => w.length >= 4 && !STOP.has(w) && !asked.has(w))))
+    // A word counts when two of the three agree on it: three unrelated results add nothing.
+    const shared = [...new Set(top.flatMap((t) => [...t]))].filter((w) => top.filter((t) => t.has(w)).length >= 2)
+    const add = shared.map((w) => ({ w, idf: this.term(w).idf })).filter((x) => x.idf > 0).sort((a, b) => b.idf - a.idf || (a.w < b.w ? -1 : 1)).slice(0, 5).map((x) => x.w)
+
+    return add.length ? this.run(q, opts, add) : first
+  }
+
+  private run(q: string, opts: { filter?: (n: Node) => boolean; limit?: number }, feedback: string[]): Search {
     const terms = queryTerms(q)
     const sets = this.termSets(terms)
     type Alt = { t: string; set: { size: number; has(r: number): boolean } }
@@ -378,10 +395,14 @@ export class Graph {
         if (s.alt.length) expanded.push({ from: s.t, to: s.alt.map((a) => a.t) })
       }
     }
+    if (feedback.length) {
+      const extra = feedback.map((t) => ({ t, ...this.term(t) })).filter((a) => a.set.size > 0)
+      for (const s of known) s.alt = [...s.alt, ...extra.filter((a) => !s.alt.some((x) => x.t === a.t))]
+    }
     const every = known.flatMap((s) => [s.t, ...s.alt.map((a) => a.t)])
     const exact = this.exact(q)
     const ok = (n: Node | undefined): n is Node => !!n && this.inScope(n) && (!opts.filter || opts.filter(n))
-    if (!known.length && !exact.length) return { terms, missing, expanded, fixed, hits: [], good: [] }
+    if (!known.length && !exact.length) return { terms, missing, expanded, fixed, feedback, hits: [], good: [] }
 
     const wsum = known.reduce((a, s) => a + s.idf, 0) || 1
     // A query word absent from the passage but present elsewhere in its turn or the neighbouring turns of its session counts at half weight.
@@ -526,7 +547,7 @@ export class Graph {
     hits.sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))
     // A passage is a match when it covers enough of the query, or the query named its node exactly.
     const good = hits.filter((h) => h.cov >= GOOD || h.lanes.includes('exact'))
-    return { terms, missing, expanded, fixed, hits, good }
+    return { terms, missing, expanded, fixed, feedback, hits, good }
   }
 }
 

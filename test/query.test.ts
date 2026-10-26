@@ -141,7 +141,7 @@ test('current puts the final and newer record first and flags newer records in s
   const c = current(g, 'cache module')
   assert.ok(c.indexOf('commit:proj:abcdef1234567') < c.indexOf('turn:t2') || c.indexOf('turn:t2') < 0)
   // Plain search still ranks by relevance, but says a newer record exists.
-  assert.match(search(g, 'eight shards plan'), /NEWER on this topic: note note:Shards2\.md/)
+  assert.match(search(g, 'eight shards plan'), /NEWER on this topic \([^)]+\): note note:Shards2\.md/)
 })
 
 test('results show the words around the match, and asof names the commit to read files at', () => {

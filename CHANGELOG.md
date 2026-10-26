@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.7
+
+Right records first: the rankings that put wrong or stale records on top are fixed.
+
+- CLAUDE.md files are kept as one record per heading section, dated by the file's last commit, instead of one record per line dated today. Only the CLAUDE.md of each root and configured repo, and those one folder below a root, are read; deeper ones (often other people's checkouts) are listed by `thenwise status` and can be added with `docs` under `ingest` in config.json.
+- `current` no longer boosts CLAUDE.md lines, and gives no recency credit to records dated only by a file's save time.
+- Naming a file in a question ranks the commits and chats that touched it by how well they match, not newest first.
+- NEWER warnings need evidence that the later record is about the same thing (it supersedes the record, touches the same file or PR, carries its title, or shares its rarest words), say which, and appear once per answer.
+- `asof` lists the best match first and names the newest match separately, and follows a chat turn to the commit it made.
+
 ## 0.1.6
 
 A ruler for retrieval, and six small fixes.

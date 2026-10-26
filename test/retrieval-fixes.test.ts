@@ -73,8 +73,8 @@ test('NEWER skips a sibling within 30 minutes and shows what the newer record sa
     ['turn:later', 'Mango cache decision changed: sixteen shards now.', '2026-10-05T10:00:00Z', 'ses:z'],
   ])
   const out = search(g, 'mango cache decision shards')
-  assert.doesNotMatch(out, /NEWER on this topic: turn turn:s2/)
-  assert.match(out, /NEWER on this topic: turn turn:later[^\n]*\n\s+newer says: .*sixteen shards/)
+  assert.doesNotMatch(out, /NEWER on this topic[^:]*: turn turn:s2/)
+  assert.match(out, /NEWER on this topic \(shares the words [^)]+\): turn turn:later[^\n]*\n\s+newer says: .*sixteen shards/)
 })
 
 test('a stub just over a third of the minimum still joins the next unit', () => {

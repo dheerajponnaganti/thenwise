@@ -9,7 +9,8 @@ const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\bre
 const STRONG = /\b(why|decision|dead-end):/i
 const UNDATED = new Set(['rule', 'doc', 'memory']) // no real date, so as-of cannot place them
 // Curated notes (accepted decisions, rules, dead ends) carry real dates, even when their kind is rule.
-const undated = (n: Node) => UNDATED.has(n.kind) && !n.extra?.curated
+// A CLAUDE.md section dated by git takes part in as-of; one dated by its file's mtime does not.
+const undated = (n: Node) => (n.kind === 'doc' ? n.extra?.dateFrom !== 'git' : UNDATED.has(n.kind)) && !n.extra?.curated
 
 const ms = (at: string) => Date.parse(at)
 /** A curated note is closed once its valid_to has passed (or it is superseded, when asking about now). */
@@ -29,6 +30,7 @@ function sourceOf(n: Node): string {
   if (n.kind === 'commit') return `commit ${n.id.split(':').pop()!.slice(0, 7)} in ${n.project}${branchNote(n)}`
   if (n.kind === 'session') return `session ${short(n.id)} ${local(n.at)} to ${local(n.until)}`
   if (n.kind === 'section') return `${n.source}, section dated ${n.at}`
+  if (n.kind === 'doc') return `${n.source}, section "${cut(n.title, 60)}"${n.extra?.dateFrom === 'git' ? `, file last committed ${local(n.at)}` : ''}`
   return n.source
 }
 export function label(g: Graph, id: string): string {
@@ -132,8 +134,9 @@ export function rank(g: Graph, cmd: RankCmd, q: string, opts: { date?: string } 
   if (cmd === 'current') return rankCurrent(g, q)
   const end = ms(endOf(opts.date ?? ''))
   const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end) && !(n.extra?.edited && ms(String(n.extra.edited)) > end), limit: 100 })
-  // The best 12 by relevance, newest first, then the rest by relevance.
-  const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node) || ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1))
+  // By relevance inside the date window; commits off main go after the rest of the best 12. Sorting the 12 newest first
+  // let a later passage that only mentions the topic win over the one that states the fact.
+  const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node))
 
   return { s, items: [...top, ...s.good.slice(12)].map((h) => ({ h })) }
 }
@@ -141,14 +144,37 @@ export function rank(g: Graph, cmd: RankCmd, q: string, opts: { date?: string } 
 export function search(g: Graph, q: string, limit = 10): string {
   const { s } = rank(g, 'search', q)
   if (!s.good.length) return notRecorded(`"${q}"`, s)
-  return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...listing(g, s.good.slice(0, limit).map((h, i) => ({ h, extra: i < 3 ? newerNote(s, h) : '' })), limit)].join('\n\n')
+  const hs = s.good.slice(0, limit)
+  const notes = newerNotes(g, s, hs)
+  return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...listing(g, hs.map((h, i) => ({ h, extra: notes[i]! })), limit)].join('\n\n')
 }
 
 // How final a record is: a merged PR, a commit or a dated log entry is the outcome; chat is often the discussion before it.
-const FINAL: Record<string, number> = { pr: 1.6, commit: 1.4, section: 1.4, rule: 1.3, note: 1.2, memory: 1.1, summary: 1, turn: 0.8 }
+// A rule line from a CLAUDE.md is not an outcome (curated rules are); a doc section is guidance.
+const FINAL: Record<string, number> = { pr: 1.6, commit: 1.4, section: 1.4, note: 1.2, memory: 1.1, summary: 1, doc: 0.9, turn: 0.8 }
+const final = (n: Node) => (n.kind === 'rule' && n.extra?.curated ? 1.3 : (FINAL[n.kind] ?? 1))
+// Dated by a file's mtime (a CLAUDE.md line, a doc without git history): when it was saved, not when it became true.
+const mtimeDated = (n: Node) => n.extra?.dateFrom === 'mtime' || (n.kind === 'rule' && !n.extra?.curated)
 
-/** The most relevant newer record on the same topic, when there is one strong enough to matter. */
-function newerOnTopic(s: Search, h: Hit): Hit | undefined {
+/** Why a later record is about the same thing as `h`, or '' when it only shares the query words: it supersedes `h`,
+ * touches the same file or PR, carries its title (a revised plan, a follow-up), or shares two of its five rarest words. */
+function sameTopic(g: Graph, h: Hit, x: Hit): string {
+  if ((g.adj.get(x.node.id) ?? []).some((e) => e.kind === 'supersedes' && e.to === h.node.id)) return 'supersedes it'
+  const linked = (id: string) => new Set(g.neighbours(id).map((e) => e.to).filter((t) => /^(file|pr):/.test(t)))
+  const mine = linked(h.node.id)
+  const shared = [...linked(x.node.id)].find((t) => mine.has(t))
+  if (shared) return `touches the same ${shared.startsWith('pr:') ? 'PR' : 'file'}, ${label(g, shared)}`
+  const [a, b] = [h.node.title, x.node.title].map((t) => flat(t).toLowerCase())
+  if (a!.length >= 8 && b!.length >= 8 && (a!.includes(b!) || b!.includes(a!))) return 'carries the same title'
+  const rare = [...new Set(words(h.text).filter((w) => w.length >= 4))].sort((a, b) => h.idf(b) - h.idf(a) || (a < b ? -1 : 1)).slice(0, 5)
+  const theirs = new Set(words(x.text))
+  const both = rare.filter((w) => theirs.has(w))
+
+  return both.length >= 2 ? `shares the words ${both.join(', ')}` : ''
+}
+
+/** The most relevant newer record on the same topic, when there is one strong enough to matter, and why it counts. */
+function newerOnTopic(g: Graph, s: Search, h: Hit, evidence = true): { hit: Hit; why: string } | undefined {
   const top = Math.max(...s.good.map((x) => x.score))
   const at = ms(h.node.at)
   if (Number.isNaN(at) || undated(h.node)) return undefined
@@ -156,11 +182,29 @@ function newerOnTopic(s: Search, h: Hit): Hit | undefined {
   // Rules, docs and memory files carry only a file time, so they never count as a newer record.
   // A sibling in the same session within 30 minutes (a crew brief next to its twin) is not a later record.
   const sibling = (x: Hit) => ['turn', 'summary'].includes(x.node.kind) && ['turn', 'summary'].includes(h.node.kind) && x.node.source === h.node.source && ms(x.node.at) - at < 30 * 60000
-  return s.good.filter((x) => x.node.id !== h.node.id && !undated(x.node) && ms(x.node.at) > at && !sibling(x) && x.cov >= 0.75 * h.cov && x.score >= top / 3).sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))[0]
+  // Sharing the query words is not enough: two unrelated later records both match a short query.
+  for (const x of s.good.filter((x) => x.node.id !== h.node.id && !undated(x.node) && ms(x.node.at) > at && !sibling(x) && x.cov >= 0.75 * h.cov && x.score >= top / 3).sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))) {
+    const why = evidence ? sameTopic(g, h, x) : 'matches as well'
+    if (why) return { hit: x, why }
+  }
+
+  return undefined
 }
-const newerNote = (s: Search, h: Hit) => {
-  const n = newerOnTopic(s, h)
-  return n ? `\n   NEWER on this topic: ${n.node.kind} ${n.node.id} (${local(n.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now\n   newer says: ${flat(excerpt(n.shown, 160, [], n.idf)).replace(/\*\*/g, "")}` : ''
+const newerNote = (g: Graph, s: Search, h: Hit) => {
+  const n = newerOnTopic(g, s, h)
+  return n ? `\n   NEWER on this topic (${n.why}): ${n.hit.node.kind} ${n.hit.node.id} (${local(n.hit.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now\n   newer says: ${flat(excerpt(n.hit.shown, 160, [], n.hit.idf)).replace(/\*\*/g, "")}` : ''
+}
+/** NEWER notes for the top 3, kept on the first result that has one only: one warning per answer. */
+const newerNotes = (g: Graph, s: Search, hs: Hit[]): string[] => {
+  let done = false
+
+  return hs.map((h, i) => {
+    if (i >= 3 || done) return ''
+    const n = newerNote(g, s, h)
+    done = n !== ''
+
+    return n
+  })
 }
 
 /** current: what holds now on a topic. Relevance, times how final the record is (PRs, commits and dated log entries
@@ -175,11 +219,12 @@ function rankCurrent(g: Graph, topic: string): Ranked {
   const scored = s.good
     .map((h) => {
       const t = ms(h.node.at)
-      const recent = Number.isNaN(t) ? 0.5 : (t - t0) / span
+      const recent = Number.isNaN(t) ? 0.5 : mtimeDated(h.node) ? 0 : (t - t0) / span
       // A record with a strong newer one on the same topic, at least as final, has probably been overtaken.
-      const later = newerOnTopic(s, h)
-      const overtaken = later && (FINAL[later.node.kind] ?? 1) >= (FINAL[h.node.kind] ?? 1) ? 0.6 : 1
-      return { h, v: (h.score / top) * (0.5 + h.cov) * (FINAL[h.node.kind] ?? 1) * (0.7 + 0.6 * recent) * overtaken }
+      // Ranking keeps the looser test: on the benchmark it orders current better; only the warning text needs evidence.
+      const later = newerOnTopic(g, s, h, false)?.hit
+      const overtaken = later && final(later.node) >= final(h.node) ? 0.6 : 1
+      return { h, v: (h.score / top) * (0.5 + h.cov) * final(h.node) * (0.7 + 0.6 * recent) * overtaken }
     })
     .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1))
 
@@ -193,7 +238,9 @@ export function current(g: Graph, topic: string, limit = 5): string {
     head('current', s, Math.min(limit, scored.length), scored.length),
     'ranked for what holds now: final records (PRs, commits, dated log entries) and newer ones first; earlier chat may describe a plan that changed',
   ]
-  return [out.join('\n'), '', ...scored.slice(0, limit).map((x, i) => result(i + 1, x.h, i < 3 ? newerNote(s, x.h) : ''))].join('\n\n')
+  const hs = scored.slice(0, limit).map((x) => x.h)
+  const notes = newerNotes(g, s, hs)
+  return [out.join('\n'), '', ...hs.map((h, i) => result(i + 1, h, notes[i]!))].join('\n\n')
 }
 
 /** why and tried: the topic's best passages, boosted when they state a reason or an attempt. Relevance leads; markers only
@@ -215,13 +262,15 @@ function rankMarked(g: Graph, name: string, topic: string, markers: RegExp[]): R
 function marked(g: Graph, name: 'why' | 'tried', topic: string, limit = 10): string {
   const { s, items: scored } = rank(g, name, topic)
   if (!s.good.length) return notRecorded(`${name} for "${topic}"`, s)
-  return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...listing(g, scored.slice(0, limit).map((x, i) => ({ h: x.h, extra: `   markers: ${x.m}${i < 3 ? newerNote(s, x.h) : ''}` })), limit)].join('\n\n')
+  const top = scored.slice(0, limit)
+  const notes = newerNotes(g, s, top.map((x) => x.h))
+  return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...listing(g, top.map((x, i) => ({ h: x.h, extra: `   markers: ${x.m}${notes[i]}` })), limit)].join('\n\n')
 }
 export const why = (g: Graph, topic: string) => marked(g, 'why', topic)
 export const tried = (g: Graph, topic: string) => marked(g, 'tried', topic)
 
 /** Earliest later item that replaces `n`: a later PR or commit on the same files, or a later note on the same topic. */
-function replacedBy(g: Graph, h: Hit, q: string): string | undefined {
+function replacedBy(g: Graph, h: Hit, q: string, s: Search): string | undefined {
   const n = h.node
   let best: { node: Node; via: string } | undefined
   const consider = (c: Node | undefined, via: string) => {
@@ -234,6 +283,10 @@ function replacedBy(g: Graph, h: Hit, q: string): string | undefined {
     }
   } else if (n.kind === 'note') {
     for (const c of g.search(q, { filter: (x) => x.kind === 'note' }).good) consider(c.node, 'the same topic')
+  } else if (n.kind === 'turn') {
+    // A commit the turn made, or a later turn of the same chat on the same topic.
+    for (const e of g.neighbours(n.id)) if (e.kind === 'made' && g.nodes.get(e.to)?.kind === 'commit') consider(g.nodes.get(e.to), 'a commit made from it')
+    for (const c of s.good) if (c.node.kind === 'turn' && c.node.source === n.source) consider(c.node, 'the same chat')
   }
   return best ? `later on ${best.via}: ${label(g, best.node.id)} (${best.node.at})` : undefined
 }
@@ -244,11 +297,12 @@ export function asof(g: Graph, date: string, q: string, limit = 5): string {
   const { s, items } = rank(g, 'asof', q, { date })
   if (!s.good.length) return notRecorded(`"${q}" on or before ${date}`, s)
   const top = items.slice(0, Math.min(limit, 12)).map((x) => x.h)
-  const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, newest first`, `searched: ${s.terms.join(' ')}`, 'rules and memory files are undated and left out', CUT, `current at ${date}: ${label(g, top[0]!.node.id)} (${local(top[0]!.node.at)})`]
+  const newest = top.reduce((a, b) => (ms(b.node.at) > ms(a.node.at) ? b : a))
+  const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, best match first`, `searched: ${s.terms.join(' ')}`, 'memory files, and CLAUDE.md sections without git history, are undated and left out', CUT, `best match: ${label(g, top[0]!.node.id)} (${local(top[0]!.node.at)}); newest among the matches: ${label(g, newest.node.id)} (${local(newest.node.at)})`]
   const repos = commitsAt(g, end)
   if (repos.length) out.push(`the code as it was on ${date} (the newest commit on or before it; read a file with git show <sha>:<path>):`, ...repos)
   const blocks = top.map((h, i) => {
-    const later = i < 3 ? replacedBy(g, h, q) : undefined
+    const later = i < 3 ? replacedBy(g, h, q, s) : undefined
     return result(i + 1, h, later ? `\n   ${later}` : '')
   })
   return [out.join('\n'), '', ...blocks].join('\n\n')

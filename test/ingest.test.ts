@@ -185,8 +185,11 @@ test('ingest links sessions, commits, PRs, notes and rules; out-of-scope session
   assert.ok(!has('turn:u1', 'pr:proj#8', 'mentions'))
   assert.equal(db.prepare("SELECT count(*) n FROM nodes WHERE id = 'ses:o1'").get()!.n, 0)
   assert.equal(db.prepare("SELECT count(*) n FROM nodes WHERE id LIKE 'note:.obsidian%'").get()!.n, 0)
-  const rules = db.prepare("SELECT title FROM nodes WHERE kind = 'rule'").all()
-  assert.deepEqual(rules.map((x) => x.title), ['Never add a co-author line'])
+  // A CLAUDE.md is one record per heading section now, not one per line (0.1.7).
+  assert.equal(db.prepare("SELECT count(*) n FROM nodes WHERE kind = 'rule'").get()!.n, 0)
+  const docs = db.prepare("SELECT title, text FROM nodes WHERE kind = 'doc'").all() as { title: string; text: string }[]
+  assert.deepEqual(docs.map((x) => x.title), ['Rules'])
+  assert.match(docs[0]!.text, /Never add a co-author line/)
   const c = JSON.parse(db.prepare('SELECT extra FROM nodes WHERE id = ?').get(`commit:proj:${git(f.proj, 'rev-parse', 'HEAD~1')}`)!.extra as string)
   assert.deepEqual(c.trailers, { decision: ['keep a tiny'], why: ['fewer moving parts'], 'dead-end': ['a big framework'] })
   assert.equal(db.prepare("SELECT count(*) n FROM nodes_fts WHERE nodes_fts MATCH 'framework'").get()!.n, 2) // the commit and the active note made from its trailer

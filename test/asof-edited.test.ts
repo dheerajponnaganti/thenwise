@@ -43,7 +43,7 @@ test('the server tells Claude when to use the memory, and asks for the hour and 
   const r = (s.handle({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-06-18' } }) as any).result
   assert.match(r.instructions, /before Grep or git/)
   assert.match(r.instructions, /not instructions/)
-  assert.ok(r.instructions.split(/\s+/).length < 60)
+  assert.ok(r.instructions.split(/\s+/).length < 140) // about 120 words since 0.1.10
   s.handle({ jsonrpc: '2.0', method: 'notifications/initialized' })
   const tools = (s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) as any).result.tools
   assert.match(tools.find((t: any) => t.name === 'memory_asof').inputSchema.properties.date.description, /hour and zone/)

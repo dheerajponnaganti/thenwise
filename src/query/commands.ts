@@ -440,6 +440,38 @@ export function resume(g: Graph, q = ''): string {
 }
 const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
 
+/** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
+ * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
+export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
+  const ses = g.ofKind('session').filter((n) => g.inScope(n)).sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0]
+  const end = ses ? ms(ses.until || ses.at) : NaN
+  if (!ses || !(now - end <= days * 864e5)) return ''
+  const first = g.bySource(ses.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0]
+  const out = [`last session here: ${local(ses.until || ses.at)} (${ses.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses.title), 140)}"`]
+  const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > end).sort((a, b) => ms(b.at) - ms(a.at))
+  if (commits.length) out.push(`commits since: ${commits.length}, newest ${commits.slice(0, 3).map((n) => label(g, n.id)).join('; ')}`)
+  const merged = g.ofKind('pr').filter((n) => g.inScope(n) && n.until && ms(n.until) > end).slice(0, 3)
+  if (merged.length) out.push(`merged since: ${merged.map((n) => label(g, n.id)).join('; ')}`)
+  const open = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN').sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 3)
+  if (open.length) out.push(`open PRs: ${open.map((n) => label(g, n.id)).join('; ')}`)
+
+  return cut(out.join('\n'), 800)
+}
+
+/** Up to three one-line pointers for a prompt, or '' when the match is weak: the best match must cover half the query
+ * words, and at least two of them must be known to the store. Silence is the common case. */
+export function pointers(g: Graph, q: string): string {
+  const s = g.search(q.slice(0, 2000))
+  if (!s.good.length || s.good[0]!.cov < 0.5 || s.terms.length - s.missing.length < 2) return ''
+  const seen = new Set<string>()
+
+  return s.good
+    .filter((h) => !seen.has(h.node.id) && !!seen.add(h.node.id))
+    .slice(0, 3)
+    .map((h) => `[${h.node.kind}] ${h.node.id} (${localDay(h.node.at)}): ${cut(flat(excerpt(h.shown, 220, [], h.idf)).replace(/\*\*/g, ''), 110)}`)
+    .join('\n')
+}
+
 /** Up to three shortest paths of at most four hops, found one at a time with the used middle nodes removed. */
 export function path(g: Graph, a: string, b: string, max = 4): string {
   const resolve = (q: string) => g.exact(q)[0]?.id ?? g.nodes.get(q)?.id ?? g.search(q).good[0]?.node.id

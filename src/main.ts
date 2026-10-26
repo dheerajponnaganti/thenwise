@@ -145,7 +145,7 @@ if (cmd && QUERY.includes(cmd)) {
   // Positional words are everything after the command that is not a flag or a flag value.
   const args: string[] = []
   const rest = process.argv.slice(3)
-  for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
+  for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
   const cfg = loadConfig()
   const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(dbPath)) (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2))
@@ -156,12 +156,12 @@ if (cmd && QUERY.includes(cmd)) {
   const q = args.join(' ')
   const need = (ok: boolean) => ok || (console.error(USAGE), process.exit(2))
   need(cmd === 'resume' || args.length > 0)
-  if (cmd === 'search') console.log(c.search(g, q))
+  if (cmd === 'search') console.log(process.argv.includes('--pointers') ? c.pointers(g, q) : c.search(g, q))
   else if (cmd === 'current') console.log(c.current(g, q))
   else if (cmd === 'why') console.log(c.why(g, q))
   else if (cmd === 'tried') console.log(c.tried(g, q))
   else if (cmd === 'trace') console.log(c.trace(g, q))
-  else if (cmd === 'resume') console.log(c.resume(g, q))
+  else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : c.resume(g, q))
   else if (cmd === 'get') console.log(c.get(g, q))
   else if (cmd === 'asof') (need(args.length > 1), console.log(c.asof(g, args[0]!, args.slice(1).join(' '))))
   else if (cmd === 'path') (need(args.length > 1), console.log(c.path(g, args[0]!, args.slice(1).join(' '))))

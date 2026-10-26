@@ -20,7 +20,8 @@ function afterPointer() {
 }
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
-const CAP = 4000;
+// The output budget (decision 6): 4,000 characters unless THENWISE_OUTPUT_CHARS or tools.output_chars says otherwise.
+const CAP = () => c.outputChars();
 // About 120 words: when to call, one example per question shape, and what to do with the answer. Said once here, not per tool.
 const INSTRUCTIONS = [
     'Thenwise holds past work here: chats, commits, PRs and notes, with dates and sources. Call it before Grep or git for:',
@@ -41,7 +42,7 @@ const TOOLS = {
     memory_why: { text: 'Why something is the way it is: the decisions behind it and their reasons.', run: (g, a) => c.why(g, a[0]) },
     memory_tried: { text: 'What was tried before, failed or was dropped, so it is not repeated.', run: (g, a) => c.tried(g, a[0]) },
     memory_asof: { text: 'What was true on a date: an ISO date or date and time (keep the hour and zone the question gives), and words. Names the commit of that date; read a file as it was with git show <sha>:<path>.', run: (g, a) => c.asof(g, a[0], a[1]) },
-    memory_trace: { text: 'The whole story of a file, symbol or topic, newest first: decisions, dead ends, chats, commits and PRs. Pass offset to page to older items.', run: (g, a) => c.trace(g, a[0], 100, Number(a[1]) || 0, CAP - 300) },
+    memory_trace: { text: 'The whole story of a file, symbol or topic, newest first: decisions, dead ends, chats, commits and PRs. Pass offset to page to older items.', run: (g, a) => c.trace(g, a[0], 100, Number(a[1]) || 0, CAP() - 300) },
     memory_read: { text: 'One record or passage in full, by the id a result shows, such as turn:abc#p2.', run: (g, a) => c.get(g, a[0]) },
 };
 const field = (name) => (name === 'memory_read' ? 'id' : 'query');
@@ -127,7 +128,7 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
                     out = `Nothing in this project; from all projects:\n${all}`;
             }
             done({ chars: out.length, found: !/^not recorded/.test(out) });
-            return text(cut(out, name === 'memory_read' ? 12000 : CAP));
+            return text(cut(out, name === 'memory_read' ? 12000 : CAP()));
         }
         catch (e) {
             const f = errFields(e);
@@ -179,6 +180,10 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
 }
 /** Reads lines from `input` until it ends, writes one JSON line per reply to `output`. */
 export function serveStdio(input, output, dbPath) {
+    // tools.output_chars in config.json sets the budget unless the environment already does.
+    const chars = loadConfigSafe().config?.outputChars;
+    if (chars && !process.env.THENWISE_OUTPUT_CHARS)
+        process.env.THENWISE_OUTPUT_CHARS = String(chars);
     const server = createServer(dbPath);
     const dec = new StringDecoder('utf8');
     let buf = '';

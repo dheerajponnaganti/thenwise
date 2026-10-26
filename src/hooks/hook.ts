@@ -1,11 +1,11 @@
 // `thenwise hook <name>`: the Claude Code hooks. The hook JSON arrives on stdin; the reply is one JSON line on stdout.
-// A hook never fails the chat: every error goes to the log (logs/thenwise.log, and hooks.log for one more release) and the exit code stays 0.
+// A hook never fails the chat: every error goes to the log (logs/thenwise.log in the data folder) and the exit code stays 0.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
-import { type Level, logger, recentErrors } from '../core/log.ts'
+import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../ingest/plans.ts'
@@ -65,13 +65,8 @@ export interface HookEnv {
   dir: string // the data folder
   cli: string // the cli entry that runs the query commands
 }
-const logFile = (env: HookEnv) => join(env.dir, 'hooks.log')
 export function log(env: HookEnv, msg: string, lvl: Level = 'info', ev = 'note') {
   logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg })
-  try {
-    mkdirSync(env.dir, { recursive: true, mode: 0o700 })
-    appendFileSync(logFile(env), `${new Date().toISOString()} ${msg}\n`, { mode: 0o600 })
-  } catch {} // the old hooks.log is best effort; the real log line is already written
 }
 
 const alive = (pid: number) => {
@@ -125,9 +120,8 @@ function startSync(env: HookEnv) {
   const lock = join(env.dir, 'sync.lock')
   if (existsSync(lock) && alive(Number(readFileSync(lock, 'utf8').trim())) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return log(env, 'sync already running')
   mkdirSync(env.dir, { recursive: true })
-  const fd = openSync(logFile(env), 'a')
-  spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, THENWISE_HOME: env.dir } }).unref()
-  closeSync(fd)
+  // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
+  spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', env: { ...process.env, THENWISE_HOME: env.dir } }).unref()
   log(env, 'sync started', 'info', 'sync_started')
 }
 
@@ -156,27 +150,19 @@ export function syncRun(env: HookEnv) {
 const reply = (event: string, additionalContext: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext } })
 
 /** Files already hinted, kept per session and agent (a subagent's Read must not spend the main thread's hint). */
-const statePath = (env: HookEnv, session: string, agent: unknown) => join(env.dir, 'hook-state', `${`${session}${typeof agent === 'string' && agent ? `.${agent}` : ''}`.replace(/[^\w.-]/g, '_')}.json`)
-function seen(env: HookEnv, session: string, agent: unknown, file: string): boolean {
+const statePath = (env: HookEnv, session: string, agent: unknown) => join(env.dir, 'hook-state', `${`${session}${typeof agent === 'string' && agent ? `.${agent}` : ''}`.replace(/[^\w.-]/g, '_')}.lines`)
+export function seen(env: HookEnv, session: string, agent: unknown, file: string): boolean {
   const dir = join(env.dir, 'hook-state')
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   for (const f of readdirSync(dir)) if (Date.now() - (statSync(join(dir, f), { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) > STATE_DAYS * 864e5) rmSync(join(dir, f), { force: true })
-  try {
-    return (JSON.parse(readFileSync(statePath(env, session, agent), 'utf8')) as string[]).includes(file)
-  } catch {
-    return false
-  }
-}
-/** Marks a file hinted; written to a temp file and renamed, so parallel hooks never read half a file. */
-function markSeen(env: HookEnv, session: string, agent: unknown, file: string) {
   const path = statePath(env, session, agent)
-  let list: string[] = []
-  try {
-    list = JSON.parse(readFileSync(path, 'utf8'))
-  } catch {} // first hint of this session: no state file yet
-  const tmp = `${path}.${process.pid}.tmp`
-  writeFileSync(tmp, JSON.stringify([...new Set([...list, file])]), { mode: 0o600 })
-  renameSync(tmp, path)
+
+  return existsSync(path) && readFileSync(path, 'utf8').split('\n').includes(file)
+}
+/** Marks a file hinted: one appended line, so parallel hooks (Claude reads files in parallel) never drop each other's mark. */
+export function markSeen(env: HookEnv, session: string, agent: unknown, file: string) {
+  mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
+  appendFileSync(statePath(env, session, agent), `${file.replace(/\n/g, ' ')}\n`, { mode: 0o600 })
 }
 
 /** The file history for one file, once per session and agent; '' when there is none (and then the file stays unspent). */
@@ -239,7 +225,7 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     const graph = join(env.dir, 'graph.db')
     if (name === 'status') {
       const syncing = existsSync(join(env.dir, 'sync.lock'))
-      const tail = existsSync(logFile(env)) ? readFileSync(logFile(env), 'utf8').trim().split('\n').slice(-5).join('\n') : 'no log yet'
+      const tail = readLog(env.dir).slice(-5).map(formatEvent).join('\n') || 'no log yet'
       if (!existsSync(graph)) return `No memory yet in ${env.dir}. The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}\n${tail}`
       const s = statSync(graph)
 

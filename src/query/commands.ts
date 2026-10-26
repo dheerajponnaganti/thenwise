@@ -114,8 +114,32 @@ const head = (title: string, s: Search, shown: number, total: number) => {
   return out.join('\n')
 }
 
+export type RankCmd = 'search' | 'why' | 'tried' | 'current' | 'asof'
+export interface Ranked {
+  s: Search
+  /** In the order the command shows them; `m` is the why/tried marker count. */
+  items: { h: Hit; m?: number }[]
+}
+
+/** The ranking behind search, why, tried, current and asof, shared by the text commands and the gold benchmark. */
+export function rank(g: Graph, cmd: RankCmd, q: string, opts: { date?: string } = {}): Ranked {
+  if (cmd === 'search') {
+    const s = g.search(q)
+
+    return { s, items: s.good.map((h) => ({ h })) }
+  }
+  if (cmd === 'why' || cmd === 'tried') return rankMarked(g, cmd, q, cmd === 'why' ? WHY : TRIED)
+  if (cmd === 'current') return rankCurrent(g, q)
+  const end = ms(endOf(opts.date ?? ''))
+  const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end) && !(n.extra?.edited && ms(String(n.extra.edited)) > end), limit: 100 })
+  // The best 12 by relevance, newest first, then the rest by relevance.
+  const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node) || ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1))
+
+  return { s, items: [...top, ...s.good.slice(12)].map((h) => ({ h })) }
+}
+
 export function search(g: Graph, q: string, limit = 10): string {
-  const s = g.search(q)
+  const { s } = rank(g, 'search', q)
   if (!s.good.length) return notRecorded(`"${q}"`, s)
   return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...listing(g, s.good.slice(0, limit).map((h, i) => ({ h, extra: i < 3 ? newerNote(s, h) : '' })), limit)].join('\n\n')
 }
@@ -141,9 +165,9 @@ const newerNote = (s: Search, h: Hit) => {
 
 /** current: what holds now on a topic. Relevance, times how final the record is (PRs, commits and dated log entries
  * over chat), times how recent it is among the topic's matches. Each top result says when a newer record exists. */
-export function current(g: Graph, topic: string, limit = 5): string {
+function rankCurrent(g: Graph, topic: string): Ranked {
   const s = g.search(topic, { limit: 400, filter: (n) => !closed(n, Date.now(), true) })
-  if (!s.good.length) return notRecorded(`"${topic}"`, s)
+  if (!s.good.length) return { s, items: [] }
   const top = Math.max(...s.good.map((h) => h.score))
   const times = s.good.map((h) => ms(h.node.at)).filter((t) => !Number.isNaN(t))
   const t0 = Math.min(...times)
@@ -158,6 +182,13 @@ export function current(g: Graph, topic: string, limit = 5): string {
       return { h, v: (h.score / top) * (0.5 + h.cov) * (FINAL[h.node.kind] ?? 1) * (0.7 + 0.6 * recent) * overtaken }
     })
     .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1))
+
+  return { s, items: scored.map((x) => ({ h: x.h })) }
+}
+
+export function current(g: Graph, topic: string, limit = 5): string {
+  const { s, items: scored } = rank(g, 'current', topic)
+  if (!s.good.length) return notRecorded(`"${topic}"`, s)
   const out = [
     head('current', s, Math.min(limit, scored.length), scored.length),
     'ranked for what holds now: final records (PRs, commits, dated log entries) and newer ones first; earlier chat may describe a plan that changed',
@@ -167,9 +198,9 @@ export function current(g: Graph, topic: string, limit = 5): string {
 
 /** why and tried: the topic's best passages, boosted when they state a reason or an attempt. Relevance leads; markers only
  * reorder close calls, so a plain commit message that holds the answer is not thrown away. */
-function marked(g: Graph, name: string, topic: string, markers: RegExp[], limit = 10): string {
+function rankMarked(g: Graph, name: string, topic: string, markers: RegExp[]): Ranked {
   const s = g.search(topic, { limit: 400 })
-  if (!s.good.length) return notRecorded(`${name} for "${topic}"`, s)
+  if (!s.good.length) return { s, items: [] }
   const top = Math.max(...s.good.map((h) => h.score))
   const scored = s.good
     .map((h) => {
@@ -177,10 +208,17 @@ function marked(g: Graph, name: string, topic: string, markers: RegExp[], limit 
       return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) }
     })
     .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1))
+
+  return { s, items: scored.map((x) => ({ h: x.h, m: x.m })) }
+}
+
+function marked(g: Graph, name: 'why' | 'tried', topic: string, limit = 10): string {
+  const { s, items: scored } = rank(g, name, topic)
+  if (!s.good.length) return notRecorded(`${name} for "${topic}"`, s)
   return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...listing(g, scored.slice(0, limit).map((x, i) => ({ h: x.h, extra: `   markers: ${x.m}${i < 3 ? newerNote(s, x.h) : ''}` })), limit)].join('\n\n')
 }
-export const why = (g: Graph, topic: string) => marked(g, 'why', topic, WHY)
-export const tried = (g: Graph, topic: string) => marked(g, 'tried', topic, TRIED)
+export const why = (g: Graph, topic: string) => marked(g, 'why', topic)
+export const tried = (g: Graph, topic: string) => marked(g, 'tried', topic)
 
 /** Earliest later item that replaces `n`: a later PR or commit on the same files, or a later note on the same topic. */
 function replacedBy(g: Graph, h: Hit, q: string): string | undefined {
@@ -203,9 +241,9 @@ function replacedBy(g: Graph, h: Hit, q: string): string | undefined {
 export function asof(g: Graph, date: string, q: string, limit = 5): string {
   const end = ms(endOf(date))
   if (Number.isNaN(end)) return `asof needs an ISO date or date and time first, such as 2026-10-19 or 2026-10-19T06:50:00Z; got "${date}".`
-  const s = g.search(q, { filter: (n) => !undated(n) && !isStash(n) && ms(n.at) <= end && !closed(n, end) && !(n.extra?.edited && ms(String(n.extra.edited)) > end), limit: 100 })
+  const { s, items } = rank(g, 'asof', q, { date })
   if (!s.good.length) return notRecorded(`"${q}" on or before ${date}`, s)
-  const top = s.good.slice(0, 12).sort((a, b) => +offMain(a.node) - +offMain(b.node) || ms(b.node.at) - ms(a.node.at) || (a.pid < b.pid ? -1 : 1)).slice(0, limit)
+  const top = items.slice(0, Math.min(limit, 12)).map((x) => x.h)
   const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, newest first`, `searched: ${s.terms.join(' ')}`, 'rules and memory files are undated and left out', CUT, `current at ${date}: ${label(g, top[0]!.node.id)} (${local(top[0]!.node.at)})`]
   const repos = commitsAt(g, end)
   if (repos.length) out.push(`the code as it was on ${date} (the newest commit on or before it; read a file with git show <sha>:<path>):`, ...repos)

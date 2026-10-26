@@ -135,10 +135,13 @@ export async function forget(cfg, target, opts = {}) {
             chmodSync(mfile, 0o600);
         }
         let state = 0;
+        // Every hint state file of the chat: the main thread's and each subagent's (`<session>.<agent>.lines`), old `.json` ones too.
+        const stateDir = join(cfg.memDir, 'hook-state');
         for (const id of sessions) {
-            const f = join(cfg.memDir, 'hook-state', `${id.replace(/[^\w-]/g, '_')}.json`);
-            if (existsSync(f))
-                (rmSync(f), state++);
+            const own = `${id.replace(/[^\w-]/g, '_')}.`;
+            for (const f of existsSync(stateDir) ? readdirSync(stateDir) : [])
+                if (f.startsWith(own))
+                    (rmSync(join(stateDir, f)), state++);
         }
         const db = join(cfg.memDir, 'graph.db');
         const before = countSessions(db);

@@ -22,9 +22,23 @@ import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
 import { parseSession } from "./transcript.js";
 export { GENERATED, datedSections } from "./parts.js";
-export const STATE_VERSION = 1;
+// 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
+export const STATE_VERSION = 2;
 /** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
 export const STORE_FORMAT = 1;
+/** One value from a store's meta table; undefined when the store or the key is missing. */
+function storeMeta(dbPath, key) {
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+        return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
+    }
+    catch {
+        return undefined;
+    }
+    finally {
+        db.close();
+    }
+}
 /** The format a store file says it has. */
 export function storeFormat(dbPath) {
     const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -158,6 +172,9 @@ export function ingest(cfg, opts = {}) {
         let r;
         let failed = '';
         const format = existsSync(dbPath) ? storeFormat(dbPath) : STORE_FORMAT;
+        // A store frozen at a cutoff stays frozen: a later run (forget, a sync) rebuilds it with the same cutoff.
+        if (!opts.until && existsSync(dbPath))
+            opts = { ...opts, until: storeMeta(dbPath, 'until') };
         if (format > STORE_FORMAT)
             throw new Error(`${dbPath} was written by a newer Thenwise (store format ${format}, this one reads ${STORE_FORMAT}). Update Thenwise.`);
         if (!opts.full && !opts.until && format === STORE_FORMAT && existsSync(dbPath)) {
@@ -306,7 +323,7 @@ function fullBuild(cfg, opts, dbPath) {
         if (!g.nodes.has(e.src) || !g.nodes.has(e.dst))
             (g.edges.delete(k), DERIVED.has(e.kind) || pending.push(e));
     const excludedEval = skipped + counts.marker;
-    const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT };
+    const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT, ...(opts.until ? { until: opts.until } : {}) };
     const state = opts.until ? null : { signature: signatureOf(cfg), repos, files: fileRows, owners, refs: refRows, claims: claimRows, commits: [...commits].map(([sha, c]) => [sha, c.id, c.repo, c.title, c.ms]), aliases: aliasRows, pending };
     writeDb(dbPath, g, meta, state);
     return { db: dbPath, sessionsIn: counts.in, sessionsOut: counts.out, excludedEval, excludedEntrypoint: counts.entry, afterCutoff: counts.empty, warnings, mode: 'full', filesRead: files.length, ms: 0 };

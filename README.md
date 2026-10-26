@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.5" src="https://img.shields.io/badge/version-0.1.5-1E1C19">
+  <img alt="Version 0.1.6" src="https://img.shields.io/badge/version-0.1.6-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -194,7 +194,7 @@ The server binds to 127.0.0.1. For a network, put an https reverse proxy in fron
 - `archive/`: a masked copy of your Claude Code chats, and `archive/plans/` for plan versions.
 - `graph.db`: the search store, built from the archive, git history and notes.
 - `notes/`: notes you accepted from `distill`, with its state and log.
-- `prs-cache.json` (only if PRs are on), `backup.json`, `team-server/` (only if you host a team), `config.json`, `logs/` (no chat text, notes or queries), `hooks.log`, `hook-state/`, `forgotten.json`, `team.json` (only if you join a team).
+- `prs-cache.json` (only if PRs are on), `backup.json`, `team-server/` (only if you host a team), `config.json`, `logs/` (no chat text, notes or queries), `hook-state/`, `forgotten.json`, `team.json` (only if you join a team).
 
 Claude Code's own chat files are only read, never changed.
 

@@ -18,7 +18,7 @@ import { parseTrailers, syncTrailers } from '../capture/notes.ts'
 import { fillSynonyms, keepWord, toks } from '../query/language.ts'
 import { noteKeys, splitPassages } from '../query/passages.ts'
 import type { Config } from './config.ts'
-import { ALL_REFS, DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, scanSessions, sha256, signatureOf } from './ingest.ts'
+import { ALL_REFS, DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
 import { plansPart } from './plans.ts'
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys } from './parts.ts'
@@ -246,17 +246,26 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   const known = new Map<string, any>(S.all('SELECT * FROM ingest_files').map((r) => [r.file, r]))
   const byFile = new Map(files.map((f) => [f.file, f]))
   const fresh: Fresh[] = []
+  // A project folder appeared or went (roots found from the chats): chats in or out of scope are classified again.
+  const roots = rootsKey(cfg)
+  const rootsMoved = roots !== S.get("SELECT value FROM ingest_state WHERE key = 'roots'")?.value
+  S.run("INSERT OR REPLACE INTO ingest_state VALUES ('roots', ?)", roots)
   for (const sf of files) {
     const old = known.get(sf.file)
-    if (old && old.size === sf.size && old.mtime === sf.mtime && old.ctime === sf.ctime && old.ino === sf.ino) continue
+    const recheck = rootsMoved && (old?.status === 'in' || old?.status === 'out')
+    if (!recheck && old && old.size === sf.size && old.mtime === sf.mtime && old.ctime === sf.ctime && old.ino === sf.ino) continue
     const bytes = readFileSync(sf.path)
     const sha = sha256(bytes)
-    if (old && old.sha === sha) {
+    if (!recheck && old && old.sha === sha) {
       S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
       continue
     }
     const s = parseSf(sf, bytes, cfg.home)
     const status = classify(cfg, s)
+    if (recheck && old.sha === sha && status === old.status) {
+      S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
+      continue
+    }
     fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key) } : {}) })
   }
   const gone = [...known.keys()].filter((f) => !byFile.has(f))
@@ -274,7 +283,7 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   const reposChanged = JSON.stringify(repos) !== S.get("SELECT value FROM ingest_state WHERE key = 'repos'")?.value
   S.run("INSERT OR REPLACE INTO ingest_state VALUES ('repos', ?)", JSON.stringify(repos))
   if (reposChanged) for (const r of S.all("SELECT id FROM nodes WHERE kind = 'file'")) S.touched.add(r.id)
-  applyCommits(S, repos, warnings)
+  applyCommits(S, cfg, repos, warnings)
 
   // 3. Pull requests, then notes, curated notes, rules and auto-memory.
   const commit = { id: (sha: string) => S.get('SELECT id FROM commit_idx WHERE sha = ?', sha)?.id as string | undefined, repo: (sha: string) => S.get('SELECT repo FROM commit_idx WHERE sha = ?', sha)?.repo as string | undefined }
@@ -432,19 +441,22 @@ function applySessions(S: Store, cfg: Config, fresh: Fresh[], gone: string[], by
   }
 }
 
-function applyCommits(S: Store, repos: string[], warnings: string[]) {
+function applyCommits(S: Store, cfg: Config, repos: string[], warnings: string[]) {
   const wanted = new Map<string, string>() // sha -> repo, the first repo that has it
   const main = new Map<string, Set<string> | null>() // repo -> shas on its default branch
   const failed = new Set<string>()
+  // The same bounds as a full build: shas the chats name (claims and turn refs), history since the first chat minus 90 days.
+  const named = new Set<string>([...S.all("SELECT key FROM claims WHERE kind = 'sha'").map((r) => r.key as string), ...S.all("SELECT val FROM refs WHERE type = 'sha' AND (node LIKE 'turn:%' OR node LIKE 'sum:%')").map((r) => r.val as string)])
+  const since = firstChat(S.all("SELECT at FROM nodes WHERE kind = 'session'").map((r) => r.at as string)) - HISTORY_DAYS * 864e5
   for (const repo of repos) {
-    const raw = gitOut(repo, ['rev-list', ...ALL_REFS])
-    if (raw === null) {
+    const shas = repoShas(repo, cfg, since, named)
+    if (shas === null) {
       warnings.push(`git log failed in ${repo}`)
       failed.add(repo)
       continue
     }
     main.set(repo, mainShas(repo))
-    for (const sha of raw.split('\n')) if (sha && !wanted.has(sha)) wanted.set(sha, repo)
+    for (const sha of shas) if (!wanted.has(sha)) wanted.set(sha, repo)
   }
   const have = new Map<string, any>(S.all('SELECT * FROM commit_idx').map((r) => [r.sha, r]))
   const extras = new Map<string, Record<string, unknown>>(S.all("SELECT id, extra FROM nodes WHERE kind = 'commit'").map((r) => [r.id, JSON.parse(r.extra)]))

@@ -3,9 +3,7 @@ import { test } from 'node:test'
 
 import { insertField, parseFrontMatter } from '../src/core/frontmatter.ts'
 import { resolveLinks, supersedeHeads, adjacency, findHubs } from '../src/core/graph.ts'
-import { isValidId, newId, seededRandom } from '../src/core/ids.ts'
 import { docTerms, Lexicon } from '../src/core/lexicon.ts'
-import { parseNote, parseSource, wikilinks } from '../src/core/note.ts'
 import { tokenize } from '../src/core/tokenize.ts'
 
 test('front matter: flat keys, flow and block lists, scalars, comments', () => {
@@ -52,41 +50,6 @@ test('insertField adds one line and keeps every other byte', () => {
   const withFm = '---\ntitle: A\n---\n\nBody\r\n  spaced  \n'
   assert.equal(insertField(withFm, 'id', 'dec_X'), '---\nid: dec_X\ntitle: A\n---\n\nBody\r\n  spaced  \n')
   assert.equal(insertField('Plain note\n', 'id', 'not_X'), '---\nid: not_X\n---\nPlain note\n')
-})
-
-test('sources: kind, ref, hash and date; @ inside a URL is not a hash', () => {
-  assert.deepEqual(parseSource('file:src/sync/engine.ts@3f2a1bc 2026-03-09'), { kind: 'file', ref: 'src/sync/engine.ts', hash: '3f2a1bc', at: '2026-03-09' })
-  assert.deepEqual(parseSource('url:https://medium.com/@sam/post 2025-11-03'), { kind: 'url', ref: 'https://medium.com/@sam/post', hash: null, at: '2025-11-03' })
-  assert.deepEqual(parseSource('human:lena'), { kind: 'human', ref: 'lena', hash: null, at: null })
-  assert.equal(parseSource('nonsense'), null)
-  assert.equal(parseSource('ftp:thing'), null)
-})
-
-test('wikilinks: labels and headings stripped; code ignored', () => {
-  assert.deepEqual(wikilinks('See [[Sync Engine|the engine]] and [[Budget#Rules]] and ![[Chart]] `[[no]]`\n```\n[[nope]]\n```'), ['Sync Engine', 'Budget', 'Chart'])
-})
-
-test('parseNote: a typed decision and a plain hand note', () => {
-  const d = parseNote(
-    'decisions/use-x.md',
-    '---\ntype: decision\ntitle: Use X\nsummary: Because Y.\nstatus: superseded\nvalid_to: 2026-05-01\nabout: ["[[Sync Engine]]"]\nsupersedes: []\nsources:\n  - "file:src/a.ts@abc 2026-01-02"\n---\n## Reason\nSee [[Other]].\n',
-  )
-  assert.equal(d.type, 'decision')
-  assert.equal(d.status, 'superseded')
-  assert.equal(d.validTo, '2026-05-01')
-  assert.deepEqual(d.links, [
-    { type: 'about', target: 'Sync Engine' },
-    { type: 'mentions', target: 'Other' },
-  ])
-  assert.deepEqual(d.headings, ['Reason'])
-  const h = parseNote('meetings/Kickoff 2026.md', 'Notes from the kickoff. [[Home]]\n')
-  assert.equal(h.type, 'note')
-  assert.equal(h.title, 'Kickoff 2026')
-  assert.equal(h.confidence, 'imported')
-  assert.equal(h.hasFrontMatter, false)
-  const bad = parseNote('x.md', '---\ntype: decison\nstatus: done\n---\n')
-  assert.equal(bad.type, 'note')
-  assert.equal(bad.issues.length, 2)
 })
 
 test('tokenize: paths whole, camelCase split, stopwords dropped', () => {
@@ -151,15 +114,4 @@ test('hubs: degree at or above max(minDegree, percentile)', () => {
   const ids = ['home', ...edges.map(e => e.to)]
   assert.deepEqual([...findHubs(ids, adjacency(edges), { exclude: [], minDegree: 20, percentile: 95 })], ['home'])
   assert.deepEqual([...findHubs(ids, adjacency(edges), { exclude: ['n3'], minDegree: 50, percentile: 95 })], ['n3'])
-})
-
-test('ids: format, and seeded ids repeat', () => {
-  const a = newId('dec', 1_760_000_000_000, seededRandom('x'))
-  assert.ok(isValidId(a), a)
-  assert.equal(a, newId('dec', 1_760_000_000_000, seededRandom('x')))
-  assert.notEqual(a, newId('dec', 1_760_000_000_000, seededRandom('y')))
-  // One generator used twice in the same millisecond still gives two different ids.
-  const gen = seededRandom('batch')
-  assert.notEqual(newId('not', 1, gen), newId('not', 1, gen))
-  assert.ok(!isValidId('dec_short'))
 })

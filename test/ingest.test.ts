@@ -17,7 +17,8 @@ const KEYS = ['AKIAIOSFODNN7EXAMPLE', `ghp_${'a1B2c3D4e5'.repeat(4)}`, `sk-ant-a
 const line = (o: object) => JSON.stringify(o)
 const j = (...a: object[]) => `${a.map(line).join('\n')}\n`
 const sha256 = (b: string | Buffer) => createHash('sha256').update(b).digest('hex')
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' }).trim()
+// Pinned dates make the shas the same on every run: a random short sha can be all digits, which no ref finder takes.
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-02T10:01:01Z', GIT_COMMITTER_DATE: '2026-10-02T10:01:01Z' } }).trim()
 
 function allFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? allFiles(join(dir, e.name)) : [join(dir, e.name)]))

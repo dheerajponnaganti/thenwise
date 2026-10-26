@@ -74,6 +74,9 @@ test('17/19: commits say onMain, stash is not read, rewritten commits are kept a
     git(w.proj, 'checkout', '-q', '-b', 'side')
     const side = w.commit(w.proj, 'src/side.ts', 'Side work')
     git(w.proj, 'checkout', '-q', 'main')
+    // A branch commit is read when a chat names it (0.1.8 reads the main line and the commits the chats name).
+    w.chat('b', { turns: [{ prompt: `look at ${side.slice(0, 7)}` }] })
+    w.archive()
     writeFileSync(join(w.proj, 'src/a.ts'), 'changed\n')
     git(w.proj, 'stash')
     w.ingest('inc.db')

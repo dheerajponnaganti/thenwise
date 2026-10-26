@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.8
+
+Lean and quiet: less code, syncs that do only what changed, and hooks that cost little.
+
+- Smaller and quieter: the old storage stack (Postgres, the SQLite and file stores, their HTTP server and commands) is gone, with the `views` command; the plugin never used them. The `pg` dependency goes with them.
+- A sync rewrites the vault only after an ingest that changed something, or once a day.
+- A new project folder is an update, not a full rebuild, when the roots come from your history rather than config.json.
+- Git history is the default branch's main line since 90 days before your first chat, plus every commit your chats name. A clone of a large project no longer adds its whole history. `"git_all": true` under `ingest` in config.json reads every branch, as before. Every store rebuilds once.
+- Hooks that fire on most tool calls stop early when there is nothing to do: about 50 ms instead of 100 ms on a plain Bash command. The hook matchers name whole tools, so `NotebookRead` and similar tools start no hook.
+- The search engine keeps the 256 most recently used words, and typo candidates no longer push them out.
+
 ## 0.1.7
 
 Right records first: the rankings that put wrong or stale records on top are fixed.

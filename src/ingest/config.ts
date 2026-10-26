@@ -21,9 +21,14 @@ export interface Config {
   repos: string[]
   githubRepos: string[]
   vaults: string[]
+  /** Roots and repos found from the chats, not written in config.json: they change as projects appear. */
+  rootsAuto: boolean
+  reposAuto: boolean
   /** More CLAUDE.md files, or folders holding them, beyond the ones read by default. */
   docs: string[]
   prs: boolean
+  /** Read every branch of every repo, not only the default branch and the commits the chats name. */
+  gitAll: boolean
   /** Keep every version of planning-with-files plans (task_plan.md, findings.md, progress.md). */
   plans: boolean
   vault: { place: string; layout: string; path: string; commit: boolean } | null
@@ -48,7 +53,7 @@ const SCHEMA: Record<string, any> = {
   exclude_projects: 'string[]',
   off: 'boolean',
   off_projects: 'string[]',
-  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', docs: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean' },
+  ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', docs: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean', git_all: 'boolean' },
   vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
   backup: { kind: 'string', folders: 'string[]', push: 'boolean' },
   views: { projects: 'object' },
@@ -151,10 +156,13 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     offProjects: list(user.off_projects, []),
     roots: list(ing.roots, found),
     repos: list(ing.repos, found.filter((p) => existsSync(join(p, '.git')))),
+    rootsAuto: ing.roots === undefined,
+    reposAuto: ing.repos === undefined,
     githubRepos: ing.github_repos ?? [],
     vaults: list(ing.vaults, []),
     docs: list(ing.docs, []),
     prs: ing.prs ?? false,
+    gitAll: ing.git_all ?? false,
     plans: ing.plans ?? true,
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,7 +9,7 @@ import { docFiles, docsPart, skippedDocs } from '../src/ingest/parts.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
-import { World } from './world.ts'
+import { git as gitIn, World } from './world.ts'
 
 type N = { id: string; kind?: string; title?: string; text: string; at: string; source?: string; extra?: object }
 function graph(nodes: N[], edges: [string, string, string][] = []) {
@@ -26,7 +25,16 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
   return new Graph(file)
 }
 const first = (s: string) => /1\. \[\w+\] (\S+)/.exec(s)?.[1]
-const git = (dir: string, ...a: string[]) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-03T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-03T10:00:00Z' } })
+// World's git carries a user name, which CI machines do not have; the dates pin the commit.
+function git(dir: string, ...a: string[]) {
+  process.env.GIT_AUTHOR_DATE = process.env.GIT_COMMITTER_DATE = '2026-10-03T10:00:00Z'
+  try {
+    return gitIn(dir, ...a)
+  } finally {
+    delete process.env.GIT_AUTHOR_DATE
+    delete process.env.GIT_COMMITTER_DATE
+  }
+}
 
 test('R7-H1: a CLAUDE.md is one record per heading section, dated by its last commit, each with a passage', () => {
   const w = new World()

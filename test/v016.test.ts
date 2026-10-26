@@ -8,6 +8,7 @@ import { test } from 'node:test'
 import { compare, score, summarize, type GoldLine } from '../bench/gold/run.ts'
 import { logger } from '../src/core/log.ts'
 import { runHook, seen } from '../src/hooks/hook.ts'
+import { STATE_VERSION } from '../src/ingest/ingest.ts'
 import { parseSession } from '../src/ingest/transcript.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -113,7 +114,7 @@ test('R6-B6: a store from before 0.1.6 rebuilds once, then updates', () => {
     w.ingest('g.db')
     const db = new DatabaseSync(w.path('g.db'))
     const sig = (db.prepare("SELECT value FROM ingest_state WHERE key = 'signature'").get() as { value: string }).value
-    db.prepare("UPDATE ingest_state SET value = ? WHERE key = 'signature'").run(sig.replace('"v":2', '"v":1'))
+    db.prepare("UPDATE ingest_state SET value = ? WHERE key = 'signature'").run(sig.replace(`"v":${STATE_VERSION}`, `"v":${STATE_VERSION - 1}`))
     db.close()
     assert.equal(w.ingest('g.db').mode, 'full')
     assert.equal(w.ingest('g.db').mode, 'unchanged')

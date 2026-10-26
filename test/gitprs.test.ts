@@ -55,9 +55,11 @@ test('S4-H1: a repo is found from the chats working folders, and a worktree maps
   assert.equal(repoRoot(join(w.home, 'nowhere')), undefined)
   assert.deepEqual(discoverRepos([], [join(wt, 'src'), join(w.proj, 'src'), w.other, join(w.home, 'gone')]).map((p) => real(p)).sort(), [real(w.other), real(w.proj)].sort())
   assert.deepEqual(discoverRepos([w.other], [w.proj]).map((p) => real(p)), [real(w.other), real(w.proj)])
-  w.commit(wt, 'src/wt.ts', 'Work in the worktree')
+  // A branch commit counts when a chat names it, as Claude's commit output does ("[feature abc1234] ...").
+  const wtSha = w.commit(wt, 'src/wt.ts', 'Work in the worktree')
   w.chat('a', { turns: [turn(1)] })
-  w.chat('b', { turns: [turn(2)], cwd: join(wt, 'src') })
+  w.chat('b', { turns: [{ ...turn(2), commit: { subject: 'Work in the worktree', sha: wtSha } }], cwd: join(wt, 'src') })
+  w.cfg.roots.push(wt) // worktrees sit under a root in practice, so the chat that names the commit is in scope
   w.archive()
   w.ingest('inc.db')
   w.full('full.db')

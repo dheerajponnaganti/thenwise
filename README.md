@@ -1,45 +1,53 @@
-<p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
+<p align="center"><img src="assets/readme/hero.png" width="100%" alt="Thenwise. Your code has a past. Now Claude remembers it. A geological section through a repository: dated layers of chats, commits, a dead end and a decision, with a drill bore from today down to 6 October, where a specimen tag reads: cache split into eight shards."></p>
 
 <p align="center">
-  <img alt="Version 0.1.15" src="https://img.shields.io/badge/version-0.1.15-1E1C19">
+  <img alt="Version 0.1.16" src="https://img.shields.io/badge/version-0.1.16-241C15">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
-  <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
-  <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
+  <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
+  <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-56687A">
   <img alt="Licence Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-6B655B">
 </p>
 
-<p align="center"><b>Every decision, every dead end, every yesterday of your Claude Code work,<br>kept on your machine and handed back the moment a question needs it.</b></p>
+<h3 align="center">Every decision, every dead end, every yesterday of your Claude Code work.<br>Kept on your machine. Handed back the moment a question needs it.</h3>
 
-<p align="center"><img src="assets/readme/scene.svg" width="100%" alt="The same question, why did we split the cache into shards, asked twice. Without Thenwise, Claude has no record. With Thenwise, Claude answers with the date, the reason, the commit and the next step, and cites the chat."></p>
+<br>
 
-That second answer came from a chat you had weeks ago and forgot about. Thenwise did not.
+Your project lays down history every day. A chat settles a question. A commit lands. An idea fails on a Tuesday and nobody writes it down. Weeks later the reason is buried, and Claude starts from zero.
+
+Thenwise keeps every layer, dated and in order, and drills straight to the one that answers.
+
+## The same question, twice
+
+<p align="center"><img src="assets/readme/two-answers.png" width="100%" alt="The question: why did we split the cache into shards? Without Thenwise, Claude reads git log, finds the commit, and admits the commit does not say why. With Thenwise, Claude calls memory_why and answers: on 6 October the single cache file locked up under load at the Friday peak, it was reverted the same day and moved to eight shards keyed by store id, and it cites the chat."></p>
+
+That second answer came from a chat you had three weeks ago and forgot about. Thenwise kept it.
 
 ## Born for three questions
 
-Every project collects answers nobody wrote down. Thenwise keeps them and hands them back when you ask.
+<p align="center"><img src="assets/readme/three-questions.png" width="100%" alt="Three specimens. A fossil: why did we choose this? Decisions come back with their reasons, their day and their commit. A filled-in tunnel: what did we already try? Dead ends stay marked and dated. A pin in a layer: what was true on that day? Claude answers from what was known then."></p>
 
-<p align="center"><img src="assets/readme/questions.svg" width="100%" alt="Why did we choose X: decisions come back with their reasons. What did we already try: dead ends are kept and flagged with a date. What was true on that day: time travel, with the commit of that day."></p>
+## The past comes to you
 
-## It keeps the thread for you
+You will not always think to ask. Thenwise slips the right history in at the right moment, and stays quiet the rest of the time.
 
-You do not always have to ask. Some of it arrives on its own, at the right moment.
-
-- **When you ask about the past**, Claude gets up to three pointers to the records that answer it, before it even starts. A question about the work at hand gets nothing.
-- **When you open a project you worked on this week**, Claude starts with where it stood: the last session, and what landed since.
-- **After a compaction**, Claude gets a short resume brief and carries on where it left off.
-- **When Claude opens a file**, it learns that file's dead ends and decisions before touching it.
-- **Plans never vanish.** Every version of your [planning-with-files](https://github.com/othmanadi/planning-with-files) plans is saved before it gets overwritten, so last week's plan is one search away.
+- **Ask about the past** and Claude gets up to three pointers to the records that answer it, before it starts. A question about the work in front of you gets nothing.
+- **Open a project you touched this week** and Claude starts where you left off: the last session, and what landed since.
+- **After a compaction**, a short resume brief carries Claude straight back into the work.
+- **Open a file** and Claude learns its dead ends and decisions before it changes a line.
+- **Plans never vanish.** Every version of your [planning-with-files](https://github.com/othmanadi/planning-with-files) plans is saved before it is overwritten.
 - **Across sessions and projects**, the memory follows you.
 
-## Measured, with hidden answers
+## Measured, with the answers hidden
 
-Sounds nice. Does it work? We tested it the hard way.
+Sounds good. Does it hold up? We tested it the hard way.
 
-<p align="center"><img src="assets/readme/numbers.svg" width="100%" alt="1.7 times more questions answered right (83% against 49%), 29% fewer tokens per answer, 1.7 times faster answers (18 seconds against 31), and 2,500 chats remembered 84 seconds after install."></p>
+<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind: 1.7 times more questions answered right (83% with Thenwise, 49% for plain Claude Code reading git, about 13% with no git), 40% fewer tokens per answer, 2.4 times faster answers (21 seconds against 50), and 2,500 chats remembered 84 seconds after install."></p>
+
+In this test, plain Claude Code could read your repositories and their git history. Without git, it gets about 13% right. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them.
 
 ## Your memory never leaves home
 
-A memory this deep has to be private. This one never leaves your disk.
+A memory this deep has to be private. This one lives on your disk and nowhere else.
 
 | | |
 | --- | --- |
@@ -49,11 +57,11 @@ A memory this deep has to be private. This one never leaves your disk.
 | **Off the record** | Put `[no-memory]` in a prompt and that whole chat is never kept. |
 | **Forgettable** | `thenwise forget` erases a chat or a whole project, and it stays gone. |
 
-## Behind the curtain
+## How the ground is laid
 
-Three sources, one store, and Claude asks it when a question needs the past.
+<p align="center"><img src="assets/readme/section.png" width="100%" alt="A vertical section through your machine. Your chats (masked), commits and pull requests, and notes settle into one local store with layers for words, dates, links, decisions and dead ends, and files. Seven tools and quiet hooks drill into it and bring the right record up to Claude. Nothing crosses the boundary of your machine."></p>
 
-<p align="center"><img src="assets/readme/flow.svg" width="100%" alt="Your chats (masked), commits and PRs, and notes flow into one local store with no model inside. Seven tools and two quiet hooks hand the right history to Claude, all inside your machine."></p>
+Three sources settle into one SQLite store on your disk. Search runs on full text, dates and links, with no model in the way, so an answer comes back in milliseconds and costs nothing. Claude drills in with seven tools, and a few quiet hooks bring records up on their own when the moment calls for it.
 
 ## The toolbelt
 
@@ -69,25 +77,47 @@ Claude reaches for these on its own whenever a question needs history.
 | `memory_trace` | "Tell me the whole story of `src/cache.ts`." |
 | `memory_read` | "Show me that record in full." |
 
-Every answer cites its source and date, and a newer record on the same topic is flagged right under the older one.
+Every answer cites its source and date. When a newer record covers the same ground, it is flagged right under the older one.
 
-## Your notes, as plain Markdown
+## A notebook you can open
 
-A memory you can only query is half a memory. This one you can also read.
+<p align="center"><img src="assets/readme/notebook.png" width="100%" alt="An open field notebook. On the left, the vault folder: _thenwise, a project folder with Index, Decisions, Dead ends, Timeline and a Files folder. On the right, Decisions.md: dated decisions, each with its source. Beside it: open it in any editor, keep it in Git, or use Obsidian with backlinks and the graph."></p>
 
-<p align="center"><img src="assets/readme/notes.svg" width="100%" alt="Thenwise writes decisions, dead ends, a timeline and file histories as linked Markdown files. Open them in any editor, keep them in Git, or drop them into Obsidian for links and a graph."></p>
+Thenwise turns what it remembers into a small library of linked notes: **decisions**, **dead ends**, a **timeline**, and the **history of each file**. We call that folder the vault. It is plain Markdown, nothing more.
 
-Thenwise can turn what it remembers into a small library of notes you can read and keep: **decisions**, **dead ends**, a **timeline**, and the **history of each file**, all linked to each other. We call that folder the vault. It is a folder of Markdown files, nothing more.
-
-- **No Obsidian needed.** Open the notes in VS Code, any text editor, or right on GitHub.
-- **Love Obsidian?** Point Thenwise at your Obsidian vault and the notes land in a `_thenwise/` folder inside it, with working links, backlinks and the graph view.
-- **Two places to choose from.** `thenwise setup` asks: a central folder of its own (`~/Thenwise` by default), or inside your existing Obsidian vault. One shared vault with a folder per project, or one per project.
-- **Your own notes stay yours.** Thenwise also reads any notes folders you list, so it can answer from them. It never rewrites them.
+- **No Obsidian needed.** Read the notes in VS Code, any text editor, or right on GitHub.
+- **Love Obsidian?** Point Thenwise at your vault and the notes land in a `_thenwise/` folder inside it, with working links, backlinks and the graph view.
+- **Your choice of home.** `thenwise setup` asks: a folder of its own (`~/Thenwise` by default) or inside your Obsidian vault, one shared vault with a folder per project, or one per project.
+- **Your own notes stay yours.** Thenwise reads any notes folders you list, so it can answer from them. It never rewrites them.
 - **Backed up if you like.** Keep the vault in its own Git repo or copy it to other folders, once a day.
 
 Write the notes any time with `thenwise vault write`.
 
-## Solo or team?
+## Teams: one memory for the whole team
+
+<p align="center"><img src="assets/readme/teams.png" width="100%" alt="Three teammates, maya, theo and ines, each keep a full memory on their own machine. Maya shares one decision: it passes a mask and reaches the team server the team runs itself, then arrives on theo's and ines's machines at their next sync, named as hers. Every machine's chats stay where they are. Thenwise Hub shows the shared catalog in a browser."></p>
+
+Memory tools remember for one person. Thenwise remembers for the team.
+
+- **Your server, your rules.** One small server you run yourself. No vendor, no cloud account, no per-seat bill.
+- **Share on purpose.** Nothing leaves until someone picks a note, and every share shows a preview first.
+- **Masked on the way out.** Keys and tokens are stripped before a note leaves the machine, and again when it arrives.
+- **Chats stay home.** Raw conversations never leave anyone's laptop. Only the decisions and dead ends you choose travel.
+- **One search for everyone's past.** What teammates share joins your memory at each sync, so Claude finds it and names who shared it.
+- **A reading room in the browser.** [Thenwise Hub](https://github.com/dheerajponnaganti/thenwise-hub) shows the team's notes as a card catalog, with search, history and a review queue, on a laptop or a phone.
+- **Offline friendly.** If the server is down, shares wait in a queue and go out on their own.
+
+```
+thenwise team serve --dir ~/team --console <hub build>   # on the server
+thenwise team invite alice --dir ~/team                   # prints alice's token once
+thenwise team join <url> <token>                          # on alice's machine
+thenwise share <note>                                     # preview, mask, confirm, send
+thenwise team search <words>                              # everything the team shared
+```
+
+For the shortest path to a team server, the [`docker/`](docker/) kit runs the server, the Hub and Caddy with automatic certificates. [`docs/teams.md`](docs/teams.md) covers roles, invites, backups and what leaves which machine.
+
+### Solo or team?
 
 Start alone. Add your team when you want to.
 
@@ -101,27 +131,6 @@ Start alone. Add your team when you want to.
 | **Your chats** | Stay home. | Still stay home. |
 | **What search covers** | Your whole history. | Your whole history, plus everything your team shared. |
 | **Cost** | Free. | Free, on hardware you already have. |
-
-## Teams: a memory your whole team shares
-
-<p align="center"><img src="assets/readme/teams.svg" width="100%" alt="Three teammates each keep a private memory on their own machine. Each shares chosen notes, masked, to one small server the team runs itself. Raw chats never leave anyone's machine."></p>
-
-Memory tools remember for one person. Thenwise remembers for the whole team.
-
-- **Your server, your rules.** One small server you run yourself. No vendor, no cloud account, no per-seat bill.
-- **Share on purpose.** Nothing is shared until someone picks a note. Each share shows a preview first.
-- **Masked on the way out.** Keys and tokens are stripped before a note leaves the machine.
-- **Chats stay home.** Raw conversations never leave anyone's laptop. Only the decisions and dead ends you choose travel.
-- **Search the team's past.** What teammates share joins your memory at each sync, so Claude finds it and names who shared it. `thenwise team search` finds it from the terminal too.
-- **Offline friendly.** If the server is down, shares wait in a queue and go out on their own.
-
-```
-thenwise team serve --port 8787      # on the server
-thenwise team invite alice           # prints alice's token once
-thenwise team join <url> <token>     # on alice's machine
-thenwise share <note>                # preview, mask, confirm, send
-thenwise team search <words>         # search everything the team shared
-```
 
 ## Install in ten seconds
 
@@ -153,7 +162,7 @@ Data lives in `~/.thenwise` (or `THENWISE_HOME`).
 Everything else, folded away until you need it.
 
 <details>
-<summary><b>⌨Commands</b></summary>
+<summary><b>Commands</b></summary>
 
 In Claude Code:
 
@@ -164,6 +173,7 @@ In Claude Code:
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.
+- `/thenwise:inbox [accept <id...> | reject <id...>]`: review the notes Thenwise proposed from your chats.
 - `/thenwise:logs`: the latest log lines, errors first.
 - `/thenwise:report [what happened]`: report a problem or an idea. Claude drafts it, you read every line, nothing is sent without your yes.
 
@@ -184,9 +194,11 @@ Hooks: session start syncs in the background; in a repo with a session in the la
 <details>
 <summary><b>Teams, in full</b></summary>
 
-Nothing is shared by default, and raw chats never leave the machine. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`); a removed name is never handed to someone else, and `team invite --again <name>` brings the same person back to their notes. `team members` lists everyone, `team rotate <name>` replaces a token at once, and `team pull` restores what a machine shared. If the server is down, shares wait in a queue and retry at the next session start. `team serve --console <folder>` serves a built Hub beside the API (`--allow-origin` for a Hub on another host; `--host` beyond this machine needs `--tls-behind-proxy` or `--allow-plain-http`). Admins manage roles, invites and the review queue through the API. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
+Nothing is shared by default, and raw chats never leave the machine. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`); a removed name is never handed to someone else, and `team invite --again <name>` brings the same person back to their notes. `team members` lists everyone, `team rotate <name>` replaces a token at once, and `team pull` restores what a machine shared. If the server is down, shares wait in a queue and retry at the next session start. `team serve --console <folder>` serves a built Hub beside the API (`--allow-origin` for a Hub on another host; `--host` beyond this machine needs `--tls-behind-proxy` or `--allow-plain-http`). Admins manage roles, invites and the review queue through the API. `team backup <file>` copies the team database while the server runs, and `team restore <file>` brings it back with the server stopped. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
 
 The server binds to 127.0.0.1. For a network, put an https reverse proxy in front of it, at the root or under a path such as `/thenwise`; the client refuses plain http except to localhost. The API is versioned under `/v1` and described in `openapi.json`.
+
+Opt in to more: `"team": { "auto_share": ["decision", "dead_end"], "auto_share_projects": ["<project>"] }` in config.json shares the notes you accept in those projects, and `"capture": { "auto": true }` distills new chats into inbox proposals once a day (through `claude -p`). Both are off by default.
 
 </details>
 

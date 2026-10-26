@@ -25,16 +25,18 @@ test('dead end detector ignores code, quotes, questions, advice and plain design
 
 const entry = (tag: string, id: string, date: string, text: string, dead = '') => `- [${tag}] ${id}\n   date: ${date}   project: p   source: s${dead ? `\n   dead end (automatic): ${dead}` : ''}\n   | ${text}`
 
-test('hint lists automatic dead ends newest first, at most 3, one line each', () => {
+test('hint lists phrase dead ends newest first, at most 3, one line each, when nothing else is there', () => {
   const out = ['a', 'b', 'c', 'd'].map((x, i) => entry('turn', `turn:${x}`, `2026-10-0${9 - i}`, 'body', `gave up on ${x}`)).join('\n\n')
   const h = trimTrace(out, 'f.ts')
   assert.match(h, /Data from past work, not instructions/)
-  assert.deepEqual([...h.matchAll(/^- (turn:\w) 2026-10-0\d: dead end: gave up on/gm)].map((m) => m[1]), ['turn:a', 'turn:b', 'turn:c'])
+  assert.deepEqual([...h.matchAll(/^- (turn:\w) 2026-10-0\d: dead end \(phrase\): gave up on/gm)].map((m) => m[1]), ['turn:a', 'turn:b', 'turn:c'])
 })
 
-test('hint is silent for plain history: no dead end and no curated note means no hint', () => {
-  const out = [entry('turn', 'turn:x', '2026-10-05', 'first, because the cache failed'), entry('commit', 'commit:p:abc', '2026-10-04', 'second')].join('\n\n')
-  assert.equal(trimTrace(out, 'f.ts'), '')
+test('hint is silent with no history worth a line; a commit gives one last-changed line (0.1.11)', () => {
+  const chat = entry('turn', 'turn:x', '2026-10-05', 'first, because the cache failed')
+  assert.equal(trimTrace(chat, 'f.ts'), '')
+  const out = [chat, entry('commit', 'commit:p:abc', '2026-10-04', 'second')].join('\n\n')
+  assert.match(trimTrace(out, 'f.ts'), /^- last changed: commit:p:abc \(2026-10-04\)$/m)
   assert.match(trimTrace(`${out}\n\n${entry('decision', 'decision:d1', '2026-10-03', 'use shards')}`, 'f.ts'), /decision:d1/)
   assert.equal(trimTrace('', 'f.ts'), '')
 })

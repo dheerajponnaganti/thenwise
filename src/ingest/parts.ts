@@ -13,7 +13,7 @@ import type { TrailerItem } from '../capture/notes.ts'
 import { globMatch } from './config.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
-import { commitDeadEnd, deadEnd } from './deadend.ts'
+import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from './deadend.ts'
 import { repoRoot } from './repos.ts'
 import { normalizePath } from './transcript.ts'
 import type { Session } from './transcript.ts'
@@ -120,11 +120,18 @@ export function sessionPart(s: Session, key: string): SessionPart {
   // A subagent file adds turns to its parent, whose own file gives the session node.
   const dirs = editDirs(s)
   if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(dirs.length ? { editDirs: dirs } : {}) } })
+  const done = structural(s.turns)
   for (const t of s.turns) {
     const tid = `turn:${t.id}`
-    const de = deadEnd(t.reply.join('\n\n')) // the reply only: the prompt is the user's question
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de } : {}) } })
+    // What happened beats what was said: an undone edit or a failed test, then the person's own [dead-end] line,
+    // then a phrase in the reply (the prompt is the user's question).
+    const marked = markedDeadEnd(t.prompt)
+    const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
+    const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
+    const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
     edge(tid, sid, 'part_of', t.at)
+    if (st && 'file' in st && st.file) edge(tid, `file:${st.file}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${p}`, kind, t.at)
     for (const m of t.commitMsgs) claims.push({ node: tid, kind: 'sub', val: m.subject, at: m.at, turnAt: t.at })
     for (const short of t.commitShas) claims.push({ node: tid, kind: 'sha', val: short, at: t.at, turnAt: t.at })
@@ -161,7 +168,7 @@ export function parseLog(raw: string, repo: string, until?: string, main?: Set<s
     for (const m of body.matchAll(/^(Decision|Why|Dead-end):[ \t]*(.+)$/gim)) (trailers[m[1]!.toLowerCase()] ??= []).push(m[2]!.trim())
     const id = `commit:${name}:${sha}`
     const de = commitDeadEnd(subject ?? '', body)
-    out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(de ? { deadEnd: de } : {}), ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) })
+    out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(de ? { deadEnd: de, deadEndKind: /^Revert\b/.test(subject ?? '') ? 'revert' : 'phrase' } : {}), ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) })
   }
 
   return out
@@ -201,7 +208,7 @@ export function prPart(inputs: PrInput[], repos: string[], commit: CommitLook, u
       const mc: string | undefined = p.mergeCommit?.oid
       // Masked like the stored text, so a full build and an update derive the same trailer notes.
       out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name))
-      out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160) } : {}) } }))
+      out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160), deadEndKind: 'closed-pr' } : {}) } }))
       if (out.numbers.has(p.number)) out.ambiguous.add(p.number)
       out.numbers.set(p.number, id)
       out.urls.set(url, id)

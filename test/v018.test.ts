@@ -63,22 +63,34 @@ test('R8-H4: with roots found from the chats, a new project folder is an update,
   }
 })
 
-test('R8-H5: git history is the main line plus the commits the chats name; git_all reads every branch', () => {
+test('R8-H5: git history is every branch since 90 days before the first chat, plus older commits the chats name; git_all reads all', () => {
   const w = new World()
   try {
+    // Ancient main-line history (a clone's past), then a branch of recent work that was merged.
+    const old = (n: number) => {
+      process.env.GIT_AUTHOR_DATE = process.env.GIT_COMMITTER_DATE = `2025-0${n}-01T10:00:00Z`
+      try {
+        return w.commit(w.proj, `src/old${n}.ts`, `Old step ${n}`)
+      } finally {
+        delete process.env.GIT_AUTHOR_DATE
+        delete process.env.GIT_COMMITTER_DATE
+      }
+    }
+    const olds = [1, 2, 3].map(old)
     git(w.proj, 'checkout', '-q', '-b', 'feature')
-    const shas = Array.from({ length: 20 }, (_, i) => w.commit(w.proj, `src/f${i}.ts`, `Feature step ${i}`))
+    for (let i = 0; i < 3; i++) w.commit(w.proj, `src/f${i}.ts`, `Feature step ${i}`)
     git(w.proj, 'checkout', '-q', 'main')
     git(w.proj, 'merge', '-q', '--no-ff', 'feature', '-m', 'Merge feature')
-    w.chat('a', { turns: [{ prompt: `why did ${shas[4]!.slice(0, 7)} change f4`, reply: 'it moved the step' }] })
+    // Named through commit output ("[main abc1234] ..."), which takes any sha: a mentioned sha must hold a letter and a digit.
+    w.chat('a', { turns: [{ prompt: 'look at the old step', reply: 'it moved the step', at: '2026-10-01T09:00:00Z', commit: { subject: 'Old step 2', sha: olds[1]! } }] })
     w.archive()
     const { a, b } = w.both()
     assert.equal(a, b, diffStores(w.path('inc.db'), w.path('full.db')))
     const titles = (db: string) => (new DatabaseSync(w.path(db), { readOnly: true }).prepare("SELECT title FROM nodes WHERE kind = 'commit' AND project = 'proj' ORDER BY title").all() as { title: string }[]).map((r) => r.title)
-    assert.deepEqual(titles('full.db'), ['Add a', 'Feature step 4', 'Merge feature'])
+    assert.deepEqual(titles('full.db'), ['Add a', 'Feature step 0', 'Feature step 1', 'Feature step 2', 'Merge feature', 'Old step 2'])
     w.cfg.gitAll = true
     w.full('all.db')
-    assert.equal(titles('all.db').length, 22)
+    assert.equal(titles('all.db').length, 8)
   } finally {
     w.destroy()
   }

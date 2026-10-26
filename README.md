@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.svg" width="100%" alt="Thenwise: your code has a past. Now Claude remembers it. A night-sky timeline of chats, commits, PRs and notes, with a glowing thread from now back to the memory that answers the question."></p>
 
 <p align="center">
-  <img alt="Version 0.1.10" src="https://img.shields.io/badge/version-0.1.10-1E1C19">
+  <img alt="Version 0.1.11" src="https://img.shields.io/badge/version-0.1.11-1E1C19">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-C8402A">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-23466B">
@@ -160,6 +160,7 @@ In Claude Code:
 - `/thenwise:status`: what is stored and when it last synced.
 - `/thenwise:resume [topic]`: brief Claude on past work.
 - `/thenwise:why <words>`, `/thenwise:tried <words>`, `/thenwise:asof <date> <words>`: ask the memory directly.
+- `/thenwise:deadend <what failed>` and `/thenwise:decide <what was decided>`: keep a dead end or a decision on purpose.
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.

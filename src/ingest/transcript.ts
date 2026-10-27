@@ -10,6 +10,8 @@ export interface Turn {
   at: string
   prompt: string
   reply: string[]
+  /** The subagent reports also in `reply`, so a caller that must not carry tool output can take them out. */
+  agentReports: string[]
   reads: Set<string>
   edits: Set<string>
   ran: Set<string> // paths that appear in Bash commands
@@ -121,7 +123,7 @@ export function parseSession(text: string, id: string, home: string, until = '',
           const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined
           if (!hit) continue
           const out = textOf(b.content)
-          if (hit.kind === 'agent') out && hit.turn.reply.push(out.slice(0, 8000)) // a subagent's report to the turn that asked
+          if (hit.kind === 'agent') out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))) // a subagent's report to the turn that asked
           else if (hit.kind === 'test') hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true })
           else if (hit.kind === 'commit') for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\]/g)) hit.turn.commitShas.add(m[1]!)
           else for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)) hit.turn.prUrls.add(m[0])
@@ -129,7 +131,7 @@ export function parseSession(text: string, id: string, home: string, until = '',
       }
       const p = d.isMeta ? null : promptText(content)
       if (p && typeof d.uuid === 'string') {
-        turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] }
+        turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], agentReports: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] }
         s.turns.push(turn)
       }
     } else if (Array.isArray(content)) {

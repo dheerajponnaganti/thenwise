@@ -27,6 +27,7 @@ async function team(names = ['alice', 'bob']) {
 
   return { dir, app, base, tokens, req }
 }
+const CHAT = { project: 'org/alpha', head: 'first prompt', started_at: 1000, ended_at: 2000, turns: [{ id: 't1', at: 1000, line: 'why shards', passages: ['Eight shards for the exporter.'], paths: ['src/a.ts'] }] }
 const NOTE = { title: 'Cache plan', text: 'Eight shards for the exporter.', project: 'alpha' }
 
 test('T9-H1: a 0.1.5 team.db migrates to the current schema, and a newer one is refused', () => {
@@ -38,7 +39,7 @@ test('T9-H1: a 0.1.5 team.db migrates to the current schema, and a newer one is 
     INSERT INTO members VALUES ('alice', 'h-alice', NULL);
     INSERT INTO notes VALUES ('alice', 'n1', 1700000000000, 'One', 'first note', 'alpha'), ('gone', 'g1', 1700000000001, 'Kept', 'a removed member kept this', '');
     INSERT INTO tombs VALUES ('alice', 'n0', 1700000000002);`)
-  assert.deepEqual(migrateTeamDb(db), [1, 2])
+  assert.deepEqual(migrateTeamDb(db), [1, 2, 3, 4])
   assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, SCHEMA_VERSION)
   const members = db.prepare('SELECT id, name, token_hash, disabled FROM members ORDER BY name').all() as any[]
   assert.deepEqual(members.map((m) => [m.name, m.token_hash, m.disabled]), [['alice', 'h-alice', 0], ['gone', null, 1]])
@@ -309,6 +310,20 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
       ['/v1/audit', 'get', () => t.req(tok, '/v1/audit'), 200],
       ['/v1/stats', 'get', () => t.req(tok, '/v1/stats'), 200],
       ['/v1/export.zip', 'get', () => t.req(tok, '/v1/export.zip'), 200],
+      ['/v1/chats/{session}', 'put', () => t.req(tok, '/v1/chats/s1', { method: 'PUT', body: CHAT, headers: { 'if-match': '*' } }), 200],
+      ['/v1/chats/{session}', 'put', () => t.req(tok, '/v1/chats/s1', { method: 'PUT', body: CHAT, headers: { 'if-match': '*' } }), 409],
+      ['/v1/chats', 'get', () => t.req(bob, '/v1/chats?since=0'), 200],
+      ['/v1/chats/search', 'get', () => t.req(bob, '/v1/chats/search?q=shards'), 200],
+      ['/v1/chats/{owner}/{session}', 'get', () => t.req(bob, '/v1/chats/alice/s1'), 200],
+      ['/v1/chats/{owner}/{session}', 'get', () => t.req(bob, '/v1/chats/alice/none'), 404],
+      ['/v1/shared-projects', 'get', () => t.req(bob, '/v1/shared-projects'), 200],
+      ['/v1/chat-settings', 'get', () => t.req(tok, '/v1/chat-settings'), 200],
+      ['/v1/chat-settings', 'patch', () => t.req(tok, '/v1/chat-settings', { method: 'PATCH', body: { chat_retention_days: null } }), 200],
+      ['/v1/chats/{owner}/{session}', 'delete', () => t.req(tok, '/v1/chats/alice/s1', { method: 'DELETE', headers: { 'if-match': '*' } }), 200],
+      ['/v1/chats/{session}', 'delete', () => t.req(tok, '/v1/chats/s2', { method: 'DELETE', headers: { 'if-match': '*' } }), 200],
+      ['/v1/shared-projects/{owner}/{project}', 'patch', async () => (await t.req(tok, '/v1/chats/s3', { method: 'PUT', body: CHAT, headers: { 'if-match': '*' } }), t.req(tok, '/v1/shared-projects/alice/org%2Falpha', { method: 'PATCH', body: { status: 'paused' } })), 200],
+      ['/v1/shared-projects/{owner}/{project}', 'delete', async () => (await t.req(tok, '/v1/chats/s3', { method: 'PUT', body: CHAT, headers: { 'if-match': '*' } }), t.req(tok, '/v1/shared-projects/alice/org%2Falpha', { method: 'DELETE' })), 200],
+      ['/v1/chat-tombs', 'get', () => t.req(bob, '/v1/chat-tombs?since=0'), 200],
       ['/v1/notes/{owner}/{id}', 'patch', async () => t.req(tok, '/v1/notes/alice/c1', { method: 'PATCH', body: { title: 'Edited' }, headers: { 'if-match': String((await (await t.req(tok, '/v1/notes/alice/c1')).json()).rev) } }), 200],
       ['/v1/notes/{owner}/{id}/revisions', 'get', () => t.req(tok, '/v1/notes/alice/c1/revisions'), 200],
       ['/v1/notes/{owner}/{id}/pin', 'post', () => t.req(tok, '/v1/notes/alice/c1/pin', { method: 'POST' }), 200],
@@ -336,4 +351,16 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
   } finally {
     await t.app.close()
   }
+})
+
+test('T17-B5: the v1 part of openapi.json is byte for byte what 0.1.16 shipped; only 1.1 additions are new', () => {
+  const old = JSON.parse(readFileSync('test/fixtures/openapi-v1.json', 'utf8'))
+  const now = JSON.parse(readFileSync('openapi.json', 'utf8'))
+  assert.equal(now.info.version, '1.1')
+  assert.deepEqual({ ...now.info, version: '1' }, old.info)
+  for (const part of ['paths', 'parameters', 'responses', 'schemas', 'securitySchemes']) {
+    const [o, n] = part === 'paths' ? [old.paths, now.paths] : [old.components[part], now.components[part]]
+    for (const k of Object.keys(o)) assert.equal(JSON.stringify(n[k]), JSON.stringify(o[k]), `${part} ${k} changed`)
+  }
+  assert.ok(Object.keys(now.paths).every((p) => p in old.paths || /^\/v1\/(chats|chat-tombs|chat-settings|shared-projects)/.test(p)))
 })

@@ -2,7 +2,8 @@
 import { appendFileSync } from 'node:fs'
 import net from 'node:net'
 
-const LOCAL = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', ''])
+// NONET_ALL=1 also refuses local addresses, to watch for a connection to a team server on this machine.
+const LOCAL = new Set(process.env.NONET_ALL ? [] : ['localhost', '127.0.0.1', '::1', '0.0.0.0', ''])
 const connect = net.Socket.prototype.connect
 net.Socket.prototype.connect = function (...args) {
   // net.connect passes the normalized form [options, callback].

@@ -22,6 +22,8 @@ export interface TurnSpec {
   edits?: string[]
   commit?: { subject: string; sha: string }
   prUrl?: string
+  /** A subagent's result for this turn (an Agent tool call and its tool result). */
+  agent?: string
   at?: string
 }
 export interface ChatSpec {
@@ -47,10 +49,12 @@ export function chatText(id: string, spec: ChatSpec, cwd: string): string {
     for (const p of t.reads ?? []) blocks.push({ type: 'tool_use', id: `${uid}-r${p}`, name: 'Read', input: { file_path: p } })
     for (const p of t.edits ?? []) blocks.push({ type: 'tool_use', id: `${uid}-e${p}`, name: 'Edit', input: { file_path: p } })
     if (t.commit) blocks.push({ type: 'tool_use', id: `${uid}-c`, name: 'Bash', input: { command: `git commit -m "${t.commit.subject}"` } })
+    if (t.agent) blocks.push({ type: 'tool_use', id: `${uid}-ag`, name: 'Agent', input: { prompt: 'look' } })
     if (t.prUrl) blocks.push({ type: 'tool_use', id: `${uid}-p`, name: 'Bash', input: { command: 'gh pr create --title x' } })
     if (blocks.length) out.push({ type: 'assistant', uuid: `${uid}-a`, timestamp: at, ...base, message: { role: 'assistant', content: blocks } })
     const results: object[] = []
     if (t.commit) results.push({ type: 'tool_result', tool_use_id: `${uid}-c`, content: `[main ${t.commit.sha.slice(0, 7)}] ${t.commit.subject}\n 1 file changed` })
+    if (t.agent) results.push({ type: 'tool_result', tool_use_id: `${uid}-ag`, content: t.agent })
     if (t.prUrl) results.push({ type: 'tool_result', tool_use_id: `${uid}-p`, content: `${t.prUrl}\n` })
     if (results.length) out.push({ type: 'user', uuid: `${uid}-res`, timestamp: at, ...base, message: { role: 'user', content: results } })
   })

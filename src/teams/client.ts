@@ -11,6 +11,8 @@ import { maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'
 import type { Config } from '../ingest/config.ts'
+import { cursor, dropChat, openChatCache, putChat, setCursor } from './chatcache.ts'
+import type { WireChat } from './chatcache.ts'
 
 export const LABEL = 'teams preview'
 // A read is small; a share can be 100 KB over a slow link, and a timeout that is too short would retry it forever.
@@ -34,7 +36,7 @@ export interface Payload {
   /** The plugin's source ids, comma separated. */
   source?: string
 }
-interface State {
+export interface State {
   url: string
   token: string
   lastRev: number
@@ -49,13 +51,13 @@ interface State {
 
 const stateFile = (dir: string) => join(dir, 'team.json')
 
-function load(dir: string): State {
+export function load(dir: string): State {
   if (!existsSync(stateFile(dir))) throw new Error('not joined to a team: run `thenwise team join <url> <token>`')
 
   return JSON.parse(readFileSync(stateFile(dir), 'utf8'))
 }
 
-function save(dir: string, s: State) {
+export function save(dir: string, s: State) {
   const tmp = `${stateFile(dir)}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(s), { mode: 0o600 })
   chmodSync(tmp, 0o600)
@@ -76,12 +78,12 @@ export function checkUrl(url: string): string {
   throw new Error(u.protocol === 'http:' ? `refused: plain http to ${u.hostname}. Use https, or a server on localhost.` : `refused: ${u.protocol} is not supported`)
 }
 
-async function call(s: State, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
-  const res = await fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(TIMEOUT_MS[method] ?? 5000) })
+export async function call(s: State, method: string, path: string, body?: unknown, headers: Record<string, string> = {}, ms?: number): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(ms ?? TIMEOUT_MS[method] ?? 5000) })
 
   return { status: res.status, json: await res.json().catch(() => ({})) }
 }
-const errText = (json: any) => (typeof json?.error === 'string' ? json.error : json?.error?.message ?? '')
+export const errText = (json: any) => (typeof json?.error === 'string' ? json.error : json?.error?.message ?? '')
 
 /** Joins, or rejoins with a new token: a rejoin to the same server keeps what this machine shared and its queue. */
 export async function joinTeam(dir: string, url: string, token: string): Promise<string> {
@@ -314,7 +316,59 @@ export async function fetchShared(dir: string): Promise<string> {
   renameSync(tmp, cacheFile(dir))
   if (me && !s.me) locked(dir, () => save(dir, { ...load(dir), me }))
 
-  return `${got} team note${got === 1 ? '' : 's'} fetched, ${Object.keys(cache.notes).length} held (${LABEL})`
+  let chats = ''
+  try {
+    chats = await fetchChats(dir, s)
+  } catch (e) {
+    chats = `; team chats not fetched: ${e instanceof Error ? e.message : e}`
+  }
+
+  return `${got} team note${got === 1 ? '' : 's'} fetched, ${Object.keys(cache.notes).length} held${chats} (${LABEL})`
+}
+
+const CHAT_PAGE = 50
+const CHAT_TIMEOUT_MS = 60000
+
+/** Teammates' shared chats into team-chats.db: tombs first (they drop chats older than the tomb), then chat units in
+ * revision order, page by page, each page saved with its cursor so an interrupted fetch resumes. A server without
+ * shared chats (404) is not an error. */
+export async function fetchChats(dir: string, s: State = load(dir)): Promise<string> {
+  const db = openChatCache(dir)
+  try {
+    let tombs = 0
+    let got = 0
+    for (let since = cursor(db, 'tombs'); ; ) {
+      const r = await call(s, 'GET', `/chat-tombs?since=${since}&limit=500`, undefined, {}, CHAT_TIMEOUT_MS)
+      if (r.status === 404) return ''
+      if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
+      const rows = r.json.tombs as { owner: string; session: string; rev: number }[]
+      db.exec('BEGIN')
+      for (const t of rows) {
+        const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session) as { rev: number } | undefined
+        if (had && had.rev < t.rev) (dropChat(db, t.owner, t.session), tombs++)
+      }
+      if (rows.length) setCursor(db, 'tombs', rows.at(-1)!.rev)
+      db.exec('COMMIT')
+      if (rows.length < 500) break
+      since = rows.at(-1)!.rev
+    }
+    for (let since = cursor(db, 'chats'); ; ) {
+      const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS)
+      if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
+      const rows = r.json.chats as WireChat[]
+      db.exec('BEGIN')
+      for (const c of rows) (putChat(db, c), got++)
+      if (rows.length) setCursor(db, 'chats', rows.at(-1)!.rev)
+      db.exec('COMMIT')
+      if (rows.length < CHAT_PAGE) break
+      since = rows.at(-1)!.rev
+    }
+    const held = Number((db.prepare('SELECT count(*) AS n FROM chats').get() as { n: number }).n)
+
+    return tombs || got || held ? `; ${got} team chat${got === 1 ? '' : 's'} fetched, ${tombs} dropped, ${held} held` : ''
+  } finally {
+    db.close()
+  }
 }
 
 export async function search(dir: string, q: string): Promise<string[]> {

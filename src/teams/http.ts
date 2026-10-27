@@ -89,3 +89,91 @@ export function seqOf(v: unknown): number {
 
   return n
 }
+
+export const CHAT_LIMITS = { passages: 2000, bytes: 2 * 1024 * 1024, passage: 1200, body: 4 * 1024 * 1024 }
+export interface ChatTurn {
+  id: string
+  at: number
+  line: string
+  kind: 'turn' | 'summary'
+  passages: string[]
+  paths: string[]
+  shas: string[]
+  prs: string[]
+  dead_end: boolean
+  dead_kind: string
+  dead_text: string
+}
+export interface ChatUnit {
+  project: string
+  head: string
+  started_at: number
+  ended_at: number
+  mask: number
+  turns: ChatTurn[]
+  bytes: number
+}
+
+const bad = (m: string) => new HttpError(400, 'bad_request', m)
+const wordList = (v: unknown, name: string, max: number, len: number): string[] => {
+  if (v === undefined) return []
+  if (!Array.isArray(v) || v.length > max || v.some((x) => typeof x !== 'string' || !x || x.length > len)) throw bad(`${name} must be a list of up to ${max} texts of up to ${len} characters`)
+
+  return v as string[]
+}
+// A path is relative to the repo: no drive, no leading slash or home, no climbing out.
+const relative = (p: string) => !/^([/\\~]|[A-Za-z]:)/.test(p) && !p.split(/[/\\]/).includes('..')
+
+/** The unit of one shared chat: passages and their metadata only. Absolute paths, `cwd`, and anything past the limits are a 400 naming the field. */
+export function chatUnit(body: Record<string, unknown>): ChatUnit {
+  for (const k of ['cwd', 'extra']) if (k in body) throw bad(`${k} must not be sent`)
+  if (!Array.isArray(body.turns)) throw bad('turns must be a list')
+  let count = 0
+  let bytes = 0
+  const turns = body.turns.map((t: unknown, i): ChatTurn => {
+    if (!t || typeof t !== 'object' || Array.isArray(t)) throw bad(`turns[${i}] must be an object`)
+    const o = t as Record<string, unknown>
+    if ('cwd' in o || 'extra' in o) throw bad(`turns[${i}].cwd must not be sent`)
+    if (!Array.isArray(o.passages) || !o.passages.length) throw bad(`turns[${i}].passages must be a non-empty list`)
+    count += o.passages.length
+    if (count > CHAT_LIMITS.passages) throw bad(`passages: more than ${CHAT_LIMITS.passages} in one chat`)
+    const passages = o.passages.map((p, j) => {
+      if (typeof p !== 'string' || !p) throw bad(`turns[${i}].passages[${j}] must be text`)
+      if (p.length > CHAT_LIMITS.passage) throw bad(`turns[${i}].passages[${j}] is longer than ${CHAT_LIMITS.passage} characters`)
+      bytes += Buffer.byteLength(p)
+
+      return p
+    })
+    const paths = wordList(o.paths, `turns[${i}].paths`, 200, 500)
+    if (!paths.every(relative)) throw bad(`turns[${i}].paths must be relative to the repo, never absolute`)
+    const shas = wordList(o.shas, `turns[${i}].shas`, 20, 40)
+    if (!shas.every((x) => /^[0-9a-f]{4,40}$/.test(x))) throw bad(`turns[${i}].shas must be commit shas`)
+
+    return {
+      id: str(o, 'id', 120),
+      at: intField(o.at, 0, Number.MAX_SAFE_INTEGER, `turns[${i}].at`),
+      line: o.line === undefined ? '' : str(o, 'line', 300),
+      kind: o.kind === undefined ? 'turn' : oneOf(o.kind, ['turn', 'summary'], `turns[${i}].kind`),
+      passages,
+      paths,
+      shas,
+      prs: wordList(o.prs, `turns[${i}].prs`, 20, 300),
+      dead_end: o.dead_end === true,
+      dead_kind: o.dead_kind === undefined ? '' : str(o, 'dead_kind', 40),
+      dead_text: o.dead_text === undefined ? '' : str(o, 'dead_text', 160),
+    }
+  })
+  if (bytes > CHAT_LIMITS.bytes) throw bad(`passages: more than ${CHAT_LIMITS.bytes} bytes in one chat`)
+  const project = str(body, 'project', 200)
+  if (!project) throw bad('project must not be empty')
+
+  return {
+    project,
+    head: str(body, 'head', 200),
+    started_at: intField(body.started_at, 0, Number.MAX_SAFE_INTEGER, 'started_at'),
+    ended_at: intField(body.ended_at, 0, Number.MAX_SAFE_INTEGER, 'ended_at'),
+    mask: body.mask === undefined ? 0 : intField(body.mask, 0, 1e6, 'mask'),
+    turns,
+    bytes,
+  }
+}

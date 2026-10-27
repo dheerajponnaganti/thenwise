@@ -1,6 +1,6 @@
 # Thenwise Teams
 
-A team shares the notes its members choose (decisions, dead ends, findings) through one small server the team runs itself. Chats never leave anyone's machine.
+A team shares the notes its members choose (decisions, dead ends, findings) through one small server the team runs itself. Chats stay home unless a member shares a project. Raw transcripts never travel.
 
 ## Run the server
 
@@ -54,11 +54,56 @@ thenwise team rotate alice --dir ~/thenwise-team                 # a new token; 
 
 A removed name is never given to someone else. `team invite --again bob` brings the same person back to their notes.
 
+## Share a project's chats
+
+A member opts in per project. Nothing is shared until a project is named.
+
+```sh
+thenwise team share-chats <repo path>
+thenwise team unshare-chats <project or session id>
+```
+
+The first time, a preview shows the number of chats and passages, the size, the oldest and newest date, three masked passages picked at random, and what was left out. Confirm with a typed `yes` or `--yes`. Members and above can share. Viewers cannot.
+
+| Travels | Never travels |
+| --- | --- |
+| Prompt and reply text, cut into masked passages | Raw transcripts |
+| Compaction summaries | Tool output |
+| Session id, first prompt, start and end time | Thinking |
+| Repo-relative paths, short commit shas, PR URLs | File contents and absolute paths |
+| Dead-end flags | Subagent turns |
+| | Chats marked `[no-memory]`, and paused projects |
+
+Teammates' Claude finds shared chats like its own memory and names whose chat it was. The Hub shows them as bound volumes.
+
+**Unshare.** `team unshare-chats <project>` removes the project's chats from the server. `team unshare-chats <session id>` removes one chat. Teammates drop them at their next sync.
+
+**Forget.** `thenwise forget` also deletes a shared chat from the server.
+
+**Redact list.** Masking catches key formats. It cannot catch customer names, internal hostnames, pasted emails or a password written in prose. List those words in `config.json`, and they are replaced with `[redacted]` before anything leaves. The preview shows what the list removed.
+
+```json
+{ "team": { "redact": ["Acme", "acme.internal"] } }
+```
+
+**Retention.** An optional team setting deletes shared chats older than N days. Members drop them at their next sync.
+
+**Admins.** An admin can unshare any member's chats and sees a sharing ledger: who shares which project, how many chats, how many bytes, and the last push.
+
+### What this does not protect
+
+- The server owner can read every shared passage.
+- A removed member keeps what they already fetched.
+- A teammate who has synced keeps a copy until their next sync after an unshare. A machine that never syncs again keeps it.
+- Backups made before a deletion still hold the chat. Rotate old backups.
+- Masking and the redact list can miss a secret in a format nobody listed. Read the preview.
+
 ## What leaves which machine
 
 | | Stays on your machine | Goes to the team server |
 | --- | --- | --- |
-| Your chats | Always | Never |
+| Your chats | Always, as raw transcripts | Nothing, unless you share a project |
+| A shared project's chats | The originals | Masked passages of its prompts and replies, after a preview |
 | Your notes | Until you share one | The notes you share, masked at send |
 | Teammates' notes | A copy, fetched at each sync | Already there |
 | Tokens | `team.json`, readable by you only | Only a hash of each token |

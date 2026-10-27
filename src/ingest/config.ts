@@ -42,6 +42,10 @@ export interface Config {
   /** Note types shared with the team when accepted, and the projects that does it for (both empty: off). */
   autoShare: string[]
   autoShareProjects: string[]
+  /** Repos whose chats are shared with the team (passages only, never transcripts), the words removed before they leave, and whether subagent turns go too. */
+  shareChats: string[]
+  redact: string[]
+  shareSubagents: boolean
   vault: { place: string; layout: string; path: string; commit: boolean } | null
   backup: { kind: string; folders: string[]; push: boolean }
   /** `project` (default): tools answer for the session's repository plus global notes; `all`: every project. */
@@ -71,7 +75,7 @@ const SCHEMA: Record<string, any> = {
   hooks: { prompt_map: 'boolean', startup_brief: 'boolean' },
   tools: { output_chars: 'number' },
   capture: { auto: 'boolean' },
-  team: { auto_share: 'string[]', auto_share_projects: 'string[]' },
+  team: { auto_share: 'string[]', auto_share_projects: 'string[]', share_chats: 'string[]', redact: 'string[]', share_subagents: 'boolean' },
   scope: 'string',
 }
 const ENUMS: Record<string, string[]> = { 'vault.place': ['central', 'project', 'obsidian'], 'vault.layout': ['shared', 'per-project'], 'backup.kind': ['none', 'git', 'folders'], scope: ['project', 'all'] }
@@ -185,6 +189,9 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     captureAuto: user.capture?.auto ?? false,
     autoShare: user.team?.auto_share ?? [],
     autoShareProjects: user.team?.auto_share_projects ?? [],
+    shareChats: list(user.team?.share_chats, []),
+    redact: user.team?.redact ?? [],
+    shareSubagents: user.team?.share_subagents ?? false,
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',

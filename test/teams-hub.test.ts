@@ -301,7 +301,7 @@ test('T12-B8: migration 2 gives every old note a team, kind, status and revision
     INSERT INTO members VALUES ('alice', 'h1', NULL), ('bob', 'h2', NULL);
     INSERT INTO notes VALUES ('alice', 'n1', 5, 'One', 'first', 'alpha'), ('bob', 'n2', 6, 'Two', 'second', '');`)
   migrateTeamDb(db)
-  assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, 2)
+  assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, 4)
   const rows = db.prepare('SELECT n.kind, n.status, n.pinned, n.tags, n.team_id, t.id AS tid, n.shared_by = n.owner_id AS mine FROM notes n JOIN teams t ON t.id = n.team_id').all() as any[]
   assert.equal(rows.length, 2)
   for (const r of rows) assert.deepEqual([r.kind, r.status, r.pinned, r.tags, r.mine], ['note', 'active', 0, '[]', 1])

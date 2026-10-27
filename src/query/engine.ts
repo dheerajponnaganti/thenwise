@@ -188,7 +188,12 @@ export class Graph {
     this.roots = new Map()
     const cache = new Map<string, string>()
     const of = (f: string) => (f ? (cache.get(f) ?? (cache.set(f, projectRoot(f)), cache.get(f)!)) : '')
+    const team: Node[] = []
     for (const n of this.ofKind('session', 'commit')) {
+      if (n.extra?.team) {
+        team.push(n)
+        continue
+      }
       // A chat run outside any repository (a home folder) is about no one project, so it counts as global.
       // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
       if (n.kind === 'session') {
@@ -199,12 +204,23 @@ export class Graph {
       else if (n.kind === 'commit') this.roots.set(n.id, of(n.source))
     }
     this.known = [...new Set(this.roots.values())].filter(Boolean)
+    // A teammate's chat belongs to this machine's checkout of its project (by GitHub slug, else folder name), or to none.
+    // Slugs come from the store's meta (written at ingest); a root it does not list falls back to the folder name, never to git.
+    let slugs: Record<string, string> = {}
+    try {
+      slugs = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}')
+    } catch { /* older store: folder names only */ }
+    for (const n of team) {
+      const p = String(n.extra.project ?? n.project)
+      this.roots.set(n.id, this.known.find((k) => slugs[k] === p) ?? this.known.find((k) => basename(k) === p) ?? '')
+    }
   }
   inScope(n: Node | undefined): boolean {
     if (!n || n.kind === 'file' || (this.scope === undefined && !this.hide)) return true
     const r = this.rootOf(n)
 
-    return !(r && this.hide?.(r)) && (this.scope === undefined || r === this.scope || r === '')
+    // Teammates' chats of a project this machine does not hold show only when everything is searched.
+    return !(r && this.hide?.(r)) && (this.scope === undefined || r === this.scope || (r === '' && !n.extra?.team))
   }
   projectName(n: Node): string {
     const r = this.rootOf(n)

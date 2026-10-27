@@ -8,6 +8,7 @@ import type { Config } from './config.ts'
 import type { ManifestEntry } from './archive.ts'
 import { prStatus } from './prs.ts'
 import { skippedDocs } from './parts.ts'
+import { sharesStatus } from '../teams/chats.ts'
 import { teamStatus } from '../teams/client.ts'
 
 export function statusLines(cfg: Config, dbPath: string): string[] {
@@ -30,6 +31,8 @@ export function statusLines(cfg: Config, dbPath: string): string[] {
   out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`)
   out.push(...prStatus(cfg, repos))
   out.push(...teamStatus(cfg.memDir))
+  const sharing = sharesStatus(cfg).summary
+  if (sharing) out.push(sharing)
   const skipped = skippedDocs(cfg)
   if (skipped.length) out.push(`CLAUDE.md files not read (more than one folder below a root): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}. Add one with "docs" under "ingest" in config.json.`)
 

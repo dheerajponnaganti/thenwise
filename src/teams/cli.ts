@@ -5,12 +5,14 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { loadConfig } from '../ingest/config.ts'
-import { fetchShared, flush, joinTeam, LABEL, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from './client.ts'
+import { formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from './chats.ts'
+import { fetchShared, flush, joinTeam, LABEL, load as loadTeam, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from './client.ts'
 import { backupTeam, createTeamServer, invite, listMembers, openTeamDb, removeMember, restoreTeam, rotate } from './server.ts'
 
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>] [--console <hub folder>] [--allow-origin <origin>] [--tls-behind-proxy | --allow-plain-http]   (${LABEL})
 thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name> | backup <file> | restore <file>   (run where the server runs)
 thenwise team join <url> <token> | search <words> | sync | pull
+thenwise team share-chats <repo path> [--since <date>] [--yes] | unshare-chats <project or session id> [--pause] | shares
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`
 
 async function confirm(q: string): Promise<boolean> {
@@ -27,7 +29,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
   const cfg = loadConfig(homedir())
   const dir = cfg.memDir
   const serverDir = flag('dir') ?? join(dir, 'team-server')
-  const BOOL = ['--keep-notes', '--delete-notes', '--yes', '--again', '--tls-behind-proxy', '--allow-plain-http']
+  const BOOL = ['--keep-notes', '--delete-notes', '--yes', '--again', '--pause', '--tls-behind-proxy', '--allow-plain-http']
   const words = rest.filter((w, i) => !w.startsWith('--') && (!rest[i - 1]?.startsWith('--') || BOOL.includes(rest[i - 1]!)))
   try {
     if (cmd === 'share' || cmd === 'unshare') {
@@ -95,8 +97,32 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       if (!words.length) return (console.error(TEAM_USAGE), 2)
       const r = await search(dir, words.join(' '))
       console.log(r.length ? `${r.join('\n')}\n(${LABEL})` : `no shared notes match (${LABEL})`)
+    } else if (sub === 'share-chats') {
+      if (!words[0]) return (console.error(TEAM_USAGE), 2)
+      loadTeam(dir)
+      const since = flag('since')
+      if (since && Number.isNaN(Date.parse(since))) return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2)
+      const pv = previewShare(cfg, words[0], since ? { since } : {})
+      console.log(formatPreview(pv, cfg.redact))
+      if (!pv.chats) return (console.log('no chats to share'), 1)
+      if (!process.argv.includes('--yes') && !(await confirm('Share these chats with the team? Type yes: '))) return (console.log('not shared'), 1)
+      updateShares(dir, (s) => {
+        for (const [id, p] of Object.entries(s.removed)) if (p === pv.project) (delete s.removed[id], delete s.serverGone?.[id])
+        s.projects[pv.project] = { repo: pv.repo, status: 'active', reshare: true, ...(since ? { since } : {}) }
+      })
+      await setServerStatus(dir, pv.project, 'active')
+      console.log(await pushShared(cfg))
+      console.log(`The rest goes ${PUSH_PER_SYNC} chats at a time at each sync. \`thenwise team unshare-chats ${pv.project}\` takes them back.`)
+    } else if (sub === 'unshare-chats') {
+      if (!words[0]) return (console.error(TEAM_USAGE), 2)
+      console.log(await unshareChats(cfg, words[0], { pause: process.argv.includes('--pause') }))
+    } else if (sub === 'shares') {
+      const { lines } = sharesStatus(cfg)
+      console.log(lines.length ? lines.join('\n') : `no chats are shared (${LABEL})`)
     } else if (sub === 'sync') {
       console.log(await flush(dir))
+      const pushed = await pushShared(cfg)
+      if (pushed) console.log(pushed)
       try {
         console.log(await fetchShared(dir))
       } catch (e) {

@@ -22,6 +22,18 @@ const STATE_DAYS = 7
 const LOCK_STALE_MS = 3_600_000 // a live pid on an hour-old lock is a reused pid
 const SLOW = new Set(['archive', 'ingest']) // these get 10 minutes, every other sync step 2
 
+/** True while a shared project has sent nothing yet: its first push is long, so `team sync` gets the 10-minute class. */
+function newShare(dir: string): boolean {
+  try {
+    const sh = JSON.parse(readFileSync(join(dir, 'team-shares.json'), 'utf8'))
+    const sent = new Set(Object.values(sh.chats ?? {}).map((c: any) => c.project))
+
+    return Object.entries(sh.projects ?? {}).some(([name, p]: [string, any]) => p.status === 'active' && !sent.has(name))
+  } catch {
+    return false // not sharing chats
+  }
+}
+
 const tokens = (s: string) => Math.ceil(s.length / 4)
 /** Cuts text to about n tokens on a line boundary. */
 export const cap = (s: string, n: number) => (tokens(s) <= n ? s : `${s.slice(0, n * 4).replace(/\n[^\n]*$/, '')}\n(cut)`)
@@ -31,7 +43,9 @@ const DEAD = /^\s*dead end \(automatic(?:, ([\w-]+))?\): (.+)$/m
 const STRUCTURAL = new Set(['undone', 'failed-test', 'marked', 'revert', 'closed-pr'])
 const idOf = (e: string[]) => /^- \[[^\]]*\] (\S+)/.exec(e[0] ?? '')?.[1] ?? '?'
 const dateOf = (e: string[]) => /^\s*date: (\S+)/m.exec(e.join('\n'))?.[1] ?? ''
-const oneLine = (e: string[], text: string) => `- ${idOf(e)} ${dateOf(e)}: ${text.replace(/\s+/g, ' ').slice(0, 160)}`
+const mate = (e: string[]) => /^t(?:turn|sum|ses):([^/\s]+)\//.exec(idOf(e))?.[1]
+// A teammate's line starts with their name.
+const oneLine = (e: string[], text: string) => `- ${mate(e) ? `${mate(e)}: ` : ''}${idOf(e)} ${dateOf(e)}: ${text.replace(/\s+/g, ' ').slice(0, 160)}`
 
 /** The file hint, from the file's trace (newest first): dead ends from what happened (3 lines), curated decisions and
  * dead ends in full, the Decision lines of up to 2 commits that changed the file, and its last change. Phrase dead
@@ -199,7 +213,7 @@ export function syncRun(env: HookEnv) {
         continue
       }
       const t = Date.now()
-      const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || verb.startsWith('distill') ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } })
+      const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } })
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })

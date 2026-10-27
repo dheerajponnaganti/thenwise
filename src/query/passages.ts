@@ -61,8 +61,8 @@ export function passagesOf(text: string, title: string, extra: string): string[]
 export function buildPassageIndex(db: DatabaseSync) {
   db.exec(`CREATE TABLE passages(pid TEXT PRIMARY KEY, node TEXT NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL);
 CREATE INDEX passages_node ON passages(node, n);
-CREATE VIRTUAL TABLE passages_fts USING fts5(text, content='passages', content_rowid='rowid', tokenize='porter unicode61');
-CREATE VIRTUAL TABLE titles_fts USING fts5(title, tokenize='porter unicode61');`)
+CREATE VIRTUAL TABLE passages_fts USING fts5(text, content='passages', content_rowid='rowid', tokenize='porter unicode61 categories ''L* N* Co So''');
+CREATE VIRTUAL TABLE titles_fts USING fts5(title, tokenize='porter unicode61 categories ''L* N* Co So''');`)
   const ins = db.prepare('INSERT INTO passages(pid, node, n, text) VALUES (?,?,?,?)')
   for (const r of db.prepare("SELECT id, kind, title, text, extra FROM nodes WHERE kind <> 'file' ORDER BY id").all() as { id: string; kind: string; title: string; text: string; extra: string }[]) {
     // A node with no body (a commit with only a subject) still gets one passage: its title.

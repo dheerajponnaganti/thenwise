@@ -100,7 +100,9 @@ test('V-H5: today\'s graph.db without a format entry keeps working and gives the
   db.exec("DELETE FROM meta WHERE key = 'format'")
   db.close()
   assert.equal(storeFormat(w.path('graph.db')), 1)
-  assert.equal(w.ingest('graph.db').mode, 'unchanged')
+  // Format 1 is older than today's (emoji indexing), so the store is rebuilt once and answers the same.
+  assert.notEqual(w.ingest('graph.db').mode, 'unchanged')
+  assert.equal(storeFormat(w.path('graph.db')), STORE_FORMAT)
   assert.deepEqual(answers(), before)
 })
 

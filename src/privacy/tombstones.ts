@@ -10,6 +10,7 @@ export interface Tombs {
   sessions: string[] // session ids
   projects: string[] // Claude Code project keys
   folders: string[] // project folders (normalized)
+  chats?: string[] // `<project key>/<session id>`: one chat of several that share an id
 }
 
 const file = (memDir: string) => join(memDir, 'forgotten.json')
@@ -24,7 +25,7 @@ export function loadTombs(memDir: string): Tombs {
 
 export function saveTombs(memDir: string, t: Tombs) {
   const uniq = (l: string[]) => [...new Set(l)].sort()
-  writeFileSync(`${file(memDir)}.tmp`, JSON.stringify({ sessions: uniq(t.sessions), projects: uniq(t.projects), folders: uniq(t.folders) }, null, 1), { mode: 0o600 })
+  writeFileSync(`${file(memDir)}.tmp`, JSON.stringify({ sessions: uniq(t.sessions), projects: uniq(t.projects), folders: uniq(t.folders), ...(t.chats?.length ? { chats: uniq(t.chats) } : {}) }, null, 1), { mode: 0o600 })
   renameSync(`${file(memDir)}.tmp`, file(memDir))
   chmodSync(file(memDir), 0o600)
 }
@@ -40,5 +41,5 @@ export const underFolder = (path: string, folder: string) => {
 }
 
 export function isForgotten(t: Tombs, rel: string, cwd = ''): boolean {
-  return t.projects.includes(rel.split('/')[0]!) || t.sessions.includes(sessionOf(rel)) || (!!cwd && t.folders.some((f) => underFolder(cwd, f)))
+  return t.projects.includes(rel.split('/')[0]!) || t.sessions.includes(sessionOf(rel)) || !!t.chats?.includes(`${rel.split('/')[0]}/${sessionOf(rel)}`) || (!!cwd && t.folders.some((f) => underFolder(cwd, f)))
 }

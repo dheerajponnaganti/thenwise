@@ -96,7 +96,7 @@ test('B2-15/16: the compaction brief is for this repo and this session, and puts
     assert.match(reply, /Mine: wiring/)
     assert.doesNotMatch(reply, /Crew: unrelated/)
   } finally {
-    delete process.env.THENWISE_SYNC
+    process.env.THENWISE_SYNC = 'off' // the preload's default
   }
 })
 
@@ -237,6 +237,6 @@ test('B2-33/34: hooks.json matches clear and compact, and ends a session with a 
     runHook('session-start', { source: 'compact', cwd: '/x/p' }, { dir, cli: '' })
     assert.equal(logOf(dir).match(/sync off/g)?.length, 3, 'each one tried to start a sync')
   } finally {
-    delete process.env.THENWISE_SYNC
+    process.env.THENWISE_SYNC = 'off' // the preload's default
   }
 })

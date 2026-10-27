@@ -38,6 +38,7 @@ export interface Session {
   turns: Turn[]
   summaries: Summary[]
   paths: Set<string> // every path any tool call touched
+  capped: number // rows stamped later than the file's change time (plus a day) or now, moved back to the file time
   sub: boolean // a subagent file: its turns belong to session `id`, which is the parent
 }
 
@@ -91,9 +92,10 @@ function promptText(content: unknown): string | null {
 
 /** `until` (ISO) drops every entry stamped after it. */
 /** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
-export function parseSession(text: string, id: string, home: string, until = '', sub = false): Session {
+export function parseSession(text: string, id: string, home: string, until = '', sub = false, fileMs = 0): Session {
+  const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity
   const cut = until ? Date.parse(until) : Infinity
-  const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), sub }
+  const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub }
   const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test'; at?: string }>()
   let turn: Turn | null = null
   for (const line of text.split('\n')) {
@@ -104,6 +106,10 @@ export function parseSession(text: string, id: string, home: string, until = '',
       continue
     }
     if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || (d.isSidechain && !sub)) continue
+    if (typeof d.timestamp === 'string' && Date.parse(d.timestamp) > limit) {
+      d.timestamp = new Date(fileMs).toISOString() // a clock that ran ahead must not outrank real rows
+      s.capped++
+    }
     if (typeof d.timestamp === 'string' && Date.parse(d.timestamp) > cut) continue
     if (!s.entrypoint && typeof d.entrypoint === 'string') s.entrypoint = d.entrypoint
     if (!s.cwd && typeof d.cwd === 'string') s.cwd = d.cwd
@@ -134,6 +140,8 @@ export function parseSession(text: string, id: string, home: string, until = '',
         turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], agentReports: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] }
         s.turns.push(turn)
       }
+    } else if (typeof content === 'string') {
+      if (turn && content) turn.reply.push(content)
     } else if (Array.isArray(content)) {
       for (const b of content) {
         if (b?.type === 'text' && turn && typeof b.text === 'string') turn.reply.push(b.text)

@@ -49,7 +49,7 @@ test('R-B2: a store and config from 0.1.0 are kept and read by the next version'
     assert.equal(cli('archive').status, 0)
     assert.equal(cli('ingest').status, 0)
     const before = cli('search', 'eight shards').stdout
-    assert.match(before, /eight shards/)
+    assert.match(before, /^ +\| we chose \*\*eight\*\* \*\*shards\*\*/m) // a result line, not the echoed query
     // "The next version": same formats, new package number. The store is updated in place, not rebuilt, and answers the same.
     const db = join(data, 'graph.db')
     assert.equal(storeFormat(db), STORE_FORMAT)

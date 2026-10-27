@@ -68,13 +68,22 @@ if (cmd === 'archive' || cmd === 'ingest') {
   if (cmd === 'archive') {
     const { archive } = await import('./ingest/archive.ts')
     const done = (await import('./core/log.ts')).logger('sync', cfg.memDir).time('archive')
-    const r = archive(cfg, { prune: process.argv.includes('--prune-excluded') })
+    let r
+    try {
+      r = archive(cfg, { prune: process.argv.includes('--prune-excluded') })
+    } catch (e) {
+      if ((e as Error).message !== 'archive already running') throw e
+      console.log('archive already running; this run did nothing') // exit 0: a sync and a manual run meeting is not an error
+      process.exit(0)
+    }
     done({ seen: r.seen, archived: r.archived, excluded: r.excluded, unparsed: r.unparsed.length, failed: r.failed.length })
     console.log(`${r.seen} sessions seen: ${r.archived} archived, ${r.skipped} unchanged (${r.remasked} masked again), ${r.excluded} excluded; ${(r.bytes / 1e6).toFixed(1)} MB of archive; ${r.unparsed.length} lines did not parse`)
-    for (const u of r.unparsed) console.log(`  unparsed: ${u.rel} line ${u.line}`)
+    const bad = new Map<string, number[]>()
+    for (const u of r.unparsed) bad.set(u.rel, [...(bad.get(u.rel) ?? []), u.line])
+    for (const [rel, ls] of bad) console.log(`  ${rel}: ${ls.length} lines did not parse (first: line ${Math.min(...ls)})`)
     if (r.excludedChats || r.off) console.log(`${r.excludedChats} test chats and ${r.off} chats of paused projects were not archived`)
     for (const p of r.pruned) console.log(`  removed: ${p}`)
-    for (const f of r.failed) console.log(`  failed: ${f}`)
+    for (const f of r.failures) console.log(`  failed: ${f.rel} (${f.reason}, ${f.size} bytes)`)
     if (r.leftover.length) console.log(`${r.leftover.length} archived chats belong to excluded chats or projects; remove them with: thenwise archive --prune-excluded`)
   } else {
     const { ingest, report } = await import('./ingest/ingest.ts')

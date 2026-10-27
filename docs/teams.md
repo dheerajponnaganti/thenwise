@@ -42,7 +42,7 @@ thenwise team backup team-2026-10-27.db --dir ~/thenwise-team     # safe while t
 thenwise team restore team-2026-10-27.db --dir ~/thenwise-team    # with the server stopped
 ```
 
-A backup holds notes, members, sessions and the audit log, and is readable by its owner only. A restore refuses a file from a newer Thenwise.
+A backup holds notes, members, sessions and the audit log, and is readable by its owner only. A restore refuses a file from a newer Thenwise, a file without the team tables, and a file with no live owner. Before it replaces `team.db`, it keeps the current one beside it as `team.db.before-restore-<date>-<time>` and prints where. It never deletes that file.
 
 ## Remove a member
 
@@ -53,6 +53,39 @@ thenwise team rotate alice --dir ~/thenwise-team                 # a new token; 
 ```
 
 A removed name is never given to someone else. `team invite --again bob` brings the same person back to their notes.
+
+## Runbooks
+
+### The owner lost access
+
+Only the person with the server folder can fix this, because `team rotate` runs there as the operator and checks no role.
+
+```sh
+thenwise team rotate <owner name> --dir ~/thenwise-team    # prints a new owner token once
+thenwise team members --dir ~/thenwise-team                # confirms the owner is live
+```
+
+The old token and any browser session of the owner stop at once. Give the new token to the owner and have them run `thenwise team join <server url> <token>`.
+
+### A restore went wrong
+
+The restore printed `the team.db it replaced is kept as ...`. Stop the server, then put that file back:
+
+```sh
+thenwise team restore ~/thenwise-team/team.db.before-restore-20261027-101500 --dir ~/thenwise-team
+```
+
+This restore keeps the bad `team.db` the same way, so nothing is lost either way. Start the server again.
+
+### Check that a removed member's notes are gone
+
+`team remove bob --delete-notes` deletes the notes on the server at once and leaves a tomb for each. Teammates' machines drop their copies at their next sync. To check:
+
+```sh
+thenwise team search "<a phrase from one of bob's notes>"    # run on a teammate's machine after a sync: no hit
+```
+
+In the Hub, search for the same phrase: bob's notes no longer appear. A machine that has not synced yet still holds its copy until it does.
 
 ## Share a project's chats
 

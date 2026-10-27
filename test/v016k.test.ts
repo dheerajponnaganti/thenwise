@@ -30,7 +30,7 @@ test('T16-H2: a backup restored in another folder holds the same members, notes 
   assert.throws(() => restoreTeam(a, file), /stop it first/)
   if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600)
   const b = tmp('b')
-  assert.equal(restoreTeam(b, file), SCHEMA_VERSION)
+  assert.equal(restoreTeam(b, file).schema, SCHEMA_VERSION)
   const r = openTeamDb(b)
   assert.deepEqual(listMembers(r).map((m) => m.name), ['alice', 'bob'])
   assert.equal((r.prepare("SELECT text FROM notes WHERE id = 'n1'").get() as { text: string }).text, 'eight shards')

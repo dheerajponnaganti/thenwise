@@ -129,7 +129,7 @@ export function createServer(dbPath: () => string, project = process.env.CLAUDE_
 
       done({ chars: out.length, found: !/^not recorded/.test(out) })
 
-      return text(cut(out, name === 'memory_read' ? 12000 : CAP()))
+      return text(cut(out, name === 'memory_read' ? 12000 : CAP()), /^asof needs an ISO date/.test(out))
     } catch (e) {
       const f = errFields(e)
       // The error may echo the query: its words are cut before anything is logged.

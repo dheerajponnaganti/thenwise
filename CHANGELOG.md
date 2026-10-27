@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.21
+
+Hardening: a full reliability review, 17 findings, all fixed but one that waits for a larger change.
+
+- Teams: only the owner can reset the owner's token, and an admin only roles below admin. `team restore` checks that the file is a team backup with an owner, and keeps the old database as `team.db.before-restore-<time>`. Removing a member with their notes now makes every teammate's machine drop those notes at its next sync. The server masks what it stores, edits included. Repeated failed sign-ins from one address get 429 and one audit row a minute. `docs/teams.md` has runbooks for a lost owner token, a bad restore and checking a removal.
+- Archive: one run at a time (a second one says "archive already running"). Chats are read in chunks, so a chat of any size archives and memory stays low (a 228 MB chat: 2.2 GB before, about 210 MB now). A line over 128 MB is left out and counted instead of crashing the run. A failed file says why, with its size, in the output and in `logs --errors`. A damaged file prints one summary line.
+- Search: two chats that share a session id in different folders are both found (the second as `<id>@<folder>`); `forget` asks which. Emoji are searchable (the store rebuilds once, and `status` says when one is waiting). A row dated in the future is moved back to its file's time. Replies stored as plain text are read.
+- Masking: Slack webhooks, Google OAuth tokens, Docker registry logins, `<vendor>_key=` values that look like tokens, and database URLs with a password but no user. Environment references such as `process.env.API_KEY` stay readable. Archives re-mask once at the next sync.
+- A full rebuild checks free disk first; `doctor` shows free disk against the store size. Tool errors reach Claude marked as errors.
+- Tests never start a real background sync.
+
 ## 0.1.20
 
 Thenwise is open source.

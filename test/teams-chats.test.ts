@@ -145,7 +145,7 @@ test('T17-H6: migration 3 keeps every note and member of a schema 2 file, and ba
   const file = join(tmp('bak'), 'backup.db')
   backupTeam(dir, file)
   const dir2 = tmp('restore')
-  assert.equal(restoreTeam(dir2, file), 4)
+  assert.equal(restoreTeam(dir2, file).schema, 4)
   assert.equal(count(dir2, 'SELECT count(*) n FROM chat_passages'), 4)
   assert.equal(count(dir2, "SELECT count(*) n FROM chat_fts WHERE chat_fts MATCH 'shards'"), 4)
   assert.ok(existsSync(file))
@@ -220,12 +220,12 @@ test('T17-B4: the 61st chat push in a minute is a 429 with Retry-After, and read
   }
 })
 
-test('T17-B6: a secret in a pushed passage is stored as sent', async () => {
+test('T17-B6: a secret in a pushed passage is stored masked by the server (SRE-09)', async () => {
   const t = await team()
   try {
     await push(t, 'alice', 's1', unit(1, { turns: [{ id: 'a', at: 1, passages: ['key sk-live-1234567890abcdef'] }] }))
     const c = await (await t.req(t.tokens.bob!, '/v1/chats/alice/s1')).json()
-    assert.equal(c.turns[0].passages[0], 'key sk-live-1234567890abcdef')
+    assert.equal(c.turns[0].passages[0], 'key [secret masked]')
   } finally {
     await t.app.close()
   }

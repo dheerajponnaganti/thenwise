@@ -14,6 +14,7 @@ import { takeLock } from '../hooks/hook.ts'
 import type { Config } from '../ingest/config.ts'
 import { tighten } from './perms.ts'
 import { dropPrCache, ingest } from '../ingest/ingest.ts'
+import { chatSuffix } from '../ingest/parts.ts'
 import { githubSlug, repoRoot } from '../ingest/repos.ts'
 import { unshareForgotten } from '../teams/chats.ts'
 import { sharedIds, unshare } from '../teams/client.ts'
@@ -26,6 +27,8 @@ export interface ForgetOpts {
   /** Rewrites the curated vault from the store. Wired to the vault writer. */
   rewriteVault?: (cfg: Config) => void
   waitMs?: number
+  /** Picks one of several chats that share a session id; '' picks none. */
+  choose?: (options: string[]) => Promise<string>
   print?: (line: string) => void
 }
 
@@ -110,17 +113,38 @@ async function confirmTty(q: string): Promise<boolean> {
   return /^y(es)?$/i.test(a.trim())
 }
 
+async function chooseTty(options: string[]): Promise<string> {
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const a = await rl.question(`Which one? [1-${options.length}] `)
+  rl.close()
+
+  return options[Number(a.trim()) - 1] ?? ''
+}
+
 export async function forget(cfg: Config, target: string, opts: ForgetOpts = {}): Promise<number> {
   const out = opts.print ?? ((l: string) => console.log(l))
   const folder = normPath(resolve(expandHome(target, cfg.home)))
   const all = chatsOf(cfg)
   const byProject = (c: Chat) => c.key === target || c.key === claudeKey(folder) || (!!c.cwd && underFolder(c.cwd, folder))
-  const hit = (c: Chat) => c.id === target || (target.length >= 8 && c.id.startsWith(target)) || byProject(c)
+  const named = (c: Chat) => `${c.id}${chatSuffix(c.key)}`
+  // One session id in several project folders: the bare id is ambiguous, `<id>@<folder>` picks one.
+  const same = all.filter((c) => c.id === target)
+  let pick = ''
+  if (same.length > 1 && new Set(same.map((c) => c.key)).size > 1) {
+    const options = same.map(named)
+    out(`${same.length} chats share the session id ${target}: ${options.join(', ')}.`)
+    const a = opts.choose ? await opts.choose(options) : process.stdin.isTTY && !opts.yes ? await chooseTty(options) : ''
+    if (!a) return (out(`Say which one: thenwise forget ${options[0]}`), 1)
+    pick = a
+  }
+  const hit = (c: Chat) => pick ? named(c) === pick : c.id === target || named(c) === target || (target.length >= 8 && c.id.startsWith(target)) || byProject(c)
   const chats = all.filter(hit)
   const plans = planKeys(cfg, target, folder)
   if (!chats.length && !plans.length) return (out(`Nothing found for "${target}": no chat with that session id and no project with that folder or key.`), 0)
 
   const projectWide = chats.some(byProject) || plans.length > 0
+  const scoped = !projectWide && (!!pick || chats.some((c) => named(c) === target))
   const sessions = [...new Set(chats.map((c) => c.id))]
   const keys = [...new Set([...chats.map((c) => c.key), ...plans])]
   const base = join(cfg.memDir, 'archive')
@@ -136,7 +160,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
       tombs.projects.push(...chats.filter((c) => byProject(c) && (c.key === target || !c.cwd)).map((c) => c.key))
       tombs.folders.push(folder)
       tombs.sessions.push(...sessions)
-    } else tombs.sessions.push(...sessions)
+    } else if (scoped) tombs.chats = [...(tombs.chats ?? []), ...chats.map((c) => `${c.key}/${c.id}`)]
+    else tombs.sessions.push(...sessions)
     saveTombs(cfg.memDir, tombs)
 
     for (const p of gz) rmSync(p, { recursive: true, force: true })

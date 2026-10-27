@@ -350,7 +350,8 @@ test('T12-B10: the owner cannot be removed or changed; make-owner hands the team
     assert.equal((await t.req(t.tokens.root!, `/v1/members/${bobId}/make-owner`, { method: 'POST' })).status, 200)
     const roles = Object.fromEntries((await (await t.req(a, '/v1/members')).json()).members.map((m: any) => [m.name, m.role]))
     assert.deepEqual(roles, { alice: 'admin', bob: 'owner', root: 'admin' })
-    const rot = await (await t.req(a, `/v1/members/${await t.idOf('root')}/rotate`, { method: 'POST' })).json()
+    assert.equal((await t.req(a, `/v1/members/${bobId}/rotate`, { method: 'POST' })).status, 403, 'an admin cannot rotate the owner')
+    const rot = await (await t.req(t.tokens.bob!, `/v1/members/${await t.idOf('root')}/rotate`, { method: 'POST' })).json()
     assert.equal((await t.req(t.tokens.root!, '/v1/me')).status, 401)
     assert.equal((await t.req(rot.token, '/v1/me')).status, 200)
   } finally {

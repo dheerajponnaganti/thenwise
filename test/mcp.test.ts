@@ -197,3 +197,11 @@ test('S6-B10 and S3-H5: tools answer for the session repo, fall back to all proj
     else process.env.THENWISE_HOME = home
   }
 })
+
+test('SRE-13: a bad asof date over MCP is an error result', () => {
+  const { call } = ready(writeGraph(tempDir()))
+  const r = call('memory_asof', { date: 'not-a-date', query: 'cache' }).result
+  assert.equal(r.isError, true)
+  assert.match(r.content[0].text, /asof needs an ISO date/)
+  assert.equal(call('memory_asof', { date: '2026-10-06', query: 'cache' }).result.isError, undefined)
+})

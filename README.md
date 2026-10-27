@@ -66,7 +66,7 @@ A memory this deep has to be private. This one lives on your disk and nowhere el
 
 <p align="center"><img src="assets/readme/sieve.png" width="100%" alt="The sieve. A prompt, a reply, four thousand lines of tool output, a line with a Stripe key and a chat marked no-memory arrive. The prompt and reply are kept, dated; the key line is kept with the key replaced by secret masked; tool noise is not indexed, no-memory chats are never kept and paused projects are never read. No telemetry, no account, nothing phones home."></p>
 
-**What masking catches.** Masking knows the shape of AWS, GitHub, GitLab, Anthropic, OpenAI, Stripe, SendGrid, Twilio, Google, Slack, npm and Hugging Face keys, private key blocks, JWTs, passwords inside URLs and `curl -u`, and any `SECRET=`, `TOKEN=` or `api_key:` style line. It still catches a key that wraps across two lines.
+**What masking catches.** Masking knows the shape of AWS, GitHub, GitLab, Anthropic, OpenAI, Stripe, SendGrid, Twilio, Google, Slack, npm and Hugging Face keys, Slack webhooks, Google OAuth tokens, Docker registry logins, private key blocks, JWTs, passwords inside URLs (even with no user name) and `curl -u`, and any `SECRET=`, `TOKEN=`, `api_key:` or `stripe_key=` style line. It still catches a key that wraps across two lines, and leaves code like `process.env.API_KEY` readable. The team server masks again on arrival.
 
 ## How the ground is laid
 
@@ -131,7 +131,7 @@ Memory tools remember for one person. Thenwise remembers for the team.
 - **One search for everyone's past.** What teammates share joins your memory at each sync, so Claude finds it and names who shared it.
 - **A reading room in the browser.** [Thenwise Hub](https://github.com/dheerajponnaganti/thenwise-hub) shows the team's notes as a card catalog, with search, history and a review queue, on a laptop or a phone.
 - **Offline friendly.** If the server is down, shares wait in a queue and go out on their own.
-- **Locked down.** Tokens are stored only as hashes. Five roles run from owner to viewer. Every admin action lands in an audit log, an optional review queue holds new shares until an admin approves, and a backup is one command.
+- **Locked down.** Tokens are stored only as hashes. Five roles run from owner to viewer, and only the owner can reset the owner's token. Repeated failed sign-ins are slowed down and logged. Every admin action lands in an audit log, an optional review queue holds new shares until an admin approves, a backup is one command, and a restore keeps the old database beside the new one.
 
 ```
 thenwise team serve --dir ~/team --console <hub build>   # on the server

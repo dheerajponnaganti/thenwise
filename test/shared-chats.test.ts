@@ -24,7 +24,7 @@ import { archived, buildChat, formatPreview, loadShares, previewShare, pushShare
 import { fetchShared, joinTeam } from '../src/teams/client.ts'
 import { openTeamDb } from '../src/teams/schema.ts'
 import { createTeamServer, invite } from '../src/teams/server.ts'
-import { diffStores, git, World } from './world.ts'
+import { chatText, diffStores, git, World } from './world.ts'
 
 const SERVER = readFileSync(new URL('../src/teams/server.ts', import.meta.url), 'utf8').includes('chat-tombs')
 const needs = SERVER ? {} : { skip: 'needs server routes from shared-chats' }
@@ -890,6 +890,79 @@ test('F11: the team chat cache is read once per ingest and the sender\'s passage
     assert.deepEqual(g.passages('tturn:alice/t1').map((p) => p.text), passages)
     assert.equal(w.both().a, w.both().b)
     assert.deepEqual(new Graph(w.path('full.db')).passages('tturn:alice/t1').map((p) => p.text), passages)
+  } finally {
+    w.destroy()
+  }
+})
+
+/** A chat started in the home folder (no repository), editing the given files. */
+function homeChat(w: World, id: string, edits: string[]) {
+  const path = w.chatPath(id, '-home')
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, chatText(id, { turns: [{ prompt: `Work from home ${id}`, reply: 'Edited it.', edits }] }, w.home))
+}
+
+test('scope: a chat started in the home folder that edited the project is shared', () => {
+  const w = sender()
+  try {
+    // A repo outside the ingest roots does not count, however many of its folders were edited.
+    const out = join(w.home, 'aaa')
+    mkdirSync(join(out, 'src'), { recursive: true })
+    mkdirSync(join(out, 'lib'), { recursive: true })
+    git(out, 'init', '-q', '-b', 'main')
+    homeChat(w, 'homed', [`${out}/src/x.ts`, `${out}/lib/y.ts`, `${w.proj}/src/a.ts`])
+    w.archive()
+    built(buildChat(w.cfg, w.proj, archived(w.cfg).find((x) => x.session === 'homed')!, (t) => t))
+    assert.equal(previewShare(w.cfg, w.proj).chats, 2)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('scope: a chat that touched two repos is shared under one project only', () => {
+  const w = sender()
+  try {
+    homeChat(w, 'both', [`${w.other}/src/a.ts`, `${w.proj}/src/a.ts`, `${w.proj}/lib/b.ts`])
+    w.archive()
+    const c = archived(w.cfg).find((x) => x.session === 'both')!
+    const ok = [w.proj, w.other].filter((r) => !('skip' in buildChat(w.cfg, r, c, (t) => t)))
+    assert.deepEqual(ok, [w.proj])
+  } finally {
+    w.destroy()
+  }
+})
+
+test('team shares counts only chats the push would send', () => {
+  const w = sender()
+  try {
+    w.chat('late', { turns: [{ prompt: 'Zebra plan', reply: 'y' }] })
+    w.archive()
+    // A marker added after archiving keeps the chat home, so the push drops it.
+    const cfg = { ...w.cfg, shareChats: [w.proj], ingestExcludeMarkers: ['Zebra'] }
+    assert.match(sharesStatus(cfg).lines.join(), /, 1 waiting to push/)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('scope: a chat in a worktree of the project is shared under the project', () => {
+  const w = sender()
+  try {
+    const wt = join(w.home, 'wt')
+    for (const r of [w.proj]) git(r, 'remote', 'add', 'origin', 'https://github.com/me/proj.git')
+    git(w.proj, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    const clone = join(w.home, 'clone')
+    execFileSync('git', ['clone', '-q', w.proj, clone])
+    git(clone, 'remote', 'set-url', 'origin', 'git@github.com:me/proj.git')
+    homeChat(w, 'inwt', [`${wt}/src/a.ts`])
+    homeChat(w, 'inclone', [`${clone}/src/a.ts`])
+    w.archive()
+    const cfg = { ...w.cfg, roots: [...w.cfg.roots, wt, clone] }
+    for (const id of ['inwt', 'inclone']) {
+      const b = built(buildChat(cfg, w.proj, archived(w.cfg).find((x) => x.session === id)!, (t) => t))
+      assert.deepEqual(b.unit.turns[0]!.paths, ['src/a.ts'])
+      assert.equal(b.unit.project, 'me/proj')
+    }
   } finally {
     w.destroy()
   }

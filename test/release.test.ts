@@ -102,7 +102,7 @@ test('R-B3: a newer store or config is refused with a message and nothing is cha
 // R-B4: nothing in what ships may carry the owner's data.
 const OWNER = [/\/Users\/dheeraj/i, /\/home\/dheeraj/i, /carapace-private/i, /carapace-crew/i, /\.memory\/eval/, /claude mods/i, /iCloud~md~obsidian/]
 // The author's name is allowed only where a licence, a manifest or a repo URL names the author.
-const NAME_OK = new Set(['LICENSE', 'package.json', 'package-lock.json', 'README.md', 'CHANGELOG.md', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json'])
+const NAME_OK = new Set(['LICENSE', 'package.json', 'package-lock.json', 'README.md', 'CHANGELOG.md', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'])
 const NAME = /dheeraj|ponnaganti/i
 
 function scanDir(dir: string, label: string): string[] {

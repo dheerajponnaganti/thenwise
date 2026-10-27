@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.20
+
+Thenwise is open source.
+
+- The repository is public under Apache 2.0, with Discussions, issue forms, a contributing guide, a security policy and a code of conduct.
+- README: a live CI badge for macOS, Linux and Windows.
+- README: the measurements plate has two rows. Individual: 83% right against 63% for plain Claude Code, 40% fewer tokens, 2.4 times faster. Teams, from a teammate's shared chats: 88% against 25%, 24% fewer tokens, 1.5 times faster.
+- Benchmarks: the eval record sets live outside the repo, so the bench names no private projects.
+
 ## 0.1.19
 
 Thenwise is on npm, with an open door for questions and contributions.

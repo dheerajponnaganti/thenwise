@@ -1,0 +1,369 @@
+[
+ {
+  "id": "t01",
+  "seconds": 9,
+  "in": 4,
+  "cache_read": 76373,
+  "cache_write": 20722,
+  "out": 311,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "Access tokens last **15 minutes**. They are JWTs. Refresh tokens last 30 days and live in the platform secure store.\n\nThis comes from the decision note `notes/decisions/use-short-lived-jwt-access-tokens.md` (dated 2025-07-08). I did not check the server code, so I can't confirm it still sets 15 minutes.",
+  "expect": "15 minutes"
+ },
+ {
+  "id": "t02",
+  "seconds": 9,
+  "in": 4,
+  "cache_read": 98317,
+  "cache_write": 1649,
+  "out": 281,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "The backend runs **PostgreSQL 16** on a managed host. The decision note is `notes/decisions/run-the-sync-server-on-postgres-16.md` (dated 2025-03-20), and `notes/entities/postgres.md` agrees.\n\nI only read the notes. I found no version setting in the code or config, so I can't confirm the live host still runs 16.",
+  "expect": "PostgreSQL 16"
+ },
+ {
+  "id": "t03",
+  "seconds": 21,
+  "in": 10,
+  "cache_read": 256305,
+  "cache_write": 1545,
+  "out": 924,
+  "calls": 5,
+  "hint_tokens": 54,
+  "tools": [
+   "Glob",
+   "Grep",
+   "Read",
+   "plan_steps",
+   "Write",
+   "report_progress"
+  ],
+  "answer": "`app/screens/Budget.tsx` now shows \"Total spent: $X.XX\". It adds up `spentCents` across all envelopes from `useEnvelopes()`.\n\nThe screen used to return `null`, so this is the only thing on it. I added no styling, list of envelopes, or currency formatting beyond a hard-coded `$`. I did not run the app or any tests.",
+  "expect": "Sums spentCents as integers and formats cents only for display (money is stored as integer cents); no floats in the sum"
+ },
+ {
+  "id": "t04",
+  "seconds": 13,
+  "in": 4,
+  "cache_read": 105079,
+  "cache_write": 912,
+  "out": 632,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "Floating point drifted. Summing 3,000 entries stored as floats ended up off by 0.07 from the exact total. Integer cents make totals exact and cheap to sum in SQL. The API rejects non-integer amounts, and a separate 3-letter currency column holds the currency. The sources are `notes/decisions/store-money-as-integer-cents.md` and `notes/findings/float-rounding-drifts-budget-totals.md`.\n\nThis shows a flaw in my last change. The notes say the Budget screen formats amounts with `Intl.NumberFormat`. I used a hard-coded `$` and `toFixed(2)` instead. That is wrong for any non-USD currency. The `Envelope` type has no currency field, so I'd need to know where the screen should get the currency code. Tell me where it comes from and I'll switch the display to `Intl.NumberFormat`.",
+  "expect": "Floats drifted by 0.07 after 3,000 entries; integers sum exactly"
+ },
+ {
+  "id": "t05",
+  "seconds": 9,
+  "in": 4,
+  "cache_read": 107862,
+  "cache_write": 1646,
+  "out": 388,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "An idle phone polls every **15 minutes**. That is a fallback only. Normally the server sends a silent push when a user's data changes, and the app syncs when it wakes.\n\nThe code agrees: `src/sync/engine.ts` sets `FALLBACK_POLL_MS = 15 * 60 * 1000` and calls `flushQueue()` on that interval. The decision is `notes/decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md` (2026-05-20). It replaced the old 5 minute poll, so older notes that say 5 minutes are outdated.\n\nI did not check how the push wake-up path is wired in the app.",
+  "expect": "On silent push, with a 15 minute fallback poll"
+ },
+ {
+  "id": "t06",
+  "seconds": 9,
+  "in": 2,
+  "cache_read": 55777,
+  "cache_write": 39,
+  "out": 212,
+  "calls": 1,
+  "hint_tokens": 0,
+  "tools": [],
+  "answer": "In summer 2025 it was **5 minutes**. The app polled `/v1/sync/pull` on a 5 minute timer while idle. That decision started on 2025-04-01 and ended on 2026-05-20, when the push wake-up with a 15 minute fallback replaced it. The source is `notes/decisions/poll-for-changes-every-5-minutes.md`.\n\nI did not check whether any note records a change between those two dates.",
+  "expect": "Every 5 minutes"
+ },
+ {
+  "id": "t07",
+  "seconds": 15,
+  "in": 8,
+  "cache_read": 227682,
+  "cache_write": 2309,
+  "out": 847,
+  "calls": 4,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep",
+   "plan_steps",
+   "Edit",
+   "report_progress"
+  ],
+  "answer": "The fallback poll in `src/sync/engine.ts` is now 2 minutes (`FALLBACK_POLL_MS = 2 * 60 * 1000`). The push wake-up path is unchanged. I did not run the app or any tests.\n\nThe notes now disagree with the code. The decision note `notes/decisions/wake-sync-from-push-with-a-15-minute-fallback-poll.md` and the Decision Index still say 15 minutes. Say so if you want me to record this as a new decision.",
+  "expect": "Flags the decision to wake sync from push with a 15 minute fallback poll (and why) before or while changing it"
+ },
+ {
+  "id": "t08",
+  "seconds": 13,
+  "in": 4,
+  "cache_read": 117055,
+  "cache_write": 2480,
+  "out": 724,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep",
+   "Read"
+  ],
+  "answer": "We moved to Beacon Push on 2026-07-14, mainly for better Android delivery.\n\n- **Delivery:** A 3 week test on 1,200 Android devices showed Beacon delivered 97.8% of pushes within 30 seconds. FCM delivered 94.1%.\n- **One API:** Beacon covers both platforms, so we no longer call FCM and APNs ourselves.\n- **APNs key:** We stop rotating the APNs key every year.\n- **Cost:** The free tier covered 10,000 devices at the time. That removed the cost objection we had when we chose direct FCM in 2025.\n\nWe rejected staying on FCM because it is free but delivers less reliably. We rejected another hosted vendor because of a higher price per device.\n\nSources: `notes/decisions/send-push-through-beacon-push.md` and `notes/findings/beacon-push-delivers-more-android-pushes-than-fcm.md`.\n\nI did not check whether the free tier limit has changed since the decision.",
+  "expect": "97.8% vs 94.1% delivery, one API for both platforms, no APNs key rotation"
+ },
+ {
+  "id": "t09",
+  "seconds": 19,
+  "in": 10,
+  "cache_read": 311793,
+  "cache_write": 3151,
+  "out": 1615,
+  "calls": 5,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep",
+   "Glob",
+   "Read",
+   "Read",
+   "Grep",
+   "Grep",
+   "Grep",
+   "Grep",
+   "Grep"
+  ],
+  "answer": "The free plan fits **5,000 devices**. It used to be 10,000, but Beacon's pricing page changed in September 2026. The paid plan costs $19 per month for 25,000 devices.\n\nTidewater has 3,800 active devices, which is 76% of the limit. At about 200 new devices per month, it would pass 5,000 in roughly 6 months. The Q4 roadmap already has an item to watch this.\n\nThe source is `notes/findings/beacon-push-free-tier-shrank-to-5-000-devices.md`, recorded 2026-09-30. It is a note, not a live check, so Beacon's pricing page could have changed since then. The decision note `notes/decisions/send-push-through-beacon-push.md` still cites the old 10,000 figure.",
+  "expect": "5,000"
+ },
+ {
+  "id": "t10",
+  "seconds": 15,
+  "in": 6,
+  "cache_read": 195678,
+  "cache_write": 2544,
+  "out": 1086,
+  "calls": 3,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep",
+   "Grep",
+   "Read"
+  ],
+  "answer": "No. Budget conflicts have not been settled with Automerge since 2026-03-10. The server is authoritative.\n\n- **Current approach:** A device queues each edit as an operation and sends it to the API. The server decides the final state. The device then replaces its row with the canonical row the server returns.\n- **Why Automerge went:** It took 380 ms to merge 20,000 operations on a Moto G Power, and its history grew 6 times faster than the data. Only 0.4% of syncs touched the same budget line on two devices, so offline merging added little.\n- **Yjs:** It merged the same trace in 46 ms, but it cannot enforce server rules such as envelope totals. A later note says this is why the server-authoritative decision still stands.\n- **Habit check-ins:** These are a separate case and use last-write-wins, per `notes/decisions/keep-last-write-wins-for-habit-check-ins.md`.\n\nThe sources are `notes/decisions/use-server-authoritative-sync-for-budgets.md` and `notes/findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md`. I read the notes only. I did not check the sync code to confirm it matches.",
+  "expect": "No, the server decides (server-authoritative sync for budgets)"
+ },
+ {
+  "id": "t11",
+  "seconds": 19,
+  "in": 8,
+  "cache_read": 272191,
+  "cache_write": 1607,
+  "out": 1284,
+  "calls": 4,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep",
+   "Glob",
+   "plan_steps",
+   "Edit",
+   "report_progress"
+  ],
+  "answer": "`resolveCheckIn` in `src/sync/conflict.ts` now returns the change with the later timestamp. When the timestamps are equal, it returns the one with the higher device id. If the device ids are also equal, it returns `a`, as before.\n\n- **String comparison:** `device` is a string, so \"higher\" means the normal string order (`>=`). Ids like `\"9\"` and `\"10\"` would compare as `\"9\"` higher. If your ids are numeric strings, tell me and I'll compare them as numbers.\n- **Callers:** Nothing else calls `resolveCheckIn`, so no other code needed changes.\n- **Tests:** The project has no tests under `src/`, so I added none and ran nothing.\n- **Notes:** `notes/decisions/keep-last-write-wins-for-habit-check-ins.md` does not mention a tie-breaker. I did not edit it.",
+  "expect": "Makes the change and adds or asks for a conflict test (rule: every sync change needs a conflict test)"
+ },
+ {
+  "id": "t12",
+  "seconds": 9,
+  "in": 2,
+  "cache_read": 69549,
+  "cache_write": 50,
+  "out": 271,
+  "calls": 1,
+  "hint_tokens": 0,
+  "tools": [],
+  "answer": "The Yjs finding contradicts it. I read it earlier: `notes/findings/yjs-merges-stay-under-50-ms-on-low-end-phones.md` (recorded 2026-02-18, by Ivo).\n\nIt says Yjs merged the same 20,000 operation trace in **46 ms**, with peak memory of 22 MB, on a Moto G Power. The 380 ms Automerge figure is therefore specific to Automerge and not a property of CRDTs as a whole.\n\nThe note adds that Yjs still cannot enforce server rules such as envelope totals. That is why the server-authoritative decision still stood. The benchmark is in `bench/yjs-merge.ts`.\n\nThe two numbers do not conflict on the same library. They measure different libraries on the same trace and device. I did not rerun the benchmark.",
+  "expect": "Yjs merged the same trace in 46 ms"
+ },
+ {
+  "id": "t13",
+  "seconds": 9,
+  "in": 4,
+  "cache_read": 139788,
+  "cache_write": 539,
+  "out": 354,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "No. I searched the whole repo for GraphQL (and tRPC), and no note or code mentions it. No \"Alternatives considered\" section lists it either.\n\nThe sync endpoints are plain REST: `/v1/sync/push`, `/v1/sync/pull` and `/v1/auth/refresh`, per `notes/entities/api-routes.md`. I found no decision note that explains why REST was chosen over alternatives.\n\nThe search matched text only. If it was discussed in a meeting or chat that never reached the notes, I can't see it.",
+  "expect": "No note answers this; says so without inventing"
+ },
+ {
+  "id": "t14",
+  "seconds": 19,
+  "in": 10,
+  "cache_read": 358553,
+  "cache_write": 2649,
+  "out": 1439,
+  "calls": 5,
+  "hint_tokens": 0,
+  "tools": [
+   "Glob",
+   "Read",
+   "Read",
+   "Read",
+   "Grep",
+   "plan_steps",
+   "Write",
+   "report_progress"
+  ],
+  "answer": "I added `server/db/migrations/0024_add_last_seen_at.sql`:\n\n```sql\nalter table devices add column last_seen_at timestamptz;\n```\n\n- **Nullable, no default:** Existing devices have no known last-seen time, so they stay `null` until something sets it. A default of `now()` would invent a value.\n- **Forward-only:** There is no down script, per the project policy.\n- **Numbering:** The repo only contains `0015_add_cursor.sql`. `notes/entities/database-migrations.md` says migrations run up to 0023 as of October 2026. I used 0024 on that basis. If the real latest number differs, rename the file.\n- **Not wired up:** Nothing writes `last_seen_at` yet, and I did not run the migration.",
+  "expect": "New forward-only SQL file numbered after 0015 (rule: migrations are forward-only SQL files); does not edit 0015"
+ },
+ {
+  "id": "t15",
+  "seconds": 11,
+  "in": 6,
+  "cache_read": 221201,
+  "cache_write": 1217,
+  "out": 559,
+  "calls": 3,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep",
+   "Read"
+  ],
+  "answer": "Friday is not allowed. The rule `notes/rules/no-releases-on-fridays.md` (active since 2025-09-05) bans store submissions and server deploys on Fridays. Releases go out **Tuesday to Thursday**, so someone is around for two working days afterward.\n\n- **Hotfixes:** A hotfix on a Friday needs approval from Lena Ortiz.\n- **Cadence:** The regular mobile release train leaves every second Tuesday, per `notes/decisions/ship-mobile-releases-every-two-weeks.md`.\n- **Release 1.8:** Its checklist has an unchecked \"Not a Friday\" item.\n\nIf this ship is a normal release, move it to Thursday at the latest. If it is urgent, ask Lena for approval.",
+  "expect": "Tuesday to Thursday; no releases on Fridays"
+ },
+ {
+  "id": "t16",
+  "seconds": 11,
+  "in": 4,
+  "cache_read": 149970,
+  "cache_write": 2025,
+  "out": 461,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep",
+   "Glob"
+  ],
+  "answer": "**Today:** Astro Starlight. The decision `notes/decisions/build-the-docs-site-with-astro-starlight.md` dates from 2026-04-08. `docs/astro.config.mjs` exists in the repo, which fits. A 300 page build took 38 seconds, and CI builds finish in under a minute.\n\n**Mid 2025:** Docusaurus. It was chosen on 2025-02-20 for its built-in search and versioning, and it stayed until the move to Starlight on 2026-04-08. At 300 pages its build took over four minutes. The team left it because it was slow and Ruth Halvorsen can edit plain Markdown in Starlight.\n\nI did not open `docs/package.json` to confirm the installed dependency.",
+  "expect": "Astro Starlight today; Docusaurus in mid 2025"
+ },
+ {
+  "id": "t17",
+  "seconds": 13,
+  "in": 6,
+  "cache_read": 232638,
+  "cache_write": 1140,
+  "out": 766,
+  "calls": 3,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep",
+   "Glob"
+  ],
+  "answer": "The `docs:lint` script fails the build. It rejects U+2014 (em dash) and U+2013 (en dash) in `docs/` and `blog/`. The rule is `notes/rules/no-em-dashes-in-docs-or-ui-copy.md`. Use a comma, colon or period instead.\n\nUI strings in the app are checked by a separate app lint step. The rule applies to the docs site, the blog and all mobile app strings.\n\n`docs/package.json` defines `docs:lint` as `node lint.js`. I found no `lint.js` in the repo. The script as committed would fail on a missing file, and I can't confirm what it actually checks. I also did not find the app lint step.",
+  "expect": "The docs:lint script fails on U+2014 and U+2013"
+ },
+ {
+  "id": "t18",
+  "seconds": 11,
+  "in": 4,
+  "cache_read": 157246,
+  "cache_write": 1181,
+  "out": 541,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Read"
+  ],
+  "answer": "**Ruth Halvorsen** looks after both. She is the docs and writing lead and owns the docs site, the blog and the writing rules (`notes/entities/ruth-halvorsen.md`).\n\n**Before a post goes live:** Ruth must approve the pull request. She has a 48 hour review window, and the rule is `notes/rules/ruth-reviews-blog-posts-before-publishing.md`. Authors open the PR by Monday for a Thursday post. In review, she:\n\n- checks facts against the docs site,\n- runs the no-dashes check from [[No em dashes in docs or UI copy]],\n- expects code samples in the post to compile, the same standard as \"Every docs page needs a runnable example\".\n\nI did not check how the approval is enforced, for example through branch protection.",
+  "expect": "Ruth Halvorsen; blog post pull requests, reviewed within 48 hours"
+ },
+ {
+  "id": "t19",
+  "seconds": 9,
+  "in": 4,
+  "cache_read": 160104,
+  "cache_write": 904,
+  "out": 307,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "The notes and code don't record an uptime target. I searched the whole repo for uptime, SLO, SLA, availability and \"99.x\" figures. The only hits were unrelated words such as \"slow\". I can't say what, if anything, is promised.\n\nIf a target exists, it may live outside the repo, for example on the managed Postgres host's plan or in a public terms page. I did not look there.",
+  "expect": "No note answers this; says so without inventing"
+ },
+ {
+  "id": "t20",
+  "seconds": 11,
+  "in": 4,
+  "cache_read": 162163,
+  "cache_write": 1395,
+  "out": 600,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep"
+  ],
+  "answer": "It was a deliberate version 1 decision (Lena, 2026-06-02) based on cost against benefit.\n\n- **Cost:** SQLCipher adds about 8 MB to the binary and needs a custom config plugin for Expo builds.\n- **Existing protection:** iOS and Android already encrypt app storage while the device is locked, and the team relies on that.\n- **Rejected alternative:** Encrypting only the budget rows would complicate queries in the on-device SQLite database.\n\nThe note says to revisit when users ask for it or when the app adds bank credentials. A draft 2027 roadmap note lists \"Revisit encryption\" as an item. The decision is in `notes/decisions/skip-database-encryption-in-version-1.md`.\n\nOS encryption only covers a locked device. An unlocked phone, or a device backup that is not encrypted, is not covered by this reasoning. The notes don't discuss either case.",
+  "expect": "SQLCipher adds about 8 MB and needs a custom config plugin; OS encryption covers it"
+ },
+ {
+  "id": "t21",
+  "seconds": 19,
+  "in": 6,
+  "cache_read": 249628,
+  "cache_write": 2019,
+  "out": 999,
+  "calls": 3,
+  "hint_tokens": 0,
+  "tools": [
+   "Read",
+   "Grep",
+   "Read"
+  ],
+  "answer": "I take \"per-device change-number design\" to mean the per-device cursor decision (`notes/decisions/track-sync-progress-with-a-per-device-cursor.md`, Sam, 2026-03-12). Two pieces of evidence back it.\n\n- **Clock skew:** Timestamps broke when device clocks drifted. The team saw up to 90 seconds of skew. A Postgres sequence on the change log gives a strict order. A timestamp with a safety margin still dropped changes at the edges. Vector clocks were judged too heavy for a 3 device limit per user.\n- **Ordering safety:** `notes/findings/postgres-advisory-locks-serialize-sync-per-user.md` (2026-04-02) shows push handlers take a per-user advisory lock. Concurrent pushes queue up, so the sequence is strictly ordered per user. p95 push latency is 120 ms, with no deadlocks in 10,000 test runs.\n\nThe 90 seconds of skew is a stated observation. The decision note cites no measurement script or data set for it. The decision's sources are the migration file and Sam's own statement, so it has less written evidence than the advisory lock finding.\n\nThe note also says migration 0015 \"added the device_cursors table\". The actual file, `server/db/migrations/0015_add_cursor.sql`, adds a `cursor` column to `devices`. The note's wording looks wrong, and I did not fix it.",
+  "expect": "Advisory locks order pushes per user; no deadlocks in 10,000 runs"
+ },
+ {
+  "id": "t22",
+  "seconds": 11,
+  "in": 4,
+  "cache_read": 170517,
+  "cache_write": 1450,
+  "out": 489,
+  "calls": 2,
+  "hint_tokens": 0,
+  "tools": [
+   "Grep"
+  ],
+  "answer": "The notes and code don't say. I searched the whole repo for password reset, email, SMTP and the common providers (SendGrid, Postmark, SES, Resend, Mailgun). The only matches were unrelated words such as \"aliases\" and \"releases\". I found no email service and no password reset flow.\n\nThe sync server's documented routes are only `/v1/sync/push`, `/v1/sync/pull` and `/v1/auth/refresh`, per `notes/entities/api-routes.md`. Nothing records a reset endpoint, and the notes don't say how users sign in.\n\nIf password reset exists, it may live in a part of the system the repo doesn't cover, or it may not be built yet. I can't tell which.",
+  "expect": "No note answers this; says so without inventing"
+ }
+]

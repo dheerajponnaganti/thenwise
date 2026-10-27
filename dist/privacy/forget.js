@@ -12,6 +12,7 @@ import { takeLock } from "../hooks/hook.js";
 import { tighten } from "./perms.js";
 import { dropPrCache, ingest } from "../ingest/ingest.js";
 import { githubSlug, repoRoot } from "../ingest/repos.js";
+import { unshareForgotten } from "../teams/chats.js";
 import { sharedIds, unshare } from "../teams/client.js";
 import { writeVault } from "../vault/vault.js";
 import { loadTombs, saveTombs, sessionOf, underFolder } from "./tombstones.js";
@@ -170,6 +171,13 @@ export async function forget(cfg, target, opts = {}) {
                 }
             }
         }
+        let sharedChats = 0;
+        try {
+            sharedChats = await unshareForgotten(cfg, sessions);
+        }
+        catch (e) {
+            out(`could not unshare chats: ${e.message}`);
+        }
         const notes = readNotes(cfg.memDir).filter((n) => n.sources.some((s) => sessions.some((id) => s.includes(id)))).length;
         (opts.rewriteVault ?? rewriteVault)(cfg);
         const backups = cfg.backup.kind === 'folders' ? backup(cfg).lines : [];
@@ -178,7 +186,7 @@ export async function forget(cfg, target, opts = {}) {
         out(`  store: ${inStore} session${inStore === 1 ? '' : 's'} removed`);
         out(`  plan snapshots: ${plans.length} project${plans.length === 1 ? '' : 's'}`);
         out(`  hook state: ${state} file${state === 1 ? '' : 's'}`);
-        out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared`);
+        out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared${sharedChats ? `, ${sharedChats} shared chat${sharedChats === 1 ? '' : 's'} unshared` : ''}`);
         for (const l of backups)
             out(`  backup folders: ${l}`);
         if (notes)

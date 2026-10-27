@@ -18,7 +18,10 @@ const flat = (s) => s.replace(/\s+/g, ' ').trim();
 const offMain = (n) => n.kind === 'commit' && (n.extra?.onMain === false || !!n.extra?.unreachable);
 const isStash = (n) => n.kind === 'commit' && (!!n.extra?.stash || /^(WIP on|index on|On) [^\s:]+:/.test(n.title));
 const branchNote = (n) => (n.kind !== 'commit' ? '' : n.extra?.unreachable ? ' (no longer in git)' : n.extra?.onMain === false ? (n.extra.branch ? ` (on branch ${n.extra.branch}, not on main)` : ' (not on main)') : '');
+const owner = (n) => String(n.extra?.sharedBy ?? '');
 function sourceOf(n) {
+    if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session'))
+        return `chat of ${owner(n)}, ${localDay(n.at)} (team)`;
     if (n.kind === 'turn' || n.kind === 'summary')
         return `session ${short(n.source)} at ${local(n.at)}`;
     if (n.kind === 'pr')
@@ -40,6 +43,10 @@ export function label(g, id) {
     if (!n)
         return id;
     const d = localDay(n.at);
+    if (n.extra?.team && n.kind === 'turn')
+        return `turn of ${owner(n)} on ${d} ("${cut(flat(n.title), 60)}")`;
+    if (n.extra?.team && n.kind === 'session')
+        return `chat of ${owner(n)} (${d})`;
     if (n.kind === 'turn')
         return `turn on ${d} ("${cut(flat(n.title), 60)}")`;
     if (n.kind === 'summary')
@@ -406,7 +413,7 @@ function grouped(items) {
 }
 export function resume(g, q = '') {
     const terms = queryTerms(q);
-    const sessions = g.ofKind('session').filter((n) => g.inScope(n));
+    const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team);
     let ses;
     let how = 'the newest session';
     const key = words(q).join('-');
@@ -477,10 +484,17 @@ const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest rele
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
  * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
 export function resumeShort(g, days = 7, now = Date.now()) {
-    const ses = g.ofKind('session').filter((n) => g.inScope(n)).sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0];
+    const ses = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team).sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0];
     const end = ses ? ms(ses.until || ses.at) : NaN;
-    if (!ses || !(now - end <= days * 864e5))
-        return '';
+    const recent = !!ses && now - end <= days * 864e5;
+    // Teammates' chats of this project since the last session here (or this week, with none).
+    const mates = new Map();
+    for (const n of g.ofKind('session'))
+        if (n.extra?.team && g.inScope(n) && ms(n.until || n.at) > (recent ? end : now - days * 864e5))
+            mates.set(owner(n), (mates.get(owner(n)) ?? 0) + 1);
+    const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : '';
+    if (!recent)
+        return team;
     const first = g.bySource(ses.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0];
     const out = [`last session here: ${local(ses.until || ses.at)} (${ses.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses.title), 140)}"`];
     const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > end).sort((a, b) => ms(b.at) - ms(a.at));
@@ -492,6 +506,8 @@ export function resumeShort(g, days = 7, now = Date.now()) {
     const open = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN').sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 3);
     if (open.length)
         out.push(`open PRs: ${open.map((n) => label(g, n.id)).join('; ')}`);
+    if (team)
+        out.push(team);
     return cut(out.join('\n'), 800);
 }
 /** Up to three one-line pointers for a prompt, or '' when the match is weak: the best match must cover half the query
@@ -504,7 +520,7 @@ export function pointers(g, q) {
     return s.good
         .filter((h) => !seen.has(h.node.id) && !!seen.add(h.node.id))
         .slice(0, 3)
-        .map((h) => `[${h.node.kind}] ${h.node.id} (${localDay(h.node.at)}): ${cut(flat(excerpt(h.shown, 220, [], h.idf)).replace(/\*\*/g, ''), 110)}`)
+        .map((h) => `[${h.node.kind}] ${h.node.id} (${localDay(h.node.at)}${h.node.extra?.team ? `, ${owner(h.node)}` : ''}): ${cut(flat(excerpt(h.shown, 220, [], h.idf)).replace(/\*\*/g, ''), 110)}`)
         .join('\n');
 }
 /** Up to three shortest paths of at most four hops, found one at a time with the used middle nodes removed. */

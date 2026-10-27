@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.17
+
+Shared project chats: a teammate's chats join your memory when they share a project.
+
+- Share a project's chats: `thenwise team share-chats <repo>` shows a preview first (counts, size, dates, three masked passages, what stays home), then sends the project's chats as masked passages: prompts and replies only, never raw transcripts, tool output, subagent reports or file contents. Home and project paths in the text become `~` and repo-relative, a redact list (`team.redact`) removes words before anything leaves, and a long chat keeps its newest turns. `team unshare-chats <project or session>` takes them back, `--pause` stops new chats, `team shares` shows what you share, and `forget` also removes a shared chat from the server.
+- Teammates' chats in your memory: each sync fetches them into a private cache (`team-chats.db`), and they join search like your own chats, scoped to your checkout of the project and named as theirs (`chat of alice, 2026-10-20 (team)`). Dead ends travel with their sentence. The startup brief counts teammates' new chats in the project. Search, hooks and tools stay local; only the sync talks to the server.
+- Team server: schema 4 with shared chats, passages, search, tombstones and retention; new routes under `/v1` (`/chats`, `/chat-tombs`, `/shared-projects`, `/chat-settings`, `/chats/search`) in `openapi.json` 1.1, with every v1 route unchanged. An admin or retention unshare sticks until the owner shares again on purpose. Member and up may share, every role may read, Hub reads are audited, a member may share up to 200 MB, and deletion removes rows, search entries and read counts.
+- Opening a store runs no git: each repo's GitHub slug is stored at ingest.
+- README: no telemetry, what masking catches, what Thenwise keeps and leaves out, speed, team security, common questions and platforms; a new plate, the sieve; the teams plate shows a shared project's chats; the promise reads "Chats stay home unless you share a project. Raw transcripts never travel."
+
 ## 0.1.16
 
 A new README, drawn as a geological survey of your repository.

@@ -10,7 +10,8 @@ import { parseTrailers, readNotes } from "../capture/notes.js";
 import { globMatch } from "./config.js";
 import { skipReason } from "../vault/user.js";
 import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from "./deadend.js";
-import { repoRoot } from "./repos.js";
+import { githubSlug, repoRoot } from "./repos.js";
+import { readChats } from "../teams/chatcache.js";
 import { normalizePath } from "./transcript.js";
 export const GENERATED = 'Memory v2/Generated/';
 export const under = (p, root) => ((p, root) => p === root || p.startsWith(`${root}/`))(normPath(p), normPath(root));
@@ -23,6 +24,8 @@ export const fullNode = (n) => {
     const o = { title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n };
     o.title = maskSecrets(o.title).text;
     o.text = maskSecrets(o.text).text;
+    if (Array.isArray(o.extra.passages))
+        o.extra = { ...o.extra, passages: o.extra.passages.map((p) => maskSecrets(String(p)).text) };
     return o;
 };
 /** A chat is a test chat when its first prompt starts or ends with a marker, or any prompt holds one alone on a line. */
@@ -449,6 +452,63 @@ export function teamPart(cfg) {
         const n = notes[key];
         const at = iso(Number(n.updated_at) || 0);
         out.nodes.push(fullNode({ id: `team:${key}`, kind: 'team', title: String(n.title ?? ''), text: String(n.text ?? ''), at, until: n.status === 'superseded' ? at : '', project: String(n.project ?? ''), source: `team:${n.owner}`, extra: { kind: n.kind, sharedBy: n.owner, status: n.status, ...(n.superseded_by ? { supersededBy: n.superseded_by } : {}) } }));
+    }
+    return out;
+}
+/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one whose folder is. */
+export function checkoutOf(project, repos) {
+    return repos.find((r) => githubSlug(r) === project) ?? repos.find((r) => basename(r) === project);
+}
+/** Session ids this machine holds itself (archived): a teammate's copy of the same chat is dropped, our own records win. */
+function ownSessions(cfg) {
+    try {
+        return new Set(Object.keys(JSON.parse(readFileSync(join(cfg.memDir, 'archive', 'manifest.json'), 'utf8'))).map((rel) => (rel.split('/')[1] ?? '').replace(/\.jsonl$/, '')));
+    }
+    catch {
+        return new Set(); // no archive yet
+    }
+}
+export const teamChats = (cfg) => {
+    const own = ownSessions(cfg);
+    return readChats(cfg.memDir).filter((c) => !own.has(c.session));
+};
+/** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,
+ * with `part_of` edges and links to this machine's checkout of the project's files. Commit and PR links come from teamClaims. */
+export function teamChatsPart(cfg, repos = cfg.repos, chats = teamChats(cfg)) {
+    const out = { nodes: [], edges: [] };
+    const checkouts = new Map();
+    for (const c of chats) {
+        if (!checkouts.has(c.project))
+            checkouts.set(c.project, checkoutOf(c.project, repos));
+        const repo = checkouts.get(c.project);
+        const sid = `tses:${c.owner}/${c.session}`;
+        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project } }));
+        for (const t of c.turns) {
+            const at = iso(t.at);
+            const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`;
+            const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {};
+            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...dead } }));
+            out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} });
+            if (repo)
+                for (const p of t.paths)
+                    out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} });
+        }
+    }
+    return out;
+}
+/** The commit shas and PR urls teammates' turns name, to resolve like a chat's own claims. */
+export function teamClaims(cfg, chats = teamChats(cfg)) {
+    const out = new Map();
+    const add = (c) => out.set(c.node, [...(out.get(c.node) ?? []), c]);
+    for (const c of chats) {
+        for (const t of c.turns) {
+            const node = `tturn:${c.owner}/${t.id}`;
+            const at = iso(t.at);
+            for (const v of t.shas)
+                add({ node, kind: 'sha', val: v, at, turnAt: at });
+            for (const v of t.prs)
+                add({ node, kind: 'url', val: v, at, turnAt: at });
+        }
     }
     return out;
 }

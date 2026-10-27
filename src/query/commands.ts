@@ -24,7 +24,9 @@ const offMain = (n: Node) => n.kind === 'commit' && (n.extra?.onMain === false |
 const isStash = (n: Node) => n.kind === 'commit' && (!!n.extra?.stash || /^(WIP on|index on|On) [^\s:]+:/.test(n.title))
 const branchNote = (n: Node) => (n.kind !== 'commit' ? '' : n.extra?.unreachable ? ' (no longer in git)' : n.extra?.onMain === false ? (n.extra.branch ? ` (on branch ${n.extra.branch}, not on main)` : ' (not on main)') : '')
 
+const owner = (n: Node) => String(n.extra?.sharedBy ?? '')
 function sourceOf(n: Node): string {
+  if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `chat of ${owner(n)}, ${localDay(n.at)} (team)`
   if (n.kind === 'turn' || n.kind === 'summary') return `session ${short(n.source)} at ${local(n.at)}`
   if (n.kind === 'pr') return `PR #${n.id.split('#').pop()} ${n.extra.url ?? n.source}${n.until ? `, merged ${n.until}` : `, ${n.extra.state ?? 'open'}`}`
   if (n.kind === 'commit') return `commit ${n.id.split(':').pop()!.slice(0, 7)} in ${n.project}${branchNote(n)}`
@@ -38,6 +40,8 @@ export function label(g: Graph, id: string): string {
   const n = g.nodes.get(id)
   if (!n) return id
   const d = localDay(n.at)
+  if (n.extra?.team && n.kind === 'turn') return `turn of ${owner(n)} on ${d} ("${cut(flat(n.title), 60)}")`
+  if (n.extra?.team && n.kind === 'session') return `chat of ${owner(n)} (${d})`
   if (n.kind === 'turn') return `turn on ${d} ("${cut(flat(n.title), 60)}")`
   if (n.kind === 'summary') return `compaction summary on ${d}`
   if (n.kind === 'session') return `session ${short(n.id)} (${d})`
@@ -390,7 +394,7 @@ function grouped(items: { date: string; text: string }[]): string[] {
 
 export function resume(g: Graph, q = ''): string {
   const terms = queryTerms(q)
-  const sessions = g.ofKind('session').filter((n) => g.inScope(n))
+  const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team)
   let ses: Node | undefined
   let how = 'the newest session'
   const key = words(q).join('-')
@@ -455,17 +459,23 @@ const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest rele
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
  * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
 export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
-  const ses = g.ofKind('session').filter((n) => g.inScope(n)).sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0]
+  const ses = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team).sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0]
   const end = ses ? ms(ses.until || ses.at) : NaN
-  if (!ses || !(now - end <= days * 864e5)) return ''
-  const first = g.bySource(ses.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0]
-  const out = [`last session here: ${local(ses.until || ses.at)} (${ses.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses.title), 140)}"`]
+  const recent = !!ses && now - end <= days * 864e5
+  // Teammates' chats of this project since the last session here (or this week, with none).
+  const mates = new Map<string, number>()
+  for (const n of g.ofKind('session')) if (n.extra?.team && g.inScope(n) && ms(n.until || n.at) > (recent ? end : now - days * 864e5)) mates.set(owner(n), (mates.get(owner(n)) ?? 0) + 1)
+  const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : ''
+  if (!recent) return team
+  const first = g.bySource(ses!.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0]
+  const out = [`last session here: ${local(ses!.until || ses!.at)} (${ses!.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses!.title), 140)}"`]
   const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > end).sort((a, b) => ms(b.at) - ms(a.at))
   if (commits.length) out.push(`commits since: ${commits.length}, newest ${commits.slice(0, 3).map((n) => label(g, n.id)).join('; ')}`)
   const merged = g.ofKind('pr').filter((n) => g.inScope(n) && n.until && ms(n.until) > end).slice(0, 3)
   if (merged.length) out.push(`merged since: ${merged.map((n) => label(g, n.id)).join('; ')}`)
   const open = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN').sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 3)
   if (open.length) out.push(`open PRs: ${open.map((n) => label(g, n.id)).join('; ')}`)
+  if (team) out.push(team)
 
   return cut(out.join('\n'), 800)
 }
@@ -480,7 +490,7 @@ export function pointers(g: Graph, q: string): string {
   return s.good
     .filter((h) => !seen.has(h.node.id) && !!seen.add(h.node.id))
     .slice(0, 3)
-    .map((h) => `[${h.node.kind}] ${h.node.id} (${localDay(h.node.at)}): ${cut(flat(excerpt(h.shown, 220, [], h.idf)).replace(/\*\*/g, ''), 110)}`)
+    .map((h) => `[${h.node.kind}] ${h.node.id} (${localDay(h.node.at)}${h.node.extra?.team ? `, ${owner(h.node)}` : ''}): ${cut(flat(excerpt(h.shown, 220, [], h.idf)).replace(/\*\*/g, ''), 110)}`)
     .join('\n')
 }
 

@@ -13,10 +13,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { parseTrailers, syncTrailers } from "../capture/notes.js";
 import { fillSynonyms, keepWord, toks } from "../query/language.js";
-import { noteKeys, splitPassages } from "../query/passages.js";
-import { DERIVED, STORE_FORMAT, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from "./ingest.js";
+import { noteKeys, passagesOf } from "../query/passages.js";
+import { DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from "./ingest.js";
 import { plansPart } from "./plans.js";
-import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamPart } from "./parts.js";
+import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
 import { discoverRepos } from "./repos.js";
 const SESSION_KINDS = ['part_of', 'read', 'edited', 'ran_in', 'continued_from'];
 const LABELLED = new Set(['note', 'section', 'commit', 'pr']);
@@ -74,7 +74,7 @@ class Store {
         this.run('INSERT INTO nodes_fts(rowid, title, text) VALUES (?, ?, ?)', rowid, n.title, n.text);
         this.run('INSERT INTO titles_fts(rowid, title) VALUES (?, ?)', rowid, [n.title, ...noteKeys(n.kind, extra)].join(' '));
         if (n.kind !== 'file') {
-            const parts = splitPassages(n.text || n.title || '');
+            const parts = passagesOf(n.text, n.title, extra);
             const k = noteKeys(n.kind, extra);
             if (k.length)
                 parts.push(k.join('\n'));
@@ -303,6 +303,8 @@ function update(db, cfg, opts, dbPath) {
     S.applyLayer(['note:'], ['part_of', 'links_to'], notesPart(cfg));
     S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg));
     S.applyLayer(['team:'], [], teamPart(cfg));
+    const teamIn = teamChats(cfg);
+    S.applyLayer(['tses:', 'tturn:', 'tsum:'], ['part_of', 'read'], teamChatsPart(cfg, repos, teamIn));
     S.applyLayer(['doc:', 'rule:'], ['part_of'], docsPart(cfg));
     S.applyLayer(['mem:'], [], memoryPart(cfg, S.all("SELECT DISTINCT project FROM nodes WHERE kind = 'session'").map((r) => r.project), opts.memoryFrom));
     S.applyLayer(['plan:'], [], plansPart(cfg));
@@ -360,6 +362,14 @@ function update(db, cfg, opts, dbPath) {
                 claims.push({ node: id, kind, val, at, turnAt });
         S.setEdges(id, ['made', 'opened'], resolveClaims(claims, look));
     }
+    // Teammates' turns: commit and PR links are worked out whole each run (few turns name any).
+    const teamBy = teamClaims(cfg, teamIn);
+    for (const r of S.all("SELECT DISTINCT src FROM edges WHERE src >= 'tturn:' AND src < 'tturn;' AND kind IN ('made','opened')"))
+        if (!teamBy.has(r.src))
+            teamBy.set(r.src, []);
+    for (const [id, cl] of teamBy)
+        if (S.exists(id))
+            S.setEdges(id, ['made', 'opened'], resolveClaims(cl, look));
     for (const k of S.keys) {
         const [type, val] = k.split('\0');
         for (const r of S.all('SELECT DISTINCT node FROM refs WHERE type = ? AND val = ?', type, val))
@@ -390,7 +400,7 @@ function update(db, cfg, opts, dbPath) {
     const n = {};
     for (const r of S.all('SELECT status, count(*) c FROM ingest_files GROUP BY status'))
         n[r.status] = r.c;
-    const meta = { sessions_in_scope: n.in ?? 0, sessions_out_of_scope: n.out ?? 0, excluded_eval_projects: skipped + (n.marker ?? 0), excluded_entrypoint: n.entry ?? 0, after_cutoff: n.empty ?? 0, format: STORE_FORMAT };
+    const meta = { sessions_in_scope: n.in ?? 0, sessions_out_of_scope: n.out ?? 0, excluded_eval_projects: skipped + (n.marker ?? 0), excluded_entrypoint: n.entry ?? 0, after_cutoff: n.empty ?? 0, format: STORE_FORMAT, slugs: slugsOf(repos) };
     for (const [k, v] of Object.entries(meta))
         S.run('INSERT OR REPLACE INTO meta VALUES (?,?)', k, String(v));
     return { db: dbPath, sessionsIn: meta.sessions_in_scope, sessionsOut: meta.sessions_out_of_scope, excludedEval: meta.excluded_eval_projects, excludedEntrypoint: meta.excluded_entrypoint, afterCutoff: meta.after_cutoff, warnings, mode: S.writes || fresh.length || gone.length ? 'update' : 'unchanged', filesRead: fresh.length, ms: 0 };

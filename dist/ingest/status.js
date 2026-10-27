@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { prStatus } from "./prs.js";
 import { skippedDocs } from "./parts.js";
+import { sharesStatus } from "../teams/chats.js";
 import { teamStatus } from "../teams/client.js";
 export function statusLines(cfg, dbPath) {
     if (!existsSync(dbPath))
@@ -25,6 +26,9 @@ export function statusLines(cfg, dbPath) {
     out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`);
     out.push(...prStatus(cfg, repos));
     out.push(...teamStatus(cfg.memDir));
+    const sharing = sharesStatus(cfg).summary;
+    if (sharing)
+        out.push(sharing);
     const skipped = skippedDocs(cfg);
     if (skipped.length)
         out.push(`CLAUDE.md files not read (more than one folder below a root): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}. Add one with "docs" under "ingest" in config.json.`);

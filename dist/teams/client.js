@@ -7,16 +7,17 @@ import { logger } from "../core/log.js";
 import { takeLock } from "../hooks/hook.js";
 import { maskSecrets } from "../core/secrets.js";
 import { makeId, readNotes } from "../capture/notes.js";
+import { cursor, dropChat, openChatCache, putChat, setCursor } from "./chatcache.js";
 export const LABEL = 'teams preview';
 // A read is small; a share can be 100 KB over a slow link, and a timeout that is too short would retry it forever.
 const TIMEOUT_MS = { GET: 5000, PUT: 20000, DELETE: 20000 };
 const stateFile = (dir) => join(dir, 'team.json');
-function load(dir) {
+export function load(dir) {
     if (!existsSync(stateFile(dir)))
         throw new Error('not joined to a team: run `thenwise team join <url> <token>`');
     return JSON.parse(readFileSync(stateFile(dir), 'utf8'));
 }
-function save(dir, s) {
+export function save(dir, s) {
     const tmp = `${stateFile(dir)}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(s), { mode: 0o600 });
     chmodSync(tmp, 0o600);
@@ -37,11 +38,11 @@ export function checkUrl(url) {
         return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
     throw new Error(u.protocol === 'http:' ? `refused: plain http to ${u.hostname}. Use https, or a server on localhost.` : `refused: ${u.protocol} is not supported`);
 }
-async function call(s, method, path, body, headers = {}) {
-    const res = await fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(TIMEOUT_MS[method] ?? 5000) });
+export async function call(s, method, path, body, headers = {}, ms) {
+    const res = await fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(ms ?? TIMEOUT_MS[method] ?? 5000) });
     return { status: res.status, json: await res.json().catch(() => ({})) };
 }
-const errText = (json) => (typeof json?.error === 'string' ? json.error : json?.error?.message ?? '');
+export const errText = (json) => (typeof json?.error === 'string' ? json.error : json?.error?.message ?? '');
 /** Joins, or rejoins with a new token: a rejoin to the same server keeps what this machine shared and its queue. */
 export async function joinTeam(dir, url, token) {
     const old = existsSync(stateFile(dir)) ? load(dir) : undefined;
@@ -262,7 +263,66 @@ export async function fetchShared(dir) {
     renameSync(tmp, cacheFile(dir));
     if (me && !s.me)
         locked(dir, () => save(dir, { ...load(dir), me }));
-    return `${got} team note${got === 1 ? '' : 's'} fetched, ${Object.keys(cache.notes).length} held (${LABEL})`;
+    let chats = '';
+    try {
+        chats = await fetchChats(dir, s);
+    }
+    catch (e) {
+        chats = `; team chats not fetched: ${e instanceof Error ? e.message : e}`;
+    }
+    return `${got} team note${got === 1 ? '' : 's'} fetched, ${Object.keys(cache.notes).length} held${chats} (${LABEL})`;
+}
+const CHAT_PAGE = 50;
+const CHAT_TIMEOUT_MS = 60000;
+/** Teammates' shared chats into team-chats.db: tombs first (they drop chats older than the tomb), then chat units in
+ * revision order, page by page, each page saved with its cursor so an interrupted fetch resumes. A server without
+ * shared chats (404) is not an error. */
+export async function fetchChats(dir, s = load(dir)) {
+    const db = openChatCache(dir);
+    try {
+        let tombs = 0;
+        let got = 0;
+        for (let since = cursor(db, 'tombs');;) {
+            const r = await call(s, 'GET', `/chat-tombs?since=${since}&limit=500`, undefined, {}, CHAT_TIMEOUT_MS);
+            if (r.status === 404)
+                return '';
+            if (r.status !== 200)
+                throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`);
+            const rows = r.json.tombs;
+            db.exec('BEGIN');
+            for (const t of rows) {
+                const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session);
+                if (had && had.rev < t.rev)
+                    (dropChat(db, t.owner, t.session), tombs++);
+            }
+            if (rows.length)
+                setCursor(db, 'tombs', rows.at(-1).rev);
+            db.exec('COMMIT');
+            if (rows.length < 500)
+                break;
+            since = rows.at(-1).rev;
+        }
+        for (let since = cursor(db, 'chats');;) {
+            const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS);
+            if (r.status !== 200)
+                throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`);
+            const rows = r.json.chats;
+            db.exec('BEGIN');
+            for (const c of rows)
+                (putChat(db, c), got++);
+            if (rows.length)
+                setCursor(db, 'chats', rows.at(-1).rev);
+            db.exec('COMMIT');
+            if (rows.length < CHAT_PAGE)
+                break;
+            since = rows.at(-1).rev;
+        }
+        const held = Number(db.prepare('SELECT count(*) AS n FROM chats').get().n);
+        return tombs || got || held ? `; ${got} team chat${got === 1 ? '' : 's'} fetched, ${tombs} dropped, ${held} held` : '';
+    }
+    finally {
+        db.close();
+    }
 }
 export async function search(dir, q) {
     const r = await call(load(dir), 'GET', `/search?q=${encodeURIComponent(q)}`);

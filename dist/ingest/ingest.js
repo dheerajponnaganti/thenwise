@@ -16,7 +16,7 @@ import { loadTombs, underFolder } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { updateGraph } from "./incremental.js";
 import { withLock } from "./lock.js";
-import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamPart } from "./parts.js";
+import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
@@ -27,6 +27,8 @@ export { GENERATED, datedSections } from "./parts.js";
 export const STATE_VERSION = 3;
 /** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
 export const STORE_FORMAT = 1;
+/** Each repo's GitHub slug as JSON, worked out here so opening a store runs no git. */
+export const slugsOf = (repos) => JSON.stringify(Object.fromEntries(repos.map((r) => [r, githubSlug(r)]).filter(([, s]) => s).sort()));
 /** One value from a store's meta table; undefined when the store or the key is missing. */
 function storeMeta(dbPath, key) {
     const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -317,7 +319,8 @@ function fullBuild(cfg, opts, dbPath) {
     // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
     if (!opts.until)
         syncTrailers(cfg.memDir, trailerItems);
-    layers.push(curatedPart(cfg, opts.until), teamPart(cfg), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until));
+    const teamIn = opts.until ? [] : teamChats(cfg);
+    layers.push(curatedPart(cfg, opts.until), teamPart(cfg), ...(opts.until ? [] : [teamChatsPart(cfg, repos, teamIn)]), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until));
     for (const l of layers) {
         for (const n of l.nodes)
             g.node(n);
@@ -363,6 +366,11 @@ function fullBuild(cfg, opts, dbPath) {
         for (const k of new Set(cl.map((c) => `${c.kind}\0${c.kind === 'sha' ? c.val.slice(0, 7) : c.val}`)))
             claimRows.push([node, ...k.split('\0')]);
     }
+    if (!opts.until)
+        for (const [node, cl] of teamClaims(cfg, teamIn))
+            if (g.nodes.has(node))
+                for (const e of resolveClaims(cl, look))
+                    g.edge(e.src, e.dst, e.kind, e.at, e.extra);
     const refRows = [];
     for (const n of [...g.nodes.values()]) {
         const refs = extractRefs(n.kind, n.title, n.text, cfg.home);
@@ -376,7 +384,7 @@ function fullBuild(cfg, opts, dbPath) {
         if (!g.nodes.has(e.src) || !g.nodes.has(e.dst))
             (g.edges.delete(k), DERIVED.has(e.kind) || pending.push(e));
     const excludedEval = skipped + counts.marker;
-    const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT, ...(opts.until ? { until: opts.until } : {}) };
+    const meta = { sessions_in_scope: counts.in, sessions_out_of_scope: counts.out, excluded_eval_projects: excludedEval, excluded_entrypoint: counts.entry, after_cutoff: counts.empty, format: STORE_FORMAT, slugs: slugsOf(repos), ...(opts.until ? { until: opts.until } : {}) };
     const state = opts.until ? null : { signature: signatureOf(cfg), roots: rootsKey(cfg), repos, files: fileRows, owners, refs: refRows, claims: claimRows, commits: [...commits].map(([sha, c]) => [sha, c.id, c.repo, c.title, c.ms]), aliases: aliasRows, pending };
     writeDb(dbPath, g, meta, state);
     return { db: dbPath, sessionsIn: counts.in, sessionsOut: counts.out, excludedEval, excludedEntrypoint: counts.entry, afterCutoff: counts.empty, warnings, mode: 'full', filesRead: files.length, ms: 0 };

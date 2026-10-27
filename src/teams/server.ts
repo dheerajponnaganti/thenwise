@@ -13,7 +13,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { quote } from '../core/frontmatter.ts'
 import { VAULT_FORMAT } from '../vault/vault.ts'
 import { CSP, serveConsole } from './console.ts'
-import { clampInt, HttpError, ifMatch, intField, oneOf, readBody, seqOf, str, tagList } from './http.ts'
+import { CHAT_LIMITS, chatUnit, clampInt, HttpError, ifMatch, intField, oneOf, readBody, seqOf, str, tagList } from './http.ts'
+import type { ChatUnit } from './http.ts'
 import { openTeamDb, SCHEMA_VERSION } from './schema.ts'
 import { zip } from './zip.ts'
 
@@ -27,6 +28,8 @@ export const LIMITS = { reads: 600, writes: 60 }
 const DAY = 864e5
 const SESSION_MS = 14 * DAY
 const KEEP_READS_DAYS = 90
+// Shared chat text per member (decision 8).
+export const CHAT_QUOTA = 200 * 1024 * 1024
 export const ROLES = ['viewer', 'member', 'editor', 'admin', 'owner'] as const
 const KINDS = ['decision', 'dead_end', 'rule', 'finding', 'note'] as const
 const STATUSES = ['active', 'retired', 'superseded', 'pending'] as const
@@ -40,6 +43,27 @@ const newToken = () => `tw_${randomBytes(32).toString('hex')}`
 const csrfOf = (sid: string) => hash(`csrf:${sid}`).slice(0, 32)
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 const teamOf = (db: DatabaseSync) => (db.prepare('SELECT id FROM teams ORDER BY created_at LIMIT 1').get() as { id: string }).id
+
+/** The next revision: one counter for notes and chats, so a feed cursor orders everything. */
+const nextRevOf = (db: DatabaseSync) => 1 + Number((db.prepare('SELECT max(r) AS r FROM (SELECT max(rev) AS r FROM notes UNION ALL SELECT max(rev) FROM tombs UNION ALL SELECT max(rev) FROM chats UNION ALL SELECT max(rev) FROM chat_tombs)').get() as { r: number | null }).r ?? 0)
+
+/** Deletes a chat for real (passages, their FTS entries, read counts) and records a tomb so other machines drop it. */
+function dropChat(db: DatabaseSync, m: { id: string; name: string; team_id: string }, session: string, seq = 0): number {
+  const rev = nextRevOf(db)
+  for (const t of ['chat_passages', 'chats', 'chat_reads']) db.prepare(`DELETE FROM ${t} WHERE owner_id = ? AND session = ?`).run(m.id, session)
+  db.prepare('INSERT INTO chat_tombs (team_id, owner_id, owner, session, rev, seq) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, session) DO UPDATE SET rev = excluded.rev, seq = max(seq, excluded.seq)').run(m.team_id, m.id, m.name, session, rev, seq)
+
+  return rev
+}
+
+/** Unshares every chat of a project of one member; returns the sessions dropped. */
+function dropProject(db: DatabaseSync, m: { id: string; name: string; team_id: string }, project: string): { chats: number; bytes: number } {
+  const rows = db.prepare('SELECT session, bytes FROM chats WHERE owner_id = ? AND project = ?').all(m.id, project) as { session: string; bytes: number }[]
+  for (const r of rows) dropChat(db, m, r.session)
+  db.prepare('DELETE FROM shared_projects WHERE owner_id = ? AND project = ?').run(m.id, project)
+
+  return { chats: rows.length, bytes: rows.reduce((a, r) => a + r.bytes, 0) }
+}
 
 /** Shown once: only its hash is stored. `expiresAt` is in ms; the default is one year. A name a live member holds is
  * refused; a disabled member (removed with notes kept) comes back with the same id only with `again`. The first member
@@ -75,7 +99,7 @@ export function rotate(db: DatabaseSync, name: string): string {
 /** The token stops working at once. Kept notes stay under a disabled member (so the name is not reused by someone
  * else); otherwise the member and their notes go. The owner is handed over first, never removed. */
 export function removeMember(db: DatabaseSync, name: string, keepNotes = false): { removed: boolean; notes: number } {
-  const m = db.prepare('SELECT id, role FROM members WHERE name = ? AND disabled = 0').get(name) as { id: string; role: string } | undefined
+  const m = db.prepare('SELECT id, role, team_id FROM members WHERE name = ? AND disabled = 0').get(name) as { id: string; role: string; team_id: string } | undefined
   if (!m) return { removed: false, notes: 0 }
   if (m.role === 'owner') throw new Error(`${name} is the owner and cannot be removed; hand the team over first`)
   const notes = Number((db.prepare('SELECT COUNT(*) AS n FROM notes WHERE owner_id = ?').get(m.id) as { n: number }).n)
@@ -83,6 +107,9 @@ export function removeMember(db: DatabaseSync, name: string, keepNotes = false):
   if (keepNotes) db.prepare('UPDATE members SET disabled = 1, token_hash = NULL WHERE id = ?').run(m.id)
   else {
     for (const t of ['notes', 'tombs', 'note_revisions', 'note_reads']) db.prepare(`DELETE FROM ${t} WHERE owner_id = ?`).run(m.id)
+    // Their chats go with tombs, so teammates drop their copies; kept notes keep chats readable.
+    for (const c of db.prepare('SELECT session FROM chats WHERE owner_id = ?').all(m.id) as { session: string }[]) dropChat(db, { ...m, name }, c.session)
+    db.prepare('DELETE FROM shared_projects WHERE owner_id = ?').run(m.id)
     db.prepare('DELETE FROM members WHERE id = ?').run(m.id)
   }
 
@@ -175,7 +202,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
   }
   const noCookies = ['tw_session', 'tw_csrf'].map((n) => `${n}=; Path=/; SameSite=Strict; Max-Age=0`)
 
-  const nextRev = () => 1 + Number((db.prepare('SELECT max(r) AS r FROM (SELECT max(rev) AS r FROM notes UNION ALL SELECT max(rev) FROM tombs)').get() as { r: number | null }).r ?? 0)
+  const nextRev = () => nextRevOf(db)
   const owned = (me: Me, id: string) => db.prepare('SELECT * FROM notes WHERE owner_id = ? AND id = ?').get(me.id, id) as Row | undefined
   // A pending note (review queue) is seen by its owner and by admins only.
   const vis = (me: Me) => ({ sql: "(n.status != 'pending' OR n.owner_id = ? OR ?)", args: [me.id, can(me, 'admin') ? 1 : 0] })
@@ -219,7 +246,16 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     if (day === swept) return
     swept = day
     db.prepare('DELETE FROM note_reads WHERE day < ?').run(day - KEEP_READS_DAYS)
+    db.prepare('DELETE FROM chat_reads WHERE day < ?').run(day - KEEP_READS_DAYS)
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now())
+    const keep = (db.prepare('SELECT chat_retention_days AS d FROM teams WHERE id = ?').get(teamId) as { d: number | null }).d
+    if (keep) {
+      const old = db.prepare('SELECT c.owner_id AS id, c.owner AS name, c.team_id, c.session, c.bytes FROM chats c WHERE c.team_id = ? AND max(c.ended_at, c.started_at) < ?').all(teamId, now() - keep * DAY) as Row[]
+      for (const c of old) dropChat(db, c as { id: string; name: string; team_id: string }, c.session)
+      if (old.length) audit(null, 'chat.retention', 'chats', { days: keep, chats: old.length, bytes: old.reduce((a, c) => a + c.bytes, 0) })
+    }
+    // Returns freed pages to the file, so what was deleted is no longer on disk.
+    db.exec("PRAGMA incremental_vacuum; INSERT INTO chat_fts (chat_fts) VALUES ('optimize')")
   }
 
   /** A share. `match` is the revision the client last saw, or `*` for a note new to the team. `seq` is the client's own
@@ -248,6 +284,83 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
     return [200, { rev }]
   }
+  /** A chat unit as stored: turns rebuilt from their passages (metadata sits on a turn's first row). */
+  const unitOf = (c: Row, full: boolean) => {
+    const head = { owner: c.owner, session: c.session, project: c.project, rev: c.rev, started_at: c.started_at, ended_at: c.ended_at, head: c.head, mask: c.mask, bytes: c.bytes, turn_count: c.turns }
+    if (!full) return head
+    const turns: Row[] = []
+    for (const r of db.prepare('SELECT * FROM chat_passages WHERE owner_id = ? AND session = ? ORDER BY rowid').all(c.owner_id, c.session) as Row[])
+      if (r.n === 0) turns.push({ id: r.turn, at: r.at, line: r.line, kind: r.kind, passages: [r.text], paths: JSON.parse(r.paths), shas: JSON.parse(r.shas), prs: JSON.parse(r.prs), dead_end: !!r.dead_end, dead_kind: r.dead_kind, dead_text: r.dead_text })
+      else turns.at(-1)!.passages.push(r.text)
+
+    return { ...head, turns }
+  }
+  /** A chat push. `match` and `seq` work as for notes; the passages are replaced as one transaction. */
+  function putChat(me: Me, session: string, unit: ChatUnit, match: number | '*', seq = 0, reshare = false): [number, unknown] {
+    const t = db.prepare('SELECT seq FROM chat_tombs WHERE owner_id = ? AND session = ?').get(me.id, session) as { seq: number } | undefined
+    // A tomb with seq 0 was made on the server (admin, Hub, retention, member removal): only a deliberate re-share undoes it.
+    if (t && ((seq && t.seq >= seq) || (!t.seq && !reshare))) return [409, { error: { code: 'unshared', message: `${session} was unshared after this change was made` } }]
+    const cur = db.prepare('SELECT rev, bytes, updated_at FROM chats WHERE owner_id = ? AND session = ?').get(me.id, session) as Row | undefined
+    if (match === '*' ? cur : !cur || cur.rev !== match) return [409, { error: { code: 'stale', message: cur ? `the team has revision ${cur.rev} of ${session}` : `${session} is not shared` }, rev: cur?.rev ?? null, updated_at: cur?.updated_at ?? null }]
+    const have = Number((db.prepare('SELECT coalesce(sum(bytes), 0) AS b FROM chats WHERE owner_id = ?').get(me.id) as { b: number }).b) - (cur?.bytes ?? 0)
+    if (have + unit.bytes > CHAT_QUOTA) {
+      audit(me, 'chat.quota', `chat:${session}`, { bytes: unit.bytes, have })
+      throw new HttpError(413, 'quota', `shared chats are limited to ${CHAT_QUOTA / 1024 / 1024} MB per member`)
+    }
+    const rev = nextRev()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      db.prepare('DELETE FROM chat_passages WHERE owner_id = ? AND session = ?').run(me.id, session)
+      db.prepare('INSERT INTO chats (team_id, owner_id, owner, project, session, rev, seq, started_at, ended_at, head, turns, bytes, mask, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, session) DO UPDATE SET owner = excluded.owner, project = excluded.project, rev = excluded.rev, seq = excluded.seq, started_at = excluded.started_at, ended_at = excluded.ended_at, head = excluded.head, turns = excluded.turns, bytes = excluded.bytes, mask = excluded.mask, updated_at = excluded.updated_at')
+        .run(me.team_id, me.id, me.name, unit.project, session, rev, seq, unit.started_at, unit.ended_at, unit.head, unit.turns.length, unit.bytes, unit.mask, now())
+      const ins = db.prepare('INSERT INTO chat_passages (team_id, owner_id, session, turn, n, at, line, text, paths, shas, prs, dead_end, dead_kind, kind, dead_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      for (const tn of unit.turns)
+        tn.passages.forEach((text, n) => ins.run(me.team_id, me.id, session, tn.id, n, tn.at, n ? '' : tn.line, text, n ? '[]' : JSON.stringify(tn.paths), n ? '[]' : JSON.stringify(tn.shas), n ? '[]' : JSON.stringify(tn.prs), tn.dead_end ? 1 : 0, tn.dead_kind, tn.kind, tn.dead_text))
+      const fresh = !db.prepare('SELECT 1 FROM shared_projects WHERE owner_id = ? AND project = ?').get(me.id, unit.project)
+      db.prepare('INSERT INTO shared_projects (team_id, owner_id, project, since, last_push) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner_id, project) DO UPDATE SET last_push = excluded.last_push').run(me.team_id, me.id, unit.project, now(), now())
+      if (t && reshare) db.prepare('UPDATE chat_tombs SET seq = ? WHERE owner_id = ? AND session = ?').run(Math.max(seq, 1), me.id, session)
+      if (fresh) audit(me, 'project.share', `project:${unit.project}`)
+      audit(me, 'chat.share', `chat:${session}`, { turns: unit.turns.length, passages: unit.turns.reduce((a, x) => a + x.passages.length, 0), bytes: unit.bytes })
+      db.exec('COMMIT')
+    } catch (e) {
+      db.exec('ROLLBACK')
+      throw e
+    }
+
+    return [200, { rev }]
+  }
+  /** An unshare of one chat: rows, FTS entries and read counts go, a tomb stays. */
+  function delChat(me: Me, owner: { id: string; name: string; team_id: string }, session: string, match: number | '*', seq = 0): [number, unknown] {
+    const cur = db.prepare('SELECT rev, bytes, updated_at FROM chats WHERE owner_id = ? AND session = ?').get(owner.id, session) as Row | undefined
+    if (cur && match !== '*' && cur.rev !== match) return [409, { error: { code: 'stale', message: `the team has revision ${cur.rev} of ${session}` }, rev: cur.rev, updated_at: cur.updated_at }]
+    const rev = dropChat(db, owner, session, seq)
+    audit(me, owner.id === me.id ? 'chat.unshare' : 'chat.admin_unshare', `chat:${session}`, { bytes: cur?.bytes ?? 0, owner: owner.name })
+
+    return [200, { rev }]
+  }
+  const chatFeed = (me: Me, u: URL, lim: number, since: number) => {
+    const project = u.searchParams.get('project')
+    const mine = u.searchParams.get('mine') === null ? 'exclude' : oneOf(u.searchParams.get('mine'), ['exclude', 'include', 'only'], 'mine')
+    const rows = db.prepare(`SELECT * FROM chats WHERE team_id = ? AND ${mine === 'exclude' ? 'owner_id != ?' : mine === 'only' ? 'owner_id = ?' : '? IS NOT NULL'} AND rev > ? ${project === null ? '' : 'AND project = ?'} ORDER BY rev LIMIT ?`).all(me.team_id, me.id, since, ...(project === null ? [] : [project]), lim) as Row[]
+
+    const full = u.searchParams.get('full') === '1'
+
+    return rows.map((c) => unitOf(c, full))
+  }
+  /** Chats that match, the best passage of each first, with a snippet. */
+  const searchChats = (me: Me, u: URL, lim: number) => {
+    const words = (u.searchParams.get('q') ?? '').match(/[\p{L}\p{N}]+/gu)?.slice(0, 8) ?? []
+    if (!words.length) return []
+    const project = u.searchParams.get('project')
+    const owner = u.searchParams.get('owner')
+    const rows = db.prepare(`SELECT c.*, p.turn AS hit_turn, snippet(chat_fts, 0, '**', '**', '…', 24) AS snip FROM chat_fts JOIN chat_passages p ON p.rowid = chat_fts.rowid JOIN chats c ON c.owner_id = p.owner_id AND c.session = p.session WHERE chat_fts MATCH ? AND c.team_id = ? ${project === null ? '' : 'AND c.project = ?'} ${owner === null ? '' : 'AND c.owner = ?'} ORDER BY bm25(chat_fts), c.owner, c.session LIMIT 500`)
+      .all(words.map((w) => `"${w}"`).join(' '), me.team_id, ...(project === null ? [] : [project]), ...(owner === null ? [] : [owner])) as Row[]
+    const seen = new Map<string, Row>()
+    for (const r of rows) if (!seen.has(`${r.owner_id}/${r.session}`)) seen.set(`${r.owner_id}/${r.session}`, r)
+
+    return [...seen.values()].slice(0, lim).map((r) => ({ ...unitOf(r, false), turn: r.hit_turn, snippet: r.snip }))
+  }
+
   const noteBody = (n: Record<string, unknown>) => ({ title: str(n, 'title', 500), text: str(n, 'text', MAX_TEXT), project: str(n, 'project', 200), ...meta(n) })
   const meta = (n: Record<string, unknown>): Meta => ({
     ...(n.kind === undefined ? {} : { kind: oneOf(n.kind, KINDS, 'kind') }),
@@ -442,6 +555,79 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       need('curate')
 
       return [200, exportZip(me), { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="thenwise-export.zip"' }]
+    }
+    if (a === 'chat-settings' && !b) {
+      need('admin')
+      if (m === 'PATCH') {
+        const body = await readBody(req, 4096)
+        const days = body.chat_retention_days
+        if (days !== null) intField(days, 1, 3650, 'chat_retention_days')
+        db.prepare('UPDATE teams SET chat_retention_days = ? WHERE id = ?').run(days as number | null, me.team_id)
+        audit(me, 'settings.update', 'chat-settings', { chat_retention_days: days })
+      } else if (m !== 'GET') throw new HttpError(405, 'method_not_allowed', 'method not allowed')
+
+      return [200, { chat_retention_days: (db.prepare('SELECT chat_retention_days AS d FROM teams WHERE id = ?').get(me.team_id) as { d: number | null }).d }]
+    }
+    if (a === 'chat-tombs' && !b && m === 'GET') {
+      const only = oneOf(u.searchParams.get('mine') ?? 'include', ['include', 'only'], 'mine') === 'only'
+
+      return [200, { tombs: db.prepare(`SELECT owner, session, rev FROM chat_tombs WHERE team_id = ? AND rev > ? ${only ? 'AND owner_id = ?' : 'AND ? IS NOT NULL'} ORDER BY rev LIMIT ?`).all(me.team_id, since(), me.id, clampInt(u.searchParams.get('limit'), 100, 1, 500, 'limit')) }]
+    }
+    if (a === 'shared-projects') {
+      if (m === 'GET' && !b) return [200, { projects: db.prepare('SELECT m.name AS owner, s.project, s.since, s.status, s.last_push, (SELECT count(*) FROM chats c WHERE c.owner_id = s.owner_id AND c.project = s.project) AS chats, (SELECT coalesce(sum(bytes), 0) FROM chats c WHERE c.owner_id = s.owner_id AND c.project = s.project) AS bytes FROM shared_projects s JOIN members m ON m.id = s.owner_id WHERE s.team_id = ? ORDER BY m.name, s.project').all(me.team_id) }]
+      if (m === 'PATCH' && b && c && !d) {
+        need(b === me.name ? 'share' : 'admin')
+        const body = await readBody(req, 1024)
+        const status = oneOf(body.status, ['active', 'paused'], 'status')
+        const r = db.prepare('UPDATE shared_projects SET status = ? WHERE project = ? AND owner_id = (SELECT id FROM members WHERE team_id = ? AND name = ?)').run(status, c, me.team_id, b)
+        if (!r.changes) throw new HttpError(404, 'not_found', 'no such shared project')
+        audit(me, 'project.status', `project:${c}`, { status, owner: b })
+
+        return [200, { status }]
+      }
+      if (m === 'DELETE' && b && c && !d) {
+        need(b === me.name ? 'share' : 'admin')
+        const o = db.prepare('SELECT id, name, team_id FROM members WHERE team_id = ? AND name = ?').get(me.team_id, b) as { id: string; name: string; team_id: string } | undefined
+        if (!o) throw new HttpError(404, 'not_found', 'no such member')
+        const r = dropProject(db, o, c)
+        audit(me, o.id === me.id ? 'project.unshare' : 'chat.admin_unshare', `project:${c}`, { ...r, owner: o.name })
+
+        return [200, r]
+      }
+      throw new HttpError(404, 'not_found', 'no such route')
+    }
+    if (a === 'chats') {
+      if (m === 'GET' && !b) return [200, { chats: chatFeed(me, u, clampInt(u.searchParams.get('limit'), 20, 1, 50, 'limit'), since()) }]
+      if (m === 'GET' && b === 'search' && !c) return [200, { chats: searchChats(me, u, limit()) }]
+      if (m === 'GET' && b && c && !d) {
+        const row = db.prepare('SELECT * FROM chats WHERE team_id = ? AND owner = ? AND session = ?').get(me.team_id, b, c) as Row | undefined
+        if (!row) throw new HttpError(404, 'not_found', 'no such chat')
+        // A Hub reading a chat is a read of the team's chat text: counted and audited, never with the text.
+        if (me.via === 'session') {
+          db.prepare('INSERT INTO chat_reads (team_id, owner_id, session, day, count) VALUES (?, ?, ?, ?, 1) ON CONFLICT (team_id, owner_id, session, day) DO UPDATE SET count = count + 1').run(me.team_id, row.owner_id, row.session, Math.floor(now() / DAY))
+          audit(me, 'chat.read', `chat:${b}/${c}`, { bytes: row.bytes })
+        }
+
+        return [200, unitOf(row, true), { etag: `"${row.rev}"` }]
+      }
+      if (b && !c && (m === 'PUT' || m === 'DELETE')) {
+        if (!ID_RE.test(b)) throw new HttpError(400, 'bad_request', 'bad chat id')
+        need('share')
+        if (m === 'DELETE') return delChat(me, me, b, ifMatch(req.headers['if-match']), seqOf(u.searchParams.get('seq')))
+        const body = await readBody(req, CHAT_LIMITS.body)
+        const [code, json] = putChat(me, b, chatUnit(body), ifMatch(req.headers['if-match']), seqOf(body.seq), body.reshare === true)
+
+        return [code, json, code === 200 ? { etag: `"${(json as { rev: number }).rev}"` } : {}]
+      }
+      // An admin unshares a member's chat.
+      if (m === 'DELETE' && b && c && !d) {
+        need(b === me.name ? 'share' : 'admin')
+        const o = db.prepare('SELECT id, name, team_id FROM members WHERE team_id = ? AND name = ?').get(me.team_id, b) as { id: string; name: string; team_id: string } | undefined
+        if (!o) throw new HttpError(404, 'not_found', 'no such member')
+
+        return delChat(me, o, c, ifMatch(req.headers['if-match']), seqOf(u.searchParams.get('seq')))
+      }
+      throw new HttpError(404, 'not_found', 'no such route')
     }
     if (a !== 'notes') throw new HttpError(404, 'not_found', 'no such route')
 

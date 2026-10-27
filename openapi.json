@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Thenwise team server",
-    "version": "1",
+    "version": "1.1",
     "description": "API v1, frozen for the Hub. Every route but health, session and join takes `Authorization: Bearer <token>` or the tw_session cookie; writes with a cookie also send X-Thenwise-CSRF equal to the tw_csrf cookie. Errors are { error: { code, message } }. Roles, lowest to highest: viewer, member, editor, admin, owner; a refused call is 403 forbidden and is audited."
   },
   "paths": {
@@ -1190,6 +1190,585 @@
           }
         }
       }
+    },
+    "/v1/chats/{session}": {
+      "put": {
+        "summary": "Shares a chat or a new version of it, replacing its passages in one step. If-Match is the revision last seen, or * for a chat new to the team. Needs the member role. 400 names the field when the unit holds an absolute path, a cwd, more than 2000 passages or 2 MB; 413 quota above 200 MB per member.",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:#-]{0,119}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ifMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rev"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "Stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stale"
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unshares a chat: passages, search entries and read counts go, a tomb stays. Needs the member role.",
+        "parameters": [
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:#-]{0,119}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ifMatch"
+          },
+          {
+            "name": "seq",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rev"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "Stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stale"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chats": {
+      "get": {
+        "summary": "Chats of other members in revision order. Metadata and turn counts only, or with full=1 every turn and passage. since is the last revision seen. Any role.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "exclude",
+                "include",
+                "only"
+              ],
+              "default": "exclude"
+            }
+          },
+          {
+            "name": "full",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "1 adds turns and passages. Default: metadata only."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/chats/search": {
+      "get": {
+        "summary": "Chats that match q, best passage first, one row per chat, with a snippet. For the Hub; any role.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/q"
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatHitList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/chats/{owner}/{session}": {
+      "get": {
+        "summary": "One chat in full. A read through a browser session is counted and audited. Any role.",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:#-]{0,119}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Chat"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "An admin unshares a member's chat (a member's own goes through the one-segment path). Audited as chat.admin_unshare. Needs the admin role.",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:#-]{0,119}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ifMatch"
+          },
+          {
+            "name": "seq",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rev"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "Stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stale"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat-tombs": {
+      "get": {
+        "summary": "Chats unshared after a revision, in revision order.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include",
+                "only"
+              ],
+              "default": "include"
+            },
+            "description": "only: just the caller's own tombs."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatTombList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/shared-projects": {
+      "get": {
+        "summary": "Which member shares which project: chat count, bytes and last push. No text. Any role.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedProjectList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/shared-projects/{owner}/{project}": {
+      "delete": {
+        "summary": "Unshares every chat of a project of a member, with tombs. The member or an admin.",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGone"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Sets a project's status to paused or active (the owner's client calls this on pause and resume). The member or an admin.",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "paused"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/chat-settings": {
+      "get": {
+        "summary": "The team's chat settings. Needs the admin role.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Sets chat_retention_days: the daily sweep deletes chats that ended earlier, with tombs. null keeps chats until their owners unshare. Needs the admin role.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2026,6 +2605,464 @@
           "days",
           "top",
           "members"
+        ]
+      },
+      "ChatIn": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "integer"
+          },
+          "ended_at": {
+            "type": "integer"
+          },
+          "mask": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "integer"
+                },
+                "line": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "turn",
+                    "summary"
+                  ]
+                },
+                "passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 1200
+                  },
+                  "minItems": 1
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shas": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "prs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dead_end": {
+                  "type": "boolean"
+                },
+                "dead_kind": {
+                  "type": "string"
+                },
+                "dead_text": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "description": "The sentence that says what failed. Optional."
+                }
+              },
+              "required": [
+                "id",
+                "at",
+                "passages"
+              ]
+            }
+          },
+          "reshare": {
+            "type": "boolean",
+            "description": "True when the owner deliberately shares again: undoes a tomb made on the server (admin, Hub, retention). Without it such a PUT answers 409 unshared."
+          }
+        },
+        "required": [
+          "project",
+          "head",
+          "started_at",
+          "ended_at",
+          "turns"
+        ]
+      },
+      "ChatBrief": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": "integer"
+          },
+          "ended_at": {
+            "type": "integer"
+          },
+          "head": {
+            "type": "string"
+          },
+          "mask": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "turn_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "session",
+          "project",
+          "rev",
+          "started_at",
+          "ended_at",
+          "head",
+          "mask",
+          "bytes",
+          "turn_count"
+        ]
+      },
+      "Chat": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": "integer"
+          },
+          "ended_at": {
+            "type": "integer"
+          },
+          "head": {
+            "type": "string"
+          },
+          "mask": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "turn_count": {
+            "type": "integer"
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "integer"
+                },
+                "line": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "turn",
+                    "summary"
+                  ]
+                },
+                "passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 1200
+                  },
+                  "minItems": 1
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shas": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "prs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dead_end": {
+                  "type": "boolean"
+                },
+                "dead_kind": {
+                  "type": "string"
+                },
+                "dead_text": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "description": "The sentence that says what failed. Optional."
+                }
+              },
+              "required": [
+                "id",
+                "at",
+                "passages"
+              ]
+            }
+          }
+        },
+        "required": [
+          "owner",
+          "session",
+          "project",
+          "rev",
+          "started_at",
+          "ended_at",
+          "head",
+          "mask",
+          "bytes",
+          "turn_count",
+          "turns"
+        ]
+      },
+      "ChatList": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Chat"
+                },
+                {
+                  "$ref": "#/components/schemas/ChatBrief"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "chats"
+        ]
+      },
+      "ChatHit": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": "integer"
+          },
+          "ended_at": {
+            "type": "integer"
+          },
+          "head": {
+            "type": "string"
+          },
+          "mask": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "turn_count": {
+            "type": "integer"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "session",
+          "project",
+          "rev",
+          "started_at",
+          "ended_at",
+          "head",
+          "mask",
+          "bytes",
+          "turn_count",
+          "turn",
+          "snippet"
+        ]
+      },
+      "ChatHitList": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatHit"
+            }
+          }
+        },
+        "required": [
+          "chats"
+        ]
+      },
+      "ChatTombList": {
+        "type": "object",
+        "properties": {
+          "tombs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "session": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "owner",
+                "session",
+                "rev"
+              ]
+            }
+          }
+        },
+        "required": [
+          "tombs"
+        ]
+      },
+      "SharedProjectList": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "since": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "last_push": {
+                  "type": "integer"
+                },
+                "chats": {
+                  "type": "integer"
+                },
+                "bytes": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "owner",
+                "project",
+                "since",
+                "status",
+                "last_push",
+                "chats",
+                "bytes"
+              ]
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ]
+      },
+      "ProjectGone": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chats",
+          "bytes"
+        ]
+      },
+      "ChatSettings": {
+        "type": "object",
+        "properties": {
+          "chat_retention_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 3650
+          }
+        },
+        "required": [
+          "chat_retention_days"
         ]
       }
     }

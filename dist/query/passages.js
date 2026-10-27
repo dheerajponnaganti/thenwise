@@ -46,6 +46,18 @@ export function noteKeys(kind, extra) {
     return [...(Array.isArray(x.answers) ? x.answers : []), ...(Array.isArray(x.aliases) ? x.aliases : [])].filter((a) => typeof a === 'string' && !!a);
 }
 /** Create passages, passages_fts and titles_fts from the nodes table. Deterministic: nodes are read in id order. */
+/** The passages of a node: a teammate's turn keeps the ones its sharer sent, everything else is split here. */
+export function passagesOf(text, title, extra) {
+    if (extra.includes('"passages"')) {
+        try {
+            const p = JSON.parse(extra).passages;
+            if (Array.isArray(p) && p.length)
+                return [...p];
+        }
+        catch { /* fall through to a split */ }
+    }
+    return splitPassages(text || title || '');
+}
 export function buildPassageIndex(db) {
     db.exec(`CREATE TABLE passages(pid TEXT PRIMARY KEY, node TEXT NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL);
 CREATE INDEX passages_node ON passages(node, n);
@@ -54,7 +66,7 @@ CREATE VIRTUAL TABLE titles_fts USING fts5(title, tokenize='porter unicode61');`
     const ins = db.prepare('INSERT INTO passages(pid, node, n, text) VALUES (?,?,?,?)');
     for (const r of db.prepare("SELECT id, kind, title, text, extra FROM nodes WHERE kind <> 'file' ORDER BY id").all()) {
         // A node with no body (a commit with only a subject) still gets one passage: its title.
-        const parts = splitPassages(r.text || r.title || '');
+        const parts = passagesOf(r.text, r.title, r.extra);
         // Paraphrase keys (front matter `answers:` and `aliases:`) get a passage of their own, so a reworded question finds the note.
         const k = noteKeys(r.kind, r.extra);
         if (k.length)

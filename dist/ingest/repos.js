@@ -69,3 +69,13 @@ export function githubSlug(repo) {
     }).filter((r) => r.slug);
     return (remotes.find((r) => r.name === 'origin') ?? remotes[0])?.slug;
 }
+/** The repository a chat belongs to: the one holding its working folder, else the one holding the first folder it edited.
+ * A folder that no longer exists maps to no repo. */
+export function sessionRepo(cwd, editDirs = []) {
+    for (const d of [cwd, ...editDirs]) {
+        const r = d ? repoRoot(d) : undefined;
+        if (r)
+            return real(r);
+    }
+    return undefined;
+}

@@ -15,6 +15,7 @@ import type { Config } from '../ingest/config.ts'
 import { tighten } from './perms.ts'
 import { dropPrCache, ingest } from '../ingest/ingest.ts'
 import { githubSlug, repoRoot } from '../ingest/repos.ts'
+import { unshareForgotten } from '../teams/chats.ts'
 import { sharedIds, unshare } from '../teams/client.ts'
 import { writeVault } from '../vault/vault.ts'
 import { loadTombs, saveTombs, sessionOf, underFolder } from './tombstones.ts'
@@ -181,6 +182,12 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
         }
       }
     }
+    let sharedChats = 0
+    try {
+      sharedChats = await unshareForgotten(cfg, sessions)
+    } catch (e) {
+      out(`could not unshare chats: ${(e as Error).message}`)
+    }
     const notes = readNotes(cfg.memDir).filter((n) => n.sources.some((s) => sessions.some((id) => s.includes(id)))).length
 
     ;(opts.rewriteVault ?? rewriteVault)(cfg)
@@ -191,7 +198,7 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     out(`  store: ${inStore} session${inStore === 1 ? '' : 's'} removed`)
     out(`  plan snapshots: ${plans.length} project${plans.length === 1 ? '' : 's'}`)
     out(`  hook state: ${state} file${state === 1 ? '' : 's'}`)
-    out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared`)
+    out(`  team: ${shared} shared note${shared === 1 ? '' : 's'} unshared${sharedChats ? `, ${sharedChats} shared chat${sharedChats === 1 ? '' : 's'} unshared` : ''}`)
     for (const l of backups) out(`  backup folders: ${l}`)
     if (notes) out(`  ${notes} saved note${notes === 1 ? '' : 's'} cite${notes === 1 ? 's' : ''} these chats and ${notes === 1 ? 'was' : 'were'} kept; review them with: thenwise inbox`)
     const old = legacyDir(cfg.memDir)

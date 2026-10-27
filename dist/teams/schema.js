@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 // The 0.1.5 tables. A new file starts from them too, so there is one path to the current schema.
 const V0 = `CREATE TABLE IF NOT EXISTS members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
 CREATE TABLE IF NOT EXISTS notes (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY (owner, id));
@@ -59,6 +59,29 @@ const MIGRATIONS = [
       CREATE INDEX audit_at ON audit (at);
       CREATE TABLE note_reads (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, id TEXT NOT NULL, day INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (team_id, owner_id, id, day));`);
     },
+    // 3 (0.1.17): shared project chats. Passages are the engine's own pieces of a turn; chat_fts indexes them for the Hub.
+    // The revision counter is shared with notes, so one feed cursor orders everything.
+    (db) => {
+        db.exec(`ALTER TABLE teams ADD COLUMN chat_retention_days INTEGER;
+      CREATE TABLE chats (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner TEXT NOT NULL, project TEXT NOT NULL, session TEXT NOT NULL, rev INTEGER NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
+        started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL, head TEXT NOT NULL, turns INTEGER NOT NULL, bytes INTEGER NOT NULL, mask INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', updated_at INTEGER NOT NULL,
+        PRIMARY KEY (owner_id, session));
+      CREATE INDEX chats_rev ON chats (rev);
+      CREATE TABLE chat_passages (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, session TEXT NOT NULL, turn TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, line TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
+        paths TEXT NOT NULL DEFAULT '[]', shas TEXT NOT NULL DEFAULT '[]', prs TEXT NOT NULL DEFAULT '[]', dead_end INTEGER NOT NULL DEFAULT 0, dead_kind TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'turn');
+      CREATE INDEX chat_passages_chat ON chat_passages (owner_id, session);
+      CREATE VIRTUAL TABLE chat_fts USING fts5 (text, content = 'chat_passages', content_rowid = 'rowid', tokenize = 'porter unicode61 remove_diacritics 2');
+      CREATE TRIGGER chat_passages_ai AFTER INSERT ON chat_passages BEGIN INSERT INTO chat_fts (rowid, text) VALUES (new.rowid, new.text); END;
+      CREATE TRIGGER chat_passages_ad AFTER DELETE ON chat_passages BEGIN INSERT INTO chat_fts (chat_fts, rowid, text) VALUES ('delete', old.rowid, old.text); END;
+      CREATE TABLE chat_tombs (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner TEXT NOT NULL, session TEXT NOT NULL, rev INTEGER NOT NULL, seq INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, session));
+      CREATE INDEX chat_tombs_rev ON chat_tombs (rev);
+      CREATE TABLE shared_projects (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, project TEXT NOT NULL, since INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active', last_push INTEGER NOT NULL, PRIMARY KEY (owner_id, project));
+      CREATE TABLE chat_reads (team_id TEXT NOT NULL, owner_id TEXT NOT NULL, session TEXT NOT NULL, day INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (team_id, owner_id, session, day));`);
+    },
+    // 4 (0.1.19): the sentence of a dead end travels with its turn.
+    (db) => {
+        db.exec("ALTER TABLE chat_passages ADD COLUMN dead_text TEXT NOT NULL DEFAULT ''");
+    },
 ];
 /** Brings a team database to SCHEMA_VERSION. Refuses one from a newer Thenwise; returns the versions applied. */
 export function migrateTeamDb(db, now = Date.now()) {
@@ -94,6 +117,9 @@ export function openTeamDb(dir) {
         db.close();
         throw e;
     }
+    // Freed pages must return to the file for a deletion to really delete; a file older than 0.1.17 is rebuilt once.
+    if (Number(db.prepare('PRAGMA auto_vacuum').get().auto_vacuum) !== 2)
+        db.exec('PRAGMA auto_vacuum = INCREMENTAL; VACUUM');
     for (const f of ['team.db', 'team.db-wal', 'team.db-shm'])
         if (existsSync(join(dir, f)))
             chmodSync(join(dir, f), 0o600);

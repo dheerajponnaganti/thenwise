@@ -88,7 +88,7 @@ export function parseSession(text, id, home, until = '', sub = false) {
                         continue;
                     const out = textOf(b.content);
                     if (hit.kind === 'agent')
-                        out && hit.turn.reply.push(out.slice(0, 8000)); // a subagent's report to the turn that asked
+                        out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))); // a subagent's report to the turn that asked
                     else if (hit.kind === 'test')
                         hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true });
                     else if (hit.kind === 'commit')
@@ -101,7 +101,7 @@ export function parseSession(text, id, home, until = '', sub = false) {
             }
             const p = d.isMeta ? null : promptText(content);
             if (p && typeof d.uuid === 'string') {
-                turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] };
+                turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], agentReports: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] };
                 s.turns.push(turn);
             }
         }

@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.png" width="100%" alt="Thenwise. Your code has a past. Now Claude remembers it. A geological section through a repository: dated layers of chats, commits, a dead end and a decision, with a drill bore from today down to 6 October, where a specimen tag reads: cache split into eight shards."></p>
 
 <p align="center">
-  <img alt="Version 0.1.16" src="https://img.shields.io/badge/version-0.1.16-241C15">
+  <img alt="Version 0.1.17" src="https://img.shields.io/badge/version-0.1.17-241C15">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-56687A">
@@ -34,7 +34,6 @@ You will not always think to ask. Thenwise slips the right history in at the rig
 - **Open a project you touched this week** and Claude starts where you left off: the last session, and what landed since.
 - **After a compaction**, a short resume brief carries Claude straight back into the work.
 - **Open a file** and Claude learns its dead ends and decisions before it changes a line.
-- **Plans never vanish.** Every version of your [planning-with-files](https://github.com/othmanadi/planning-with-files) plans is saved before it is overwritten.
 - **Across sessions and projects**, the memory follows you.
 
 ## Measured, with the answers hidden
@@ -45,7 +44,7 @@ Sounds good. Does it hold up? We tested it the hard way.
 
 In this test, plain Claude Code could read your repositories and their git history. Without git, it gets about 13% right. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them.
 
-## Your memory never leaves home
+## Your memory stays yours
 
 A memory this deep has to be private. This one lives on your disk and nowhere else.
 
@@ -56,12 +55,31 @@ A memory this deep has to be private. This one lives on your disk and nowhere el
 | **No middleman** | No model stands between your question and your memory. Search, hooks and tools make zero network calls. |
 | **Off the record** | Put `[no-memory]` in a prompt and that whole chat is never kept. |
 | **Forgettable** | `thenwise forget` erases a chat or a whole project, and it stays gone. |
+| **Chats** | Chats stay home unless you share a project. Raw transcripts never travel. |
+| **No telemetry** | No account, no sign-up, no usage reports. Nothing phones home. |
+
+<p align="center"><img src="assets/readme/sieve.png" width="100%" alt="The sieve. A prompt, a reply, four thousand lines of tool output, a line with a Stripe key and a chat marked no-memory arrive. The prompt and reply are kept, dated; the key line is kept with the key replaced by secret masked; tool noise is not indexed, no-memory chats are never kept and paused projects are never read. No telemetry, no account, nothing phones home."></p>
+
+**What masking catches.** Masking knows the shape of AWS, GitHub, GitLab, Anthropic, OpenAI, Stripe, SendGrid, Twilio, Google, Slack, npm and Hugging Face keys, private key blocks, JWTs, passwords inside URLs and `curl -u`, and any `SECRET=`, `TOKEN=` or `api_key:` style line. It still catches a key that wraps across two lines.
 
 ## How the ground is laid
 
 <p align="center"><img src="assets/readme/section.png" width="100%" alt="A vertical section through your machine. Your chats (masked), commits and pull requests, and notes settle into one local store with layers for words, dates, links, decisions and dead ends, and files. Seven tools and quiet hooks drill into it and bring the right record up to Claude. Nothing crosses the boundary of your machine."></p>
 
 Three sources settle into one SQLite store on your disk. Search runs on full text, dates and links, with no model in the way, so an answer comes back in milliseconds and costs nothing. Claude drills in with seven tools, and a few quiet hooks bring records up on their own when the moment calls for it.
+
+### What it keeps, what it leaves out
+
+| Keeps | Leaves out |
+| --- | --- |
+| Every Claude Code chat: your prompts and Claude's replies, masked | Chats marked `[no-memory]`, and projects you pause |
+| Commits from every branch, and pull requests if you like | Tool noise in search: file dumps, long command output and images are not indexed |
+| Your CLAUDE.md files, dated, so an old rule and its replacement are told apart | Projects you leave out in `thenwise setup` |
+| Every version of your plans, and the notes folders you list | Your own notes are read, never rewritten |
+
+### Fast enough to forget
+
+Hooks answer in about 50 ms and a search takes milliseconds, so Claude never waits on its memory. In the measured round, answers came 2.4 times faster and used 40% fewer tokens than plain Claude Code digging through history on its own.
 
 ## The toolbelt
 
@@ -95,17 +113,19 @@ Write the notes any time with `thenwise vault write`.
 
 ## Teams: one memory for the whole team
 
-<p align="center"><img src="assets/readme/teams.png" width="100%" alt="Three teammates, maya, theo and ines, each keep a full memory on their own machine. Maya shares one decision: it passes a mask and reaches the team server the team runs itself, then arrives on theo's and ines's machines at their next sync, named as hers. Every machine's chats stay where they are. Thenwise Hub shows the shared catalog in a browser."></p>
+<p align="center"><img src="assets/readme/teams.png" width="100%" alt="Three teammates, maya, theo and ines, each keep a full memory on their own machine. Maya shares one decision and the chats of one project: both pass a mask and reach the team server the team runs itself, then arrive on theo\'s and ines\'s machines at their next sync, named as hers. Raw chats stay on every machine. Thenwise Hub shows the shared catalog in a browser."></p>
 
 Memory tools remember for one person. Thenwise remembers for the team.
 
 - **Your server, your rules.** One small server you run yourself. No vendor, no cloud account, no per-seat bill.
 - **Share on purpose.** Nothing leaves until someone picks a note, and every share shows a preview first.
 - **Masked on the way out.** Keys and tokens are stripped before a note leaves the machine, and again when it arrives.
-- **Chats stay home.** Raw conversations never leave anyone's laptop. Only the decisions and dead ends you choose travel.
+- **Chats stay home unless you share a project.** Raw transcripts never travel. Share a project and its chats cross as masked passages, after a preview, and one command takes them back.
+- **Core samples, on request.** Name a repo and its past conversations are cut into passages, masked, and sent to the team server. Teammates' Claude finds them like its own memory and names whose chat it was. The Hub shelves them as bound volumes.
 - **One search for everyone's past.** What teammates share joins your memory at each sync, so Claude finds it and names who shared it.
 - **A reading room in the browser.** [Thenwise Hub](https://github.com/dheerajponnaganti/thenwise-hub) shows the team's notes as a card catalog, with search, history and a review queue, on a laptop or a phone.
 - **Offline friendly.** If the server is down, shares wait in a queue and go out on their own.
+- **Locked down.** Tokens are stored only as hashes. Five roles run from owner to viewer. Every admin action lands in an audit log, an optional review queue holds new shares until an admin approves, and a backup is one command.
 
 ```
 thenwise team serve --dir ~/team --console <hub build>   # on the server
@@ -113,6 +133,8 @@ thenwise team invite alice --dir ~/team                   # prints alice's token
 thenwise team join <url> <token>                          # on alice's machine
 thenwise share <note>                                     # preview, mask, confirm, send
 thenwise team search <words>                              # everything the team shared
+thenwise team share-chats <repo path>                     # preview, mask, confirm, send a project's chats
+thenwise team unshare-chats <project or session id>       # take them back
 ```
 
 For the shortest path to a team server, the [`docker/`](docker/) kit runs the server, the Hub and Caddy with automatic certificates. [`docs/teams.md`](docs/teams.md) covers roles, invites, backups and what leaves which machine.
@@ -127,10 +149,24 @@ Start alone. Add your team when you want to.
 | **Setup** | `/plugin install`, done. | Plus `team serve` once, then `invite` and `join`. |
 | **Server, account, open port** | None of them. | Only that one server, which you own. |
 | **Where your memory lives** | Your machine. | Still your machine. Chosen notes also live on the team server. |
-| **What leaves your machine** | Nothing. | Only the notes you choose to share, masked. |
-| **Your chats** | Stay home. | Still stay home. |
+| **What leaves your machine** | Nothing. | Only the notes you choose to share, and the chats of projects you share, masked. |
+| **Your chats** | Stay home. | Still stay home, unless you share a project's chats. Then masked passages of that project's chats go to the team server. |
 | **What search covers** | Your whole history. | Your whole history, plus everything your team shared. |
 | **Cost** | Free. | Free, on hardware you already have. |
+
+## Questions people ask
+
+**Does it send my code anywhere?** No. Your code, your chats and your memory stay on your disk. The only things that ever leave are the ones you switch on: PR lookups through `gh`, `distill`, Teams, and an issue report you approve line by line.
+
+**Does it need a model or an API key?** No. No model runs inside Thenwise, so there is no key to add and no extra bill.
+
+**Does it slow Claude down?** No. Hooks take about 50 ms, search takes milliseconds, and in our measured round answers arrived 2.4 times faster.
+
+**What does it cost in tokens?** Less than going without: 40% fewer tokens per answer about the past. In a chat that needs no memory, it adds about 1%.
+
+**How does it fit with CLAUDE.md and Claude's own memory?** They hold your standing rules. Thenwise holds the history: what was decided, what was tried, and what was true on any day. It reads your CLAUDE.md files too.
+
+**Can I delete everything?** Yes. `thenwise forget` erases any chat or project for good, and `thenwise uninstall` stops it and lists every file to remove.
 
 ## Install in ten seconds
 
@@ -147,7 +183,7 @@ On Claude Code 2.1.275 or later, one line does it:
 /plugin install thenwise --marketplace dheerajponnaganti/thenwise
 ```
 
-Ships as built JavaScript, so there is nothing to compile. Needs Node 22.16 or later. Want it in your terminal too? `npm install -g thenwise`.
+Ships as built JavaScript, so there is nothing to compile. Runs on macOS, Linux and Windows, and every push passes a fresh install on all three. Needs Node 22.16 or later. Want it in your terminal too? `npm install -g thenwise`.
 
 ## First run
 
@@ -194,7 +230,7 @@ Hooks: session start syncs in the background; in a repo with a session in the la
 <details>
 <summary><b>Teams, in full</b></summary>
 
-Nothing is shared by default, and raw chats never leave the machine. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`); a removed name is never handed to someone else, and `team invite --again <name>` brings the same person back to their notes. `team members` lists everyone, `team rotate <name>` replaces a token at once, and `team pull` restores what a machine shared. If the server is down, shares wait in a queue and retry at the next session start. `team serve --console <folder>` serves a built Hub beside the API (`--allow-origin` for a Hub on another host; `--host` beyond this machine needs `--tls-behind-proxy` or `--allow-plain-http`). Admins manage roles, invites and the review queue through the API. `team backup <file>` copies the team database while the server runs, and `team restore <file>` brings it back with the server stopped. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
+Nothing is shared by default. Chats stay home unless you share a project, and raw transcripts never travel. `thenwise unshare <note>` takes a note back. Invite tokens last one year (`--days N` to change). `thenwise team remove <name>` asks whether to keep or delete that member's notes (`--keep-notes`, `--delete-notes`); a removed name is never handed to someone else, and `team invite --again <name>` brings the same person back to their notes. `team members` lists everyone, `team rotate <name>` replaces a token at once, and `team pull` restores what a machine shared. If the server is down, shares wait in a queue and retry at the next session start. `team serve --console <folder>` serves a built Hub beside the API (`--allow-origin` for a Hub on another host; `--host` beyond this machine needs `--tls-behind-proxy` or `--allow-plain-http`). Admins manage roles, invites and the review queue through the API. `team backup <file>` copies the team database while the server runs, and `team restore <file>` brings it back with the server stopped. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
 
 The server binds to 127.0.0.1. For a network, put an https reverse proxy in front of it, at the root or under a path such as `/thenwise`; the client refuses plain http except to localhost. The API is versioned under `/v1` and described in `openapi.json`.
 
@@ -214,7 +250,7 @@ Opt in to more: `"team": { "auto_share": ["decision", "dead_end"], "auto_share_p
 
 Claude Code's own chat files are only read, never changed.
 
-**What leaves the machine.** Nothing, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes you share), and an issue report you approve line by line.
+**What leaves the machine.** Nothing, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes and project chats you share), and an issue report you approve line by line.
 
 **Forget.**
 

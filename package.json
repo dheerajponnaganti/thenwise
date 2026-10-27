@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Local memory of your past Claude Code work: search, history and a resume brief. No model in retrieval.",
   "type": "module",
   "engines": {
@@ -30,7 +30,7 @@
   "author": "Dheeraj Ponnaganti",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dheerajponnaganti/thenwise.git"
+    "url": "git+https://github.com/dheerajponnaganti/thenwise.git"
   },
   "keywords": [
     "claude-code",
@@ -38,5 +38,9 @@
     "mcp",
     "plugin",
     "sqlite"
-  ]
+  ],
+  "homepage": "https://github.com/dheerajponnaganti/thenwise#readme",
+  "bugs": {
+    "url": "https://github.com/dheerajponnaganti/thenwise/issues"
+  }
 }

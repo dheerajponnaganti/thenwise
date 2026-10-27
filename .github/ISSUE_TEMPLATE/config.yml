@@ -3,3 +3,9 @@ contact_links:
   - name: README
     url: https://github.com/dheerajponnaganti/thenwise#readme
     about: Install, first run, commands and privacy.
+  - name: Questions
+    url: https://github.com/dheerajponnaganti/thenwise/discussions
+    about: Ask anything about using Thenwise.
+  - name: Security problem
+    url: https://github.com/dheerajponnaganti/thenwise/security/advisories/new
+    about: Report it privately, not as an issue.

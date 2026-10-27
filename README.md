@@ -9,7 +9,7 @@
   <br>
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
-  <a href="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml"><img alt="Tested on macOS, Linux and Windows" src="https://img.shields.io/badge/tested-macOS%20%7C%20Linux%20%7C%20Windows-56687A"></a>
+  <a href="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml"><img alt="CI on macOS, Linux and Windows" src="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/dheerajponnaganti/thenwise/discussions"><img alt="Questions welcome" src="https://img.shields.io/badge/questions-discussions-8a7f6e"></a>
   <a href="CONTRIBUTING.md"><img alt="Pull requests welcome" src="https://img.shields.io/badge/PRs-welcome-241C15"></a>
 </p>
@@ -46,9 +46,9 @@ You will not always think to ask. Thenwise slips the right history in at the rig
 
 Sounds good. Does it hold up? We tested it the hard way.
 
-<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind: 1.7 times more questions answered right (83% with Thenwise, 49% for plain Claude Code reading git, about 13% with no git), 40% fewer tokens per answer, 2.4 times faster answers (21 seconds against 50), and 2,500 chats remembered 84 seconds after install."></p>
+<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 1.3 times more questions answered right (83% with Thenwise, 63% for plain Claude Code reading git, about 13% with no git), 40% fewer tokens per answer, 2.4 times faster answers (21 seconds against 50). Teams, from a teammate's shared chats: 3.5 times more questions answered right (88% against 25%), 24% fewer tokens, 1.5 times faster (22 seconds against 33). And 2,500 chats remembered 84 seconds after install."></p>
 
-In this test, plain Claude Code could read your repositories and their git history. Without git, it gets about 13% right. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them.
+Individual: Claude answers about your own history. Teams: a teammate asks about a project they never worked on and answers from its shared chats. In both tests, plain Claude Code could read the repository and its git history. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them.
 
 ## Your memory stays yours
 
@@ -85,7 +85,7 @@ Three sources settle into one SQLite store on your disk. Search runs on full tex
 
 ### Fast enough to forget
 
-Hooks answer in about 50 ms and a search takes milliseconds, so Claude never waits on its memory. In the measured round, answers came 2.4 times faster and used 40% fewer tokens than plain Claude Code digging through history on its own.
+Hooks answer in about 50 ms and a search takes milliseconds, so Claude never waits on its memory. On your own history, answers came 2.4 times faster and used 40% fewer tokens than plain Claude Code digging through it alone.
 
 ## The toolbelt
 
@@ -119,7 +119,7 @@ Write the notes any time with `thenwise vault write`.
 
 ## Teams: one memory for the whole team
 
-<p align="center"><img src="assets/readme/teams.png" width="100%" alt="Three teammates, maya, theo and ines, each keep a full memory on their own machine. Maya shares one decision and the chats of one project: both pass a mask and reach the team server the team runs itself, then arrive on theo\'s and ines\'s machines at their next sync, named as hers. Raw chats stay on every machine. Thenwise Hub shows the shared catalog in a browser."></p>
+<p align="center"><img src="assets/readme/teams.png" width="100%" alt="Three teammates, maya, theo and ines, each keep a full memory on their own machine. Maya shares one decision and the chats of one project: both pass a mask and reach the team server the team runs itself, then arrive on theo's and ines's machines at their next sync, named as hers. Raw chats stay on every machine. Thenwise Hub shows the shared catalog in a browser."></p>
 
 Memory tools remember for one person. Thenwise remembers for the team.
 
@@ -166,9 +166,9 @@ Start alone. Add your team when you want to.
 
 **Does it need a model or an API key?** No. No model runs inside Thenwise, so there is no key to add and no extra bill.
 
-**Does it slow Claude down?** No. Hooks take about 50 ms, search takes milliseconds, and in our measured round answers arrived 2.4 times faster.
+**Does it slow Claude down?** No. Hooks take about 50 ms, search takes milliseconds, and in our tests answers arrived 1.5 to 2.4 times faster.
 
-**What does it cost in tokens?** Less than going without: 40% fewer tokens per answer about the past. In a chat that needs no memory, it adds about 1%.
+**What does it cost in tokens?** Less than going without: 24% to 40% fewer tokens per answer about the past. In a chat that needs no memory, it adds about 1%.
 
 **How does it fit with CLAUDE.md and Claude's own memory?** They hold your standing rules. Thenwise holds the history: what was decided, what was tried, and what was true on any day. It reads your CLAUDE.md files too.
 

@@ -2,3 +2,4 @@ node_modules/
 bench/out/scale-*
 dist/
 .claude/
+bench/out/manifest-owner-vault.txt

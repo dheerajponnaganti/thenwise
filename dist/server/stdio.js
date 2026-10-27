@@ -128,7 +128,7 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
                     out = `Nothing in this project; from all projects:\n${all}`;
             }
             done({ chars: out.length, found: !/^not recorded/.test(out) });
-            return text(cut(out, name === 'memory_read' ? 12000 : CAP()));
+            return text(cut(out, name === 'memory_read' ? 12000 : CAP()), /^asof needs an ISO date/.test(out));
         }
         catch (e) {
             const f = errFields(e);

@@ -242,7 +242,8 @@ function update(db, cfg, opts, dbPath) {
     const S = new Store(db, cfg.home);
     const warnings = [];
     // 1. Chats.
-    const { files, skipped } = scanSessions(cfg);
+    const { files, skipped, clashes } = scanSessions(cfg);
+    warnings.push(...clashes);
     const known = new Map(S.all('SELECT * FROM ingest_files').map((r) => [r.file, r]));
     const byFile = new Map(files.map((f) => [f.file, f]));
     const fresh = [];
@@ -267,7 +268,7 @@ function update(db, cfg, opts, dbPath) {
             S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file);
             continue;
         }
-        fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key) } : {}) });
+        fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key, sf.sfx) } : {}) });
     }
     const gone = [...known.keys()].filter((f) => !byFile.has(f));
     if (fresh.length || gone.length)
@@ -441,7 +442,7 @@ function applySessions(S, cfg, fresh, gone, byFile) {
         if (!m) {
             const sf = byFile.get(file);
             const s = parseSf(sf, readFileSync(sf.path), cfg.home);
-            m = new Map(sessionPart(s, sf.key).nodes.map((n) => [n.id, n]));
+            m = new Map(sessionPart(s, sf.key, sf.sfx).nodes.map((n) => [n.id, n]));
             loaded.set(file, m);
         }
         return m.get(node);

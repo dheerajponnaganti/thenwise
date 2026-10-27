@@ -14,7 +14,7 @@ export function loadTombs(memDir) {
 }
 export function saveTombs(memDir, t) {
     const uniq = (l) => [...new Set(l)].sort();
-    writeFileSync(`${file(memDir)}.tmp`, JSON.stringify({ sessions: uniq(t.sessions), projects: uniq(t.projects), folders: uniq(t.folders) }, null, 1), { mode: 0o600 });
+    writeFileSync(`${file(memDir)}.tmp`, JSON.stringify({ sessions: uniq(t.sessions), projects: uniq(t.projects), folders: uniq(t.folders), ...(t.chats?.length ? { chats: uniq(t.chats) } : {}) }, null, 1), { mode: 0o600 });
     renameSync(`${file(memDir)}.tmp`, file(memDir));
     chmodSync(file(memDir), 0o600);
 }
@@ -26,5 +26,5 @@ export const underFolder = (path, folder) => {
     return !!f && (p === f || p.startsWith(`${f}/`));
 };
 export function isForgotten(t, rel, cwd = '') {
-    return t.projects.includes(rel.split('/')[0]) || t.sessions.includes(sessionOf(rel)) || (!!cwd && t.folders.some((f) => underFolder(cwd, f)));
+    return t.projects.includes(rel.split('/')[0]) || t.sessions.includes(sessionOf(rel)) || !!t.chats?.includes(`${rel.split('/')[0]}/${sessionOf(rel)}`) || (!!cwd && t.folders.some((f) => underFolder(cwd, f)));
 }

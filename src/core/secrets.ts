@@ -17,6 +17,8 @@ const PATTERNS: RegExp[] = [
   /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g,
   /(?<![A-Za-z0-9])hf_[A-Za-z0-9]{30,}/g,
   /(?<![A-Za-z0-9])glpat-[A-Za-z0-9_-]{20,}/g,
+  /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g,
+  /(?<![A-Za-z0-9])ya29\.[A-Za-z0-9_.-]{20,}/g,
   // A key block cut short (the end line is in another message): mask the key text that is there.
   /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:\s*[A-Za-z0-9+/=]{16,})*/g,
 ]
@@ -27,17 +29,22 @@ const WRAPPED = /(?<![A-Za-z0-9])(?=[A-Za-z0-9_.-]{16})(?:gh[pousr]_|github_pat_
 // `curl -u user:pass`.
 const CURL_USER = /((?:\s-u|\s--user)[\s=]+["']?[^\s:"']+:)([^\s"']{3,})/g
 // The password in a URL: `postgres://user:pass@host` keeps the user and host.
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)([^\s@/]{3,})@/gi
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]*:)([^\s@/]{3,})@/gi
 // Upper-case env names ending in a secret word: `STRIPE_KEY=...`, `DB_PASSWORD=...`; Azure `AccountKey=...`.
 const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)|AccountKey|SharedAccessKey)(\s*=\s*["']?)([^\s"';]{8,})/g
 // The value after a secret-looking name: `api_key = abcd...`, `"password": "..."`, `Authorization: Bearer ...`.
 // Longer names count too: `client_secret`, `access_token`, `aws_secret_access_key`. Plain whitespace separates only
 // before `bearer`/`basic` (or after `Bearer` itself), so prose like "token expiration" keeps its words.
-const ASSIGNED = /\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?([^\s"',;]{8,})/gi
+// Docker config: `"auth": "<base64>"`.
+const DOCKER_AUTH = /("auth"\s*:\s*")([A-Za-z0-9+/=]{12,})(?=")/g
+// `<vendor>_key=`: only a token-like value (20+ characters with letters and digits), so `foreign_key: users.id` stays readable.
+const VENDOR_KEY = /(\b[a-z][\w-]*[_-]key["']?\s*[:=]\s*["']?)((?=(?:[\w-]*\d){3})(?=[\w-]*[a-z])[\w-]{20,})/gi
+// A value that names an environment variable (`process.env.API_KEY`, `${TOKEN}`) is code, not a secret.
+const ASSIGNED = /\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?((?!(?:process\.env|import\.meta\.env|os\.environ|os\.getenv|env\.|ENV\[|\$\{?[A-Za-z_]))[^\s"',;]{8,})/gi
 
 export const MASK = '[secret masked]'
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */
-export const MASK_VERSION = 5
+export const MASK_VERSION = 6
 
 export function maskSecrets(text: string): { text: string; count: number } {
   let count = 0
@@ -62,6 +69,9 @@ export function maskSecrets(text: string): { text: string; count: number } {
   })
   for (const re of PATTERNS) out = out.replace(re, () => (count++, MASK))
   out = out.replace(URL_PASSWORD, (m, head: string, pass: string) => (pass === MASK ? m : (count++, `${head}${MASK}@`)))
+  // Only a value that decodes to `user:password`, so `"auth": "required"` in a config stays readable.
+  out = out.replace(DOCKER_AUTH, (m, head: string, v: string) => (Buffer.from(v, 'base64').toString('latin1').includes(':') ? (count++, `${head}${MASK}`) : m))
+  out = out.replace(VENDOR_KEY, (_m, head: string) => (count++, `${head}${MASK}`))
   out = out.replace(CURL_USER, (m, head: string, pass: string) => (pass.startsWith('[secret') ? m : (count++, `${head}${MASK}`)))
   out = out.replace(ENV, (m, name: string, sep: string, value: string) => (value.startsWith('[secret') ? m : (count++, `${name}${sep}${MASK}`)))
   out = out.replace(ASSIGNED, (m, name: string, sep: string, bearer: string | undefined, value: string) => {

@@ -12,7 +12,7 @@ const SUBAGENT = 0.5; // weight of a subagent turn in ranking: crew briefs share
 const DUP = 0.8; // word overlap above which two passages of one session count as the same text
 const TERM_CACHE = 256; // words whose passage sets a server keeps; a long-lived one would otherwise keep every word ever asked
 const HUB = 30; // a file touched by more than this many nodes is a hub
-export const words = (q) => q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+export const words = (q) => q.toLowerCase().match(/[\p{L}\p{N}\p{So}]+/gu) ?? [];
 export const queryTerms = (q) => [...new Set(words(q).filter((w) => !STOP.has(w)))];
 const fts = (terms) => terms.map((t) => `"${t}"`).join(' OR ');
 const day = (at) => at.slice(0, 10);

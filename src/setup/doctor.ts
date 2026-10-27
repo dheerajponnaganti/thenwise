@@ -9,12 +9,15 @@ import { fileURLToPath } from 'node:url'
 import { resolveDataDir } from '../core/home.ts'
 import { logger, recentErrors } from '../core/log.ts'
 import { readConfigFile } from '../ingest/config.ts'
+import { diskRoom } from '../ingest/ingest.ts'
 
 export interface Check {
   name: string
   ok: boolean
   /** What passed, or the one line on what to fix. */
   detail: string
+  /** Passed, but worth a look: shown as `warn`. */
+  warn?: boolean
 }
 
 export function ghSignedIn(): boolean {
@@ -98,6 +101,13 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
   }
   add('store', store, 'graph.db opens', storeFix)
 
+  if (store) {
+    const room = diskRoom(join(memDir, 'graph.db'))
+    const mb = (n: number) => `${(n / 1e6).toFixed(0)} MB`
+    const short = room.free < room.need
+    checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` })
+  }
+
   add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
   add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', 'gh is not signed in (only needed for PRs). Run: gh auth login')
@@ -107,7 +117,7 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
 
 export async function doctorCommand(home: string = homedir()): Promise<number> {
   const checks = await runDoctor(home)
-  for (const c of checks) console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${c.name.padEnd(12)} ${c.detail}`)
+  for (const c of checks) console.log(`${c.warn ? 'warn' : c.ok ? 'ok  ' : 'FAIL'} ${c.name.padEnd(12)} ${c.detail}`)
   console.log(`log  ${'errors'.padEnd(12)} ${recentErrors()}`)
   if (checks.some((c) => !c.ok)) console.log('\nStuck? `thenwise report` builds an issue report you can check before sending.')
   logger('setup').info('doctor', { failed: checks.filter((c) => !c.ok).map((c) => c.name).join(',') })

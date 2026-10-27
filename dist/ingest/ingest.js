@@ -4,8 +4,8 @@
 // Deterministic: inputs are sorted and no wall-clock time is used in the graph.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync } from 'node:zlib';
 import { syncTrailers } from "../capture/notes.js";
@@ -16,7 +16,7 @@ import { loadTombs, underFolder } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { updateGraph } from "./incremental.js";
 import { withLock } from "./lock.js";
-import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
+import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges, curatedPart, docsPart, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, chatSuffix, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
@@ -26,7 +26,8 @@ export { GENERATED, datedSections } from "./parts.js";
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 export const STATE_VERSION = 3;
 /** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
-export const STORE_FORMAT = 1;
+// 2: emoji and other symbols are indexed as words.
+export const STORE_FORMAT = 2;
 /** Each repo's GitHub slug as JSON, worked out here so opening a store runs no git. */
 export const slugsOf = (repos) => JSON.stringify(Object.fromEntries(repos.map((r) => [r, githubSlug(r)]).filter(([, s]) => s).sort()));
 /** One value from a store's meta table; undefined when the store or the key is missing. */
@@ -67,7 +68,7 @@ export const sessionId = (name) => name.replace(/\.jsonl\.gz$/, '');
 /** Parses one archived chat file; a subagent file is read as turns of its parent session. */
 export function parseSf(sf, bytes, home, until = '') {
     const sub = sf.name.includes('/subagents/');
-    return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub);
+    return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub, sf.mtime);
 }
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */
 const defaultRef = (repo) => gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
@@ -129,7 +130,7 @@ export function scanSessions(cfg) {
     const files = [];
     let skipped = 0;
     if (!existsSync(dir))
-        return { files, skipped };
+        return { files, skipped, clashes: [] };
     for (const key of readdirSync(dir).sort()) {
         const kd = join(dir, key);
         if (!statSync(kd).isDirectory())
@@ -148,10 +149,22 @@ export function scanSessions(cfg) {
         for (const name of names) {
             const path = join(kd, name);
             const st = statSync(path);
-            files.push({ key, name, file: `${key}\x01${name}`, path, size: st.size, mtime: st.mtimeMs, ctime: st.ctimeMs, ino: st.ino });
+            files.push({ key, name, file: `${key}\x01${name}`, path, size: st.size, mtime: st.mtimeMs, ctime: st.ctimeMs, ino: st.ino, sfx: '' });
         }
     }
-    return { files, skipped };
+    // Two folders holding one session id: the first folder (in name order) keeps `ses:<id>`, the others get `ses:<id>@<folder>`.
+    const owner = new Map();
+    const folders = new Map();
+    for (const f of files) {
+        const id = f.name.split('/')[0].replace(/\.jsonl\.gz$/, '');
+        if (!owner.has(id))
+            owner.set(id, f.key);
+        else if (owner.get(id) !== f.key)
+            f.sfx = chatSuffix(f.key);
+        folders.set(id, (folders.get(id) ?? new Set()).add(f.key));
+    }
+    const clashes = [...folders].filter(([, k]) => k.size > 1).map(([id, k]) => `${k.size} chats share the session id ${id} (folders ${[...k].join(', ')}); the first keeps ses:${id}, the others are kept as ses:${id}@<folder>`);
+    return { files, skipped, clashes };
 }
 export function gitOut(repo, args, input) {
     try {
@@ -258,11 +271,22 @@ export function ownerRows(file, part) {
         claims.set(c.node, [...(claims.get(c.node) ?? []), c]);
     return part.nodes.map((n) => ({ node: n.id, file, len: n.text.length, data: JSON.stringify({ e: (edges.get(n.id) ?? []).map((e) => [e.dst, e.kind, e.at, e.extra]), c: (claims.get(n.id) ?? []).map((c) => [c.kind, c.val, c.at, c.turnAt]) }) }));
 }
+/** Free and needed bytes for a rebuild of the store at `dbPath`: a rebuild writes a second copy next to the first. */
+export function diskRoom(dbPath) {
+    const store = existsSync(dbPath) ? statSync(dbPath).size : 0;
+    const st = statfsSync(dirname(dbPath));
+    // THENWISE_FREE_BYTES stands in for the real figure in tests.
+    return { free: process.env.THENWISE_FREE_BYTES ? Number(process.env.THENWISE_FREE_BYTES) : Number(st.bavail) * Number(st.bsize), store, need: 2 * store };
+}
 function fullBuild(cfg, opts, dbPath) {
+    const room = diskRoom(dbPath);
+    if (room.free < room.need)
+        throw new Error(`not enough free disk to rebuild the store: ${(room.free / 1e6).toFixed(0)} MB free, about ${(room.need / 1e6).toFixed(0)} MB needed (twice the ${(room.store / 1e6).toFixed(0)} MB store). Free some space and run ingest again; the current store is untouched.`);
     const g = new Graph();
     const warnings = [];
     // 1. Sessions, scoped by cwd or any touched path under a configured root.
-    const { files, skipped } = scanSessions(cfg);
+    const { files, skipped, clashes } = scanSessions(cfg);
+    warnings.push(...clashes);
     const counts = { in: 0, entry: 0, marker: 0, empty: 0, out: 0 };
     const sessions = [];
     const fileRows = [];
@@ -273,7 +297,7 @@ function fullBuild(cfg, opts, dbPath) {
         counts[status]++;
         fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, sha256(bytes), status]);
         if (status === 'in')
-            sessions.push({ cwd: s.cwd, dirs: editDirs(s), key: sf.key, file: sf.file, part: sessionPart(s, sf.key) });
+            sessions.push({ cwd: s.cwd, dirs: editDirs(s), key: sf.key, file: sf.file, part: sessionPart(s, sf.key, sf.sfx) });
     }
     // 2. Git commits (read only), from the configured repos and the repos the chats worked in.
     const repos = discoverRepos(cfg.repos, sessions.flatMap((x) => [x.cwd, ...workDirs(cfg, x.dirs)]));
@@ -394,7 +418,7 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
 CREATE INDEX edges_dst ON edges(dst, kind);
 CREATE INDEX nodes_kind ON nodes(kind, source);
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
-CREATE VIRTUAL TABLE nodes_fts USING fts5(title, text, content='nodes', content_rowid='rowid');`;
+CREATE VIRTUAL TABLE nodes_fts USING fts5(title, text, content='nodes', content_rowid='rowid', tokenize='unicode61 categories ''L* N* Co So''');`;
 const STATE_SCHEMA = `CREATE TABLE ingest_state(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE ingest_files(file TEXT PRIMARY KEY, size INTEGER, mtime REAL, ctime REAL, ino REAL, sha TEXT, status TEXT);
 CREATE TABLE owners(node TEXT NOT NULL, file TEXT NOT NULL, len INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(node, file));

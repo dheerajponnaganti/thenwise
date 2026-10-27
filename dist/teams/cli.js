@@ -65,8 +65,10 @@ export async function teamMain(argv, flag) {
                 return (console.error(TEAM_USAGE), 2);
             if (sub === 'backup')
                 (backupTeam(serverDir, words[0]), console.log(`team backed up to ${words[0]} (notes, members and audit; mode 0600)`));
-            else
-                console.log(`team restored from ${words[0]} (schema ${restoreTeam(serverDir, words[0])}) into ${serverDir}`);
+            else {
+                const r = restoreTeam(serverDir, words[0]);
+                console.log(`team restored from ${words[0]} (schema ${r.schema}) into ${serverDir}${r.kept ? `\nthe team.db it replaced is kept as ${r.kept}` : ''}`);
+            }
         }
         else if (sub === 'members') {
             const db = openTeamDb(serverDir);
@@ -96,7 +98,7 @@ export async function teamMain(argv, flag) {
                     doKeep = await confirm('Keep them for the team? [y/N] ');
                 }
                 const r = removeMember(db, words[0], doKeep);
-                console.log(r.removed ? `removed ${words[0]}; token revoked; ${r.notes} shared note${r.notes === 1 ? '' : 's'} ${doKeep ? 'kept' : 'deleted'}` : `${words[0]} is not a member`);
+                console.log(r.removed ? `removed ${words[0]}; token revoked; ${doKeep ? `${r.notes} shared note${r.notes === 1 ? '' : 's'} kept` : `${r.notes} shared note${r.notes === 1 ? '' : 's'} deleted here; teammates drop ${r.notes === 1 ? 'it' : 'them'} at their next sync`}` : `${words[0]} is not a member`);
             }
             db.close();
         }

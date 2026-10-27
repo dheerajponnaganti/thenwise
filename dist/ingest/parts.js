@@ -62,21 +62,22 @@ export const editDirs = (s) => [...new Set([...s.turns].flatMap((t) => [...t.edi
 /** Those folders that lie under a root. */
 export const workDirs = (cfg, dirs) => dirs.filter((d) => cfg.roots.some((r) => under(d, r)));
 /** What one chat file gives: its nodes (merged by id), its own edges, and the commit and PR references of its turns. */
-export function sessionPart(s, key) {
+export const chatSuffix = (folder) => `@${folder.replace(/[^\w.-]/g, '_')}`;
+export function sessionPart(s, key, sfx = '') {
     const nodes = new Map();
     const edges = new Map();
     const claims = [];
     const node = (n) => nodes.set(n.id, mergeNode(nodes.get(n.id), fullNode(n)));
     const edge = (src, dst, kind, at, extra = {}) => edges.has(`${src}\0${dst}\0${kind}`) || edges.set(`${src}\0${dst}\0${kind}`, { src, dst, kind, at, extra });
-    const sid = `ses:${s.id}`;
+    const sid = `ses:${s.id}${sfx}`;
     const first = s.turns[0]?.prompt ?? '';
     // A subagent file adds turns to its parent, whose own file gives the session node.
     const dirs = editDirs(s);
     if (!s.sub)
-        node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(dirs.length ? { editDirs: dirs } : {}) } });
+        node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } });
     const done = structural(s.turns);
     for (const t of s.turns) {
-        const tid = `turn:${t.id}`;
+        const tid = `turn:${t.id}${sfx}`;
         // What happened beats what was said: an undone edit or a failed test, then the person's own [dead-end] line,
         // then a phrase in the reply (the prompt is the user's question).
         const marked = markedDeadEnd(t.prompt);
@@ -98,10 +99,10 @@ export function sessionPart(s, key) {
             claims.push({ node: tid, kind: 'url', val: u, at: t.at, turnAt: t.at });
     }
     for (const m of s.summaries) {
-        node({ id: `sum:${m.id}`, kind: 'summary', title: `Compaction summary of ${s.id}`, text: m.text, at: m.at, project: key, source: sid });
-        edge(`sum:${m.id}`, sid, 'part_of', m.at);
+        node({ id: `sum:${m.id}${sfx}`, kind: 'summary', title: `Compaction summary of ${s.id}`, text: m.text, at: m.at, project: key, source: sid });
+        edge(`sum:${m.id}${sfx}`, sid, 'part_of', m.at);
         if (m.continuedFrom && m.continuedFrom !== s.id)
-            edge(sid, `ses:${m.continuedFrom}`, 'continued_from', m.at, { summary: `sum:${m.id}` });
+            edge(sid, `ses:${m.continuedFrom}`, 'continued_from', m.at, { summary: `sum:${m.id}${sfx}` });
     }
     return { nodes: [...nodes.values()], edges: [...edges.values()], claims };
 }

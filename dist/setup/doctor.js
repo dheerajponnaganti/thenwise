@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveDataDir } from "../core/home.js";
 import { logger, recentErrors } from "../core/log.js";
 import { readConfigFile } from "../ingest/config.js";
+import { diskRoom } from "../ingest/ingest.js";
 export function ghSignedIn() {
     try {
         return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 }).status === 0;
@@ -79,6 +80,12 @@ export async function runDoctor(home = homedir(), opts = {}) {
         storeFix = `The store at ${join(memDir, 'graph.db')} will not open. Delete it and run: thenwise ingest`;
     }
     add('store', store, 'graph.db opens', storeFix);
+    if (store) {
+        const room = diskRoom(join(memDir, 'graph.db'));
+        const mb = (n) => `${(n / 1e6).toFixed(0)} MB`;
+        const short = room.free < room.need;
+        checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` });
+    }
     add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise');
     add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.');
     add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', 'gh is not signed in (only needed for PRs). Run: gh auth login');
@@ -87,7 +94,7 @@ export async function runDoctor(home = homedir(), opts = {}) {
 export async function doctorCommand(home = homedir()) {
     const checks = await runDoctor(home);
     for (const c of checks)
-        console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${c.name.padEnd(12)} ${c.detail}`);
+        console.log(`${c.warn ? 'warn' : c.ok ? 'ok  ' : 'FAIL'} ${c.name.padEnd(12)} ${c.detail}`);
     console.log(`log  ${'errors'.padEnd(12)} ${recentErrors()}`);
     if (checks.some((c) => !c.ok))
         console.log('\nStuck? `thenwise report` builds an issue report you can check before sending.');

@@ -242,7 +242,8 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   const warnings: string[] = []
 
   // 1. Chats.
-  const { files, skipped } = scanSessions(cfg)
+  const { files, skipped, clashes } = scanSessions(cfg)
+  warnings.push(...clashes)
   const known = new Map<string, any>(S.all('SELECT * FROM ingest_files').map((r) => [r.file, r]))
   const byFile = new Map(files.map((f) => [f.file, f]))
   const fresh: Fresh[] = []
@@ -266,7 +267,7 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
       S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
       continue
     }
-    fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key) } : {}) })
+    fresh.push({ sf, sha, status, ...(status === 'in' ? { part: sessionPart(s, sf.key, sf.sfx) } : {}) })
   }
   const gone = [...known.keys()].filter((f) => !byFile.has(f))
   if (fresh.length || gone.length) applySessions(S, cfg, fresh, gone, byFile)
@@ -414,7 +415,7 @@ function applySessions(S: Store, cfg: Config, fresh: Fresh[], gone: string[], by
     if (!m) {
       const sf = byFile.get(file)!
       const s = parseSf(sf, readFileSync(sf.path), cfg.home)
-      m = new Map(sessionPart(s, sf.key).nodes.map((n) => [n.id, n]))
+      m = new Map(sessionPart(s, sf.key, sf.sfx).nodes.map((n) => [n.id, n]))
       loaded.set(file, m)
     }
 

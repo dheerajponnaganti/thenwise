@@ -9,7 +9,7 @@ const STOP = new Set(
 )
 
 const PATH = /[a-z0-9_.@-]+(?:\/[a-z0-9_.@-]+)+\/?/g
-const WORD = /[\p{L}\p{N}]+/gu
+const WORD = /[\p{L}\p{N}\p{So}]+/gu
 
 /** True for a token worth indexing: not a stopword, and two or more characters unless it is a number. */
 const keep = (t: string) => !STOP.has(t) && (t.length > 1 || /\d/.test(t))

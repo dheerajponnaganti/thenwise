@@ -11,6 +11,7 @@ import { normPath } from "../core/vault-index.js";
 import { takeLock } from "../hooks/hook.js";
 import { tighten } from "./perms.js";
 import { dropPrCache, ingest } from "../ingest/ingest.js";
+import { chatSuffix } from "../ingest/parts.js";
 import { githubSlug, repoRoot } from "../ingest/repos.js";
 import { unshareForgotten } from "../teams/chats.js";
 import { sharedIds, unshare } from "../teams/client.js";
@@ -90,17 +91,37 @@ async function confirmTty(q) {
     rl.close();
     return /^y(es)?$/i.test(a.trim());
 }
+async function chooseTty(options) {
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const a = await rl.question(`Which one? [1-${options.length}] `);
+    rl.close();
+    return options[Number(a.trim()) - 1] ?? '';
+}
 export async function forget(cfg, target, opts = {}) {
     const out = opts.print ?? ((l) => console.log(l));
     const folder = normPath(resolve(expandHome(target, cfg.home)));
     const all = chatsOf(cfg);
     const byProject = (c) => c.key === target || c.key === claudeKey(folder) || (!!c.cwd && underFolder(c.cwd, folder));
-    const hit = (c) => c.id === target || (target.length >= 8 && c.id.startsWith(target)) || byProject(c);
+    const named = (c) => `${c.id}${chatSuffix(c.key)}`;
+    // One session id in several project folders: the bare id is ambiguous, `<id>@<folder>` picks one.
+    const same = all.filter((c) => c.id === target);
+    let pick = '';
+    if (same.length > 1 && new Set(same.map((c) => c.key)).size > 1) {
+        const options = same.map(named);
+        out(`${same.length} chats share the session id ${target}: ${options.join(', ')}.`);
+        const a = opts.choose ? await opts.choose(options) : process.stdin.isTTY && !opts.yes ? await chooseTty(options) : '';
+        if (!a)
+            return (out(`Say which one: thenwise forget ${options[0]}`), 1);
+        pick = a;
+    }
+    const hit = (c) => pick ? named(c) === pick : c.id === target || named(c) === target || (target.length >= 8 && c.id.startsWith(target)) || byProject(c);
     const chats = all.filter(hit);
     const plans = planKeys(cfg, target, folder);
     if (!chats.length && !plans.length)
         return (out(`Nothing found for "${target}": no chat with that session id and no project with that folder or key.`), 0);
     const projectWide = chats.some(byProject) || plans.length > 0;
+    const scoped = !projectWide && (!!pick || chats.some((c) => named(c) === target));
     const sessions = [...new Set(chats.map((c) => c.id))];
     const keys = [...new Set([...chats.map((c) => c.key), ...plans])];
     const base = join(cfg.memDir, 'archive');
@@ -117,6 +138,8 @@ export async function forget(cfg, target, opts = {}) {
             tombs.folders.push(folder);
             tombs.sessions.push(...sessions);
         }
+        else if (scoped)
+            tombs.chats = [...(tombs.chats ?? []), ...chats.map((c) => `${c.key}/${c.id}`)];
         else
             tombs.sessions.push(...sessions);
         saveTombs(cfg.memDir, tombs);

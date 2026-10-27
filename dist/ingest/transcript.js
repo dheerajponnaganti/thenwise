@@ -47,9 +47,10 @@ function promptText(content) {
 }
 /** `until` (ISO) drops every entry stamped after it. */
 /** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
-export function parseSession(text, id, home, until = '', sub = false) {
+export function parseSession(text, id, home, until = '', sub = false, fileMs = 0) {
+    const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity;
     const cut = until ? Date.parse(until) : Infinity;
-    const s = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), sub };
+    const s = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub };
     const pending = new Map();
     let turn = null;
     for (const line of text.split('\n')) {
@@ -62,6 +63,10 @@ export function parseSession(text, id, home, until = '', sub = false) {
         }
         if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || (d.isSidechain && !sub))
             continue;
+        if (typeof d.timestamp === 'string' && Date.parse(d.timestamp) > limit) {
+            d.timestamp = new Date(fileMs).toISOString(); // a clock that ran ahead must not outrank real rows
+            s.capped++;
+        }
         if (typeof d.timestamp === 'string' && Date.parse(d.timestamp) > cut)
             continue;
         if (!s.entrypoint && typeof d.entrypoint === 'string')
@@ -104,6 +109,10 @@ export function parseSession(text, id, home, until = '', sub = false) {
                 turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], agentReports: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] };
                 s.turns.push(turn);
             }
+        }
+        else if (typeof content === 'string') {
+            if (turn && content)
+                turn.reply.push(content);
         }
         else if (Array.isArray(content)) {
             for (const b of content) {

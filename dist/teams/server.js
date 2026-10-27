@@ -3,11 +3,12 @@
 // Routes live under /v1 with `{ error: { code, message } }`. Revisions come from one server-wide counter: each note's
 // revision only grows (If-Match), and feeds read in that order. Roles decide who may write; refusals are audited.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { quote } from "../core/frontmatter.js";
+import { maskSecrets } from "../core/secrets.js";
 import { VAULT_FORMAT } from "../vault/vault.js";
 import { CSP, serveConsole } from "./console.js";
 import { CHAT_LIMITS, chatUnit, clampInt, HttpError, ifMatch, intField, oneOf, readBody, seqOf, str, tagList } from "./http.js";
@@ -39,6 +40,14 @@ const same = (a, b) => a.length === b.length && timingSafeEqual(Buffer.from(a), 
 const teamOf = (db) => db.prepare('SELECT id FROM teams ORDER BY created_at LIMIT 1').get().id;
 /** The next revision: one counter for notes and chats, so a feed cursor orders everything. */
 const nextRevOf = (db) => 1 + Number(db.prepare('SELECT max(r) AS r FROM (SELECT max(rev) AS r FROM notes UNION ALL SELECT max(rev) FROM tombs UNION ALL SELECT max(rev) FROM chats UNION ALL SELECT max(rev) FROM chat_tombs)').get().r ?? 0);
+/** An unshare: the note goes (with its revisions and counts) and a tomb records it, so feeds tell other machines. */
+function dropNote(db, m, id, seq = 0) {
+    const rev = nextRevOf(db);
+    for (const t of ['notes', 'note_revisions', 'note_reads'])
+        db.prepare(`DELETE FROM ${t} WHERE owner_id = ? AND id = ?`).run(m.id, id);
+    db.prepare('INSERT INTO tombs (team_id, owner_id, owner, id, rev, seq) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, id) DO UPDATE SET rev = excluded.rev, seq = max(seq, excluded.seq)').run(m.team_id, m.id, m.name, id, rev, seq);
+    return rev;
+}
 /** Deletes a chat for real (passages, their FTS entries, read counts) and records a tomb so other machines drop it. */
 function dropChat(db, m, session, seq = 0) {
     const rev = nextRevOf(db);
@@ -101,8 +110,9 @@ export function removeMember(db, name, keepNotes = false) {
     if (keepNotes)
         db.prepare('UPDATE members SET disabled = 1, token_hash = NULL WHERE id = ?').run(m.id);
     else {
-        for (const t of ['notes', 'tombs', 'note_revisions', 'note_reads'])
-            db.prepare(`DELETE FROM ${t} WHERE owner_id = ?`).run(m.id);
+        // Each note gets a tomb before the member row goes, so teammates drop their copies at the next sync. Old tombs stay.
+        for (const n of db.prepare('SELECT id FROM notes WHERE owner_id = ?').all(m.id))
+            dropNote(db, { ...m, name }, n.id);
         // Their chats go with tombs, so teammates drop their copies; kept notes keep chats readable.
         for (const c of db.prepare('SELECT session FROM chats WHERE owner_id = ?').all(m.id))
             dropChat(db, { ...m, name }, c.session);
@@ -172,6 +182,28 @@ export function createTeamServer(opts) {
         snap(r, by);
         return r;
     };
+    // Failed sign-ins per client IP and minute. Behind a proxy every client shares the proxy's address (shortcut: no X-Forwarded-For).
+    const fails = new Map();
+    const failed = (req, e) => {
+        const ip = req.socket.remoteAddress ?? '?';
+        const minute = Math.floor(now() / 60000);
+        if (fails.size > 1000)
+            for (const [k, v] of fails)
+                if (v.minute !== minute)
+                    fails.delete(k);
+        let f = fails.get(ip);
+        if (f?.minute !== minute) {
+            f = { minute, n: 0, row: 0 };
+            fails.set(ip, f);
+        }
+        f.n++;
+        const details = JSON.stringify({ ip, failures: f.n });
+        if (!f.row)
+            f.row = db.prepare('INSERT INTO audit (team_id, at, actor, action, target, details) VALUES (?, ?, NULL, ?, ?, ?)').run(teamId, now(), 'auth.failed', ip, details).lastInsertRowid;
+        else
+            db.prepare('UPDATE audit SET details = ? WHERE rowid = ?').run(details, f.row);
+        return f.n > 20 ? Object.assign(new HttpError(429, 'too_many_attempts', 'too many failed sign-ins; wait a minute'), { retryAfter: 60 - Math.floor((now() / 1000) % 60) }) : e;
+    };
     // Rate limits, per member and minute.
     const used = new Map();
     const spend = (me, write) => {
@@ -211,6 +243,8 @@ export function createTeamServer(opts) {
         const cur = owned(me, id);
         if (match === '*' ? cur : !cur || cur.rev !== match)
             return [409, { error: { code: 'stale', message: cur ? `the team has revision ${cur.rev} of ${id}` : `${id} is not shared` }, rev: cur?.rev ?? null, updated_at: cur?.updated_at ?? null }];
+        // The client masks too; a raw API call must not store a secret.
+        note = { ...note, title: maskSecrets(note.title).text, text: maskSecrets(note.text).text };
         const rev = nextRev();
         // With the review queue on, what a person who cannot approve shares waits for an admin, edits included.
         const status = settings().review_queue && !can(me, 'admin') ? 'pending' : cur?.status ?? 'active';
@@ -224,11 +258,7 @@ export function createTeamServer(opts) {
         const cur = owned(me, id);
         if (cur && match !== '*' && cur.rev !== match)
             return [409, { error: { code: 'stale', message: `the team has revision ${cur.rev} of ${id}` }, rev: cur.rev, updated_at: cur.updated_at }];
-        const rev = nextRev();
-        for (const t of ['notes', 'note_revisions', 'note_reads'])
-            db.prepare(`DELETE FROM ${t} WHERE owner_id = ? AND id = ?`).run(me.id, id);
-        db.prepare('INSERT INTO tombs (team_id, owner_id, owner, id, rev, seq) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, id) DO UPDATE SET rev = excluded.rev, seq = max(seq, excluded.seq)').run(me.team_id, me.id, me.name, id, rev, seq);
-        return [200, { rev }];
+        return [200, { rev: dropNote(db, me, id, seq) }];
     }
     /** A chat unit as stored: turns rebuilt from their passages (metadata sits on a turn's first row). */
     const unitOf = (c, full) => {
@@ -246,6 +276,8 @@ export function createTeamServer(opts) {
     /** A chat push. `match` and `seq` work as for notes; the passages are replaced as one transaction. */
     function putChat(me, session, unit, match, seq = 0, reshare = false) {
         const t = db.prepare('SELECT seq FROM chat_tombs WHERE owner_id = ? AND session = ?').get(me.id, session);
+        const mk = (x) => maskSecrets(x).text;
+        unit = { ...unit, head: mk(unit.head), turns: unit.turns.map((tn) => ({ ...tn, line: mk(tn.line), passages: tn.passages.map(mk), dead_text: mk(tn.dead_text) })) };
         // A tomb with seq 0 was made on the server (admin, Hub, retention, member removal): only a deliberate re-share undoes it.
         if (t && ((seq && t.seq >= seq) || (!t.seq && !reshare)))
             return [409, { error: { code: 'unshared', message: `${session} was unshared after this change was made` } }];
@@ -353,7 +385,7 @@ export function createTeamServer(opts) {
             const token = str(await readBody(req, 1024), 'token', 200);
             const r = live(db.prepare(`${ME} WHERE m.token_hash = ? AND m.disabled = 0`).get(hash(token)));
             if (!r)
-                throw new HttpError(401, 'unauthorized', 'a valid token is needed');
+                throw failed(req, new HttpError(401, 'unauthorized', 'a valid token is needed'));
             return [200, member(r), { 'set-cookie': startSession(r) }];
         }
         if (m === 'POST' && a === 'join' && !b) {
@@ -363,7 +395,7 @@ export function createTeamServer(opts) {
                 throw new HttpError(400, 'bad_request', 'a name is lower-case letters, digits, - and _, up to 32 characters');
             const inv = db.prepare('SELECT * FROM invites WHERE code_hash = ? AND used_by IS NULL AND expires_at > ?').get(hash(str(body, 'code', 200)), now());
             if (!inv)
-                throw new HttpError(401, 'invalid_invite', 'the invite is wrong, used or expired');
+                throw failed(req, new HttpError(401, 'invalid_invite', 'the invite is wrong, used or expired'));
             if (db.prepare('SELECT 1 FROM members WHERE name = ?').get(name))
                 throw new HttpError(409, 'name_taken', `${name} is taken; choose another name`);
             const token = newToken();
@@ -376,8 +408,9 @@ export function createTeamServer(opts) {
             return [200, { id, name, role: inv.role, token }, browser ? { 'set-cookie': startSession({ id, team_id: inv.team_id }) } : {}];
         }
         const me = who(req);
+        // Only a credential that did not match counts as a failed sign-in; a signed-out page load does not.
         if (!me)
-            throw new HttpError(401, 'unauthorized', 'a valid token is needed');
+            throw req.headers.authorization || cookie(req, 'tw_session') ? failed(req, new HttpError(401, 'unauthorized', 'a valid token is needed')) : new HttpError(401, 'unauthorized', 'a valid token is needed');
         const write = m !== 'GET';
         if (me.via === 'session' && write && !(cookie(req, 'tw_csrf') && same(cookie(req, 'tw_csrf'), String(req.headers['x-thenwise-csrf'] ?? '')) && same(csrfOf(me.sid), String(req.headers['x-thenwise-csrf']))))
             throw new HttpError(403, 'csrf', 'a write from a browser session needs the X-Thenwise-CSRF header');
@@ -411,7 +444,8 @@ export function createTeamServer(opts) {
         if (m === 'GET' && a === 'tombs' && !b)
             return [200, { tombs: db.prepare('SELECT owner, id, rev FROM tombs WHERE team_id = ? AND rev > ? ORDER BY rev LIMIT ?').all(me.team_id, since(), limit()) }];
         if (a === 'members') {
-            need('admin');
+            if (!(m === 'POST' && c === 'rotate' && b === me.id))
+                need('admin');
             if (m === 'GET' && !b)
                 return [200, { members: db.prepare('SELECT * FROM members WHERE team_id = ? ORDER BY name').all(me.team_id).map(member) }];
             const t = memberById(b);
@@ -453,6 +487,14 @@ export function createTeamServer(opts) {
             if (m === 'POST' && c === 'rotate' && !d) {
                 if (t.disabled)
                     throw new HttpError(409, 'disabled', 'the member is disabled; enable them first or invite them again');
+                // Rank decides: the owner rotates anyone, an admin only roles below admin, everyone their own.
+                if (t.id !== me.id && me.role !== 'owner') {
+                    const owner = t.role === 'owner';
+                    if (owner || ROLES.indexOf(t.role) >= ROLES.indexOf('admin')) {
+                        audit(me, 'denied', `${m} ${u.pathname}`, { needs: 'owner' });
+                        throw new HttpError(403, owner ? 'owner_protected' : 'forbidden', owner ? 'only the owner can rotate the owner token' : 'an admin can rotate only roles below admin');
+                    }
+                }
                 audit(me, 'member.rotate', `member:${t.id}`);
                 return [200, { token: rotate(db, t.name) }];
             }
@@ -655,6 +697,9 @@ export function createTeamServer(opts) {
                 for (const [k, max] of [['title', 500], ['text', MAX_TEXT], ['project', 200]])
                     if (body[k] !== undefined)
                         set[k] = str(body, k, max);
+                for (const k of ['title', 'text'])
+                    if (typeof set[k] === 'string')
+                        set[k] = maskSecrets(set[k]).text;
                 const mt = meta(body);
                 if (mt.kind !== undefined)
                     set.kind = mt.kind;
@@ -776,17 +821,38 @@ export function restoreTeam(dir, file) {
     if (pid && pid !== process.pid && alive(pid))
         throw new Error(`a team server (pid ${pid}) runs on ${dir}; stop it first`);
     const src = new DatabaseSync(file, { readOnly: true });
-    const at = Number(src.prepare('PRAGMA user_version').get().user_version);
-    src.close();
-    if (at > SCHEMA_VERSION)
-        throw new Error(`${file} was written by a newer Thenwise (schema ${at}, this one knows ${SCHEMA_VERSION}). Update Thenwise.`);
+    let at;
+    try {
+        at = Number(src.prepare('PRAGMA user_version').get().user_version);
+        if (at > SCHEMA_VERSION)
+            throw new Error(`${file} was written by a newer Thenwise (schema ${at}, this one knows ${SCHEMA_VERSION}). Update Thenwise.`);
+        const tables = src.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
+        if (!tables.includes('teams') || !tables.includes('members'))
+            throw new Error(`${file} is not a team backup (no teams and members tables); team.db was not touched`);
+        const cols = src.prepare('PRAGMA table_info(members)').all().map((r) => r.name);
+        const owner = src.prepare(`SELECT 1 AS x FROM members WHERE role = 'owner'${cols.includes('disabled') ? ' AND disabled = 0' : ''}`).get();
+        if (!owner)
+            throw new Error(`${file} has no live owner, so nobody could sign in as owner; team.db was not touched`);
+    }
+    finally {
+        src.close();
+    }
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const cur = join(dir, 'team.db');
+    let kept = '';
+    if (existsSync(cur)) {
+        const d = new DatabaseSync(cur);
+        d.exec('PRAGMA wal_checkpoint(TRUNCATE)'); // the WAL's changes go into the file that is kept
+        d.close();
+        kept = `${cur}.before-restore-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}`;
+        renameSync(cur, kept);
+    }
     for (const f of ['team.db-wal', 'team.db-shm'])
         rmSync(join(dir, f), { force: true });
-    copyFileSync(file, join(dir, 'team.db'));
-    chmodSync(join(dir, 'team.db'), 0o600);
+    copyFileSync(file, cur);
+    chmodSync(cur, 0o600);
     openTeamDb(dir).close(); // an older backup migrates now
-    return at;
+    return { schema: at, kept };
 }
 const alive = (pid) => {
     try {

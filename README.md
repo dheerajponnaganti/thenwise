@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/readme/hero.png" width="100%" alt="Thenwise. Your code has a past. Now Claude remembers it. A geological section through a repository: dated layers of chats, commits, a dead end and a decision, with a drill bore from today down to 6 October, where a specimen tag reads: cache split into eight shards."></p>
 
 <p align="center">
-  <img alt="Version 0.1.17" src="https://img.shields.io/badge/version-0.1.17-241C15">
+  <img alt="Version 0.1.18" src="https://img.shields.io/badge/version-0.1.17-241C15">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
   <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-56687A">

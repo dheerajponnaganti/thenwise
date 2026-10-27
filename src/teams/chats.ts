@@ -9,7 +9,7 @@ import { basename, join, resolve } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
-import { editDirs, isMarked, sessionPart, under } from '../ingest/parts.ts'
+import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
 import type { SessionPart } from '../ingest/parts.ts'
 import { isOff } from '../ingest/config.ts'
 import type { Config } from '../ingest/config.ts'
@@ -31,7 +31,11 @@ export type Unit = Omit<WireChat, 'owner' | 'session' | 'rev' | 'bytes'>
 export const sharesFile = (dir: string) => join(dir, 'team-shares.json')
 
 /** The name a project has on the server: its GitHub slug, else the repo folder's name. */
-export const projectKey = (repo: string) => githubSlug(repo) ?? basename(repo)
+const keys = new Map<string, string>()
+/** The project's name: its GitHub slug, else the folder name. Read once per repo, so no git runs per chat. */
+export const projectKey = (repo: string) => keys.get(repo) ?? (keys.set(repo, githubSlug(repo) ?? basename(repo)), keys.get(repo)!)
+/** Whether a chat's repo is the shared project or another checkout or worktree of it (same key, not same path). */
+const sameProject = (found: string | undefined, repo: string) => !!found && projectKey(found) === projectKey(repo)
 
 export interface SharedProject {
   repo: string
@@ -180,13 +184,14 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   if (isMarked(cfg.ingestExcludeMarkers, s.turns.map((t) => t.prompt))) return { skip: 'no-memory' }
   if (isOff(cfg, s.cwd)) return { skip: 'paused' }
   if (!cfg.includeEntrypoints.includes(s.entrypoint)) return { skip: 'entry' }
-  if (sessionRepo(s.cwd, editDirs(s)) !== real(repo)) return { skip: 'other' }
+  const wd = workDirs(cfg, editDirs(s))
+  if (!sameProject(sessionRepo(s.cwd, wd), repo)) return { skip: 'other' }
   if (opts.since && Date.parse(s.start) < Date.parse(opts.since)) return { skip: 'since' }
 
   const parts: SessionPart[] = [sessionPart(s, 'x')]
   if (cfg.shareSubagents) for (const rel of c.subagents) parts.push(sessionPart(read(join(cfg.memDir, 'archive', 'sessions', `${rel}.gz`), true), 'x'))
-  const top = worktreeTop(s.cwd)
-  const roots = [...new Set([repo, real(repo), top, top && real(top)].filter((r): r is string => !!r))]
+  const tops = [s.cwd, ...wd].map(worktreeTop).filter((t) => !t || sameProject(t, repo))
+  const roots = [...new Set([repo, real(repo), ...tops, ...tops.map((t) => t && real(t))].filter((r): r is string => !!r))]
   const alias = (abs: string) => {
     const root = roots.find((r) => under(abs, r) && abs !== r)
 
@@ -281,7 +286,7 @@ export function previewShare(cfg: Config, repoPath: string, opts: { since?: stri
   const inRepo = new Map<string, string | undefined>()
   for (const c of archived(cfg)) {
     if (c.cwd && !inRepo.has(c.cwd)) inRepo.set(c.cwd, sessionRepo(c.cwd))
-    if (c.cwd && inRepo.get(c.cwd) !== undefined && inRepo.get(c.cwd) !== repo) continue // a quick no: its folder is another repo
+    if (c.cwd && inRepo.get(c.cwd) !== undefined && !sameProject(inRepo.get(c.cwd), repo)) continue // a quick no: its folder is another repo
     const b = buildChat(cfg, repo, c, sc.scrub, { ...(opts.since ? { since: opts.since } : {}), tombs })
     if ('skip' in b) {
       if (b.skip !== 'other' && b.skip !== 'empty') pv.left[b.skip] = (pv.left[b.skip] ?? 0) + 1
@@ -373,7 +378,7 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
     for (const c of archived(cfg)) {
       if (c.session in sh.removed) continue
       if (c.cwd && !quick.has(c.cwd)) quick.set(c.cwd, sessionRepo(c.cwd))
-      if (c.cwd && quick.get(c.cwd) !== undefined && quick.get(c.cwd) !== p.repo) continue
+      if (c.cwd && quick.get(c.cwd) !== undefined && !sameProject(quick.get(c.cwd), p.repo)) continue
       const have = sh.chats[c.session]
       if (have && have.src === srcOf(cfg, c) && have.project === p.name) continue
       todo.push(c)
@@ -601,11 +606,18 @@ export function sharesStatus(cfg: Config): { lines: string[]; summary: string } 
   let bytes = 0
   let waiting = 0
   const mine = archived(cfg)
+  const sc = scrubber(cfg.redact)
+  const tombs = loadTombs(cfg.memDir)
   for (const k of [...names].sort()) {
     const own = Object.values(sh.chats).filter((c) => c.project === k)
     const p = sh.projects[k]
     const a = active.find((x) => x.name === k)
-    const wait = a ? mine.filter((c) => !(c.session in sh.removed) && sh.chats[c.session]?.src !== srcOf(cfg, c) && (!c.cwd || sessionRepo(c.cwd) === a.repo)).length : 0
+    const wait = a ? mine.filter((c) => {
+      if (c.session in sh.removed || sh.chats[c.session]?.src === srcOf(cfg, c)) return false
+      const q = c.cwd ? sessionRepo(c.cwd) : undefined
+
+      return (q === undefined || sameProject(q, a.repo)) && !('skip' in buildChat(cfg, a.repo, c, sc.scrub, { ...(a.since ? { since: a.since } : {}), tombs }))
+    }).length : 0
     const gone = Object.values(sh.serverGone ?? {}).filter((x) => x === k).length
     const size = own.reduce((x, c) => x + c.bytes, 0)
     chats += own.length

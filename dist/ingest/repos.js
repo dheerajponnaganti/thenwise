@@ -69,13 +69,17 @@ export function githubSlug(repo) {
     }).filter((r) => r.slug);
     return (remotes.find((r) => r.name === 'origin') ?? remotes[0])?.slug;
 }
-/** The repository a chat belongs to: the one holding its working folder, else the one holding the first folder it edited.
- * A folder that no longer exists maps to no repo. */
+/** The repository a chat belongs to: the one holding its working folder, else the one holding most of the folders it edited
+ * (ties go to the first in path order). A folder that no longer exists maps to no repo. */
 export function sessionRepo(cwd, editDirs = []) {
-    for (const d of [cwd, ...editDirs]) {
+    const own = cwd ? repoRoot(cwd) : undefined;
+    if (own)
+        return real(own);
+    const votes = new Map();
+    for (const d of editDirs) {
         const r = d ? repoRoot(d) : undefined;
         if (r)
-            return real(r);
+            votes.set(real(r), (votes.get(real(r)) ?? 0) + 1);
     }
-    return undefined;
+    return [...votes].sort((a, b) => b[1] - a[1])[0]?.[0];
 }

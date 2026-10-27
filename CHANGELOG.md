@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.18
+
+Shared project chats find every chat of the project.
+
+- A chat belongs to the repo of its working folder, else the repo holding most of the folders it edited (it was the first edited folder). Chats from another checkout or a worktree of the shared project now count as that project, matched by its GitHub slug or folder name.
+- `team shares` counts waiting chats with the same filter the push uses, so the number matches what the next sync sends.
+
 ## 0.1.17
 
 Shared project chats: a teammate's chats join your memory when they share a project.

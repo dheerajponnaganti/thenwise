@@ -1,11 +1,17 @@
 <p align="center"><img src="assets/readme/hero.png" width="100%" alt="Thenwise. Your code has a past. Now Claude remembers it. A geological section through a repository: dated layers of chats, commits, a dead end and a decision, with a drill bore from today down to 6 October, where a specimen tag reads: cache split into eight shards."></p>
 
 <p align="center">
-  <img alt="Version 0.1.18" src="https://img.shields.io/badge/version-0.1.17-241C15">
+  <a href="https://www.npmjs.com/package/thenwise"><img alt="npm version" src="https://img.shields.io/npm/v/thenwise?label=npm&color=241C15"></a>
+  <a href="https://www.npmjs.com/package/thenwise"><img alt="npm downloads" src="https://img.shields.io/npm/dm/thenwise?label=downloads&color=B3361F"></a>
+  <a href="https://www.npmjs.com/package/thenwise"><img alt="Unpacked size" src="https://img.shields.io/npm/unpacked-size/thenwise?label=size&color=6B655B"></a>
+  <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-56687A">
+  <a href="LICENSE"><img alt="Licence Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-6B655B"></a>
+  <br>
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
-  <img alt="Node 22.16+" src="https://img.shields.io/badge/node-22.16%2B-56687A">
-  <img alt="Licence Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-6B655B">
+  <a href="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml"><img alt="Tested on macOS, Linux and Windows" src="https://img.shields.io/badge/tested-macOS%20%7C%20Linux%20%7C%20Windows-56687A"></a>
+  <a href="https://github.com/dheerajponnaganti/thenwise/discussions"><img alt="Questions welcome" src="https://img.shields.io/badge/questions-discussions-8a7f6e"></a>
+  <a href="CONTRIBUTING.md"><img alt="Pull requests welcome" src="https://img.shields.io/badge/PRs-welcome-241C15"></a>
 </p>
 
 <h3 align="center">Every decision, every dead end, every yesterday of your Claude Code work.<br>Kept on your machine. Handed back the moment a question needs it.</h3>
@@ -272,6 +278,19 @@ It shows what will go and asks first (`--yes` skips the question), then removes 
 **Remove everything.** `thenwise uninstall` stops the background sync and lists what to delete by hand. It deletes nothing itself.
 
 </details>
+
+## Dig in with us
+
+Thenwise grows from the questions people bring to it. Pick your way in.
+
+- **Ask a question.** Start a thread in [Discussions](https://github.com/dheerajponnaganti/thenwise/discussions). No question is too small.
+- **Report a bug.** Run `thenwise report`. It fills in the [bug form](https://github.com/dheerajponnaganti/thenwise/issues/new?template=bug.yml) with your versions and the error code, with secrets masked.
+- **Suggest an idea.** The [idea form](https://github.com/dheerajponnaganti/thenwise/issues/new?template=idea.yml) asks what you want to do and what gets in the way today.
+- **Send a pull request.** Fixes, tests, docs and new secret shapes for the mask are all welcome. [CONTRIBUTING.md](CONTRIBUTING.md) gets you from clone to green tests in three commands.
+- **Show what it found.** Post the answer that saved your afternoon in [Show and tell](https://github.com/dheerajponnaganti/thenwise/discussions/categories/show-and-tell).
+- **Star the repo**, so the next person finds it.
+
+Found a security problem? Report it privately, as [SECURITY.md](SECURITY.md) describes.
 
 ---
 

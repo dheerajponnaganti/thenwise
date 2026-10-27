@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.19
+
+Thenwise is on npm, with an open door for questions and contributions.
+
+- npm: `npm install -g thenwise` installs the CLI. The package page shows the full README.
+- README: live npm badges (version, downloads, size), badges for the tested platforms, questions and pull requests, and a "Dig in with us" section on the ways to help. The version badge no longer goes stale.
+- New `CONTRIBUTING.md` (ways to help, setup in three commands, where things live, pull request rules), `SECURITY.md` (private reports and what counts), a pull request template, and Questions and Security links on the new issue page.
+
 ## 0.1.18
 
 Shared project chats find every chat of the project.

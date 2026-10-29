@@ -1769,6 +1769,26 @@
           }
         }
       }
+    },
+    "/v1/session/csrf": {
+      "get": {
+        "summary": "The CSRF value of this browser session, for a Hub on another host that cannot read the tw_csrf cookie (1.1).",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Csrf"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3063,6 +3083,17 @@
         },
         "required": [
           "chat_retention_days"
+        ]
+      },
+      "Csrf": {
+        "type": "object",
+        "properties": {
+          "csrf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf"
         ]
       }
     }

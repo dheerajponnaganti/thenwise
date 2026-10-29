@@ -1,7 +1,7 @@
 {
   "name": "thenwise",
-  "version": "0.1.22",
-  "description": "Local memory of your past Claude Code work: search, history and a resume brief. No model in retrieval.",
+  "version": "0.1.23",
+  "description": "Claude Code plugin: a local memory of your past chats, commits and notes. Ask why, what was tried and what was true then. SQLite, no telemetry.",
   "type": "module",
   "engines": {
     "node": ">=22.16"
@@ -37,7 +37,17 @@
     "memory",
     "mcp",
     "plugin",
-    "sqlite"
+    "sqlite",
+    "claude",
+    "claude-code-plugin",
+    "anthropic",
+    "agent-memory",
+    "ai-memory",
+    "local-first",
+    "developer-tools",
+    "git-history",
+    "obsidian",
+    "mcp-server"
   ],
   "homepage": "https://github.com/dheerajponnaganti/thenwise#readme",
   "bugs": {

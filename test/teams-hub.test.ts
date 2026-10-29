@@ -358,3 +358,40 @@ test('T12-B10: the owner cannot be removed or changed; make-owner hands the team
     await t.app.close()
   }
 })
+
+test('a zip past 65,535 files is refused instead of crashing', async () => {
+  const { zip } = await import('../src/teams/zip.ts')
+  assert.ok(zip([['a.md', 'x']]))
+  assert.equal(zip(Array.from({ length: 65_536 }, (_, i): [string, string] => [`n${i}.md`, ''])), undefined)
+})
+
+test('a Hub on another host: cookies are cross-site, the session hands over its CSRF value, and a write with it works', async () => {
+  const origin = 'https://hub.example.org'
+  const t = await team(['root'], { allowOrigins: [origin] })
+  try {
+    const r = await t.req(null, '/v1/session', { method: 'POST', body: { token: t.tokens.root }, headers: { origin } })
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('access-control-allow-origin'), origin)
+    const { cookie, csrf } = jar(r)
+    for (const c of cookies(r)) assert.match(c, /SameSite=None; Secure/)
+    const body = await (await t.req(null, '/v1/session/csrf', { headers: { origin, cookie } })).json()
+    assert.equal(body.csrf, csrf, 'the Hub gets the value it cannot read from the cookie')
+    assert.equal((await t.req(t.tokens.root!, '/v1/session/csrf')).status, 400, 'a token has no CSRF value')
+    const w = await t.req(null, '/v1/notes/x1', { method: 'PUT', body: NOTE, headers: { origin, cookie, 'if-match': '*', 'x-thenwise-csrf': body.csrf } })
+    assert.equal(w.status, 200)
+    const bad = await t.req(null, '/v1/notes/x2', { method: 'PUT', body: NOTE, headers: { origin, cookie, 'if-match': '*' } })
+    assert.equal(bad.status, 403, 'a write without the header is still refused')
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('without --allow-origin the session cookies stay SameSite=Strict', async () => {
+  const t = await team(['root'])
+  try {
+    const r = await t.req(null, '/v1/session', { method: 'POST', body: { token: t.tokens.root } })
+    for (const c of cookies(r)) assert.match(c, /SameSite=Strict/)
+  } finally {
+    await t.app.close()
+  }
+})

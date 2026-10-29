@@ -366,6 +366,10 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   if (reached) out.push(reached)
   const lost = await readOwnTombs(dir, projects)
   if (lost) out.push(lost)
+  // A shared chat the archive no longer keeps (a [no-memory] marker added later drops it) leaves the team too.
+  const kept = new Set(archived(cfg).map((c) => c.session))
+  const dropped = await unshareForgotten(cfg, Object.keys(loadShares(dir).chats).filter((s) => !kept.has(s)))
+  if (dropped) out.push(`${dropped} chat${dropped === 1 ? '' : 's'} no longer kept, unshared`)
   const tombs = loadTombs(dir)
   const sc = scrubber(cfg.redact)
   const quick = new Map<string, string | undefined>()
@@ -387,7 +391,10 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
     for (const c of todo) {
       if (fail) break
       const b = buildChat(cfg, p.repo, c, sc.scrub, { ...(p.since ? { since: p.since } : {}), tombs })
-      if ('skip' in b) continue
+      if ('skip' in b) {
+        if (b.skip === 'no-memory' && loadShares(dir).chats[c.session]) await unshareChats(cfg, c.session) // marked after it was shared
+        continue
+      }
       const have = loadShares(dir).chats[c.session]
       if (have && have.sha === b.sha && have.project === p.name) {
         updateShares(dir, (s) => void (s.chats[c.session] = { ...have, src: srcOf(cfg, c) }))

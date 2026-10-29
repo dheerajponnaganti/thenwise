@@ -5,7 +5,9 @@ import { crc32 } from 'node:zlib'
 type Field = readonly [at: number, size: number, value: number]
 const fill = (b: Buffer, fields: Field[]) => fields.forEach(([at, size, v]) => b.writeUIntLE(v, at, size))
 
-export function zip(files: [string, string][], at = new Date()): Buffer {
+/** Undefined past 65,535 files, the most a plain (non-ZIP64) zip can count. */
+export function zip(files: [string, string][], at = new Date()): Buffer | undefined {
+  if (files.length > 0xffff) return undefined
   const time = (at.getHours() << 11) | (at.getMinutes() << 5) | (at.getSeconds() >> 1)
   const date = ((at.getFullYear() - 1980) << 9) | ((at.getMonth() + 1) << 5) | at.getDate()
   const body: Buffer[] = []

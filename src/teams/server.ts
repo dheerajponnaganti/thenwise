@@ -204,14 +204,17 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
     return r ? ({ ...r, via: 'session', sid } as Me) : null
   }
-  const cookieFlags = `Path=/; SameSite=Strict; Max-Age=${SESSION_MS / 1000}${opts.tlsBehindProxy ? '; Secure' : ''}`
-  const startSession = (m: { id: string; team_id: string }): string[] => {
+  // A Hub on another host (--allow-origin) needs cookies a cross-site request carries; the CSRF header still guards writes.
+  const cross = (opts.allowOrigins ?? []).length > 0
+  const sameSite = cross ? 'None; Secure' : `Strict${opts.tlsBehindProxy ? '; Secure' : ''}`
+  const cookieFlags = `Path=/; SameSite=${sameSite}; Max-Age=${SESSION_MS / 1000}`
+  const startSession = (m: { id: string; team_id: string }): { set: string[] } => {
     const sid = randomBytes(32).toString('hex')
     db.prepare('INSERT INTO sessions (id_hash, team_id, member_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)').run(hash(sid), m.team_id, m.id, now(), now() + SESSION_MS)
 
-    return [`tw_session=${sid}; HttpOnly; ${cookieFlags}`, `tw_csrf=${csrfOf(sid)}; ${cookieFlags}`]
+    return { set: [`tw_session=${sid}; HttpOnly; ${cookieFlags}`, `tw_csrf=${csrfOf(sid)}; ${cookieFlags}`] }
   }
-  const noCookies = ['tw_session', 'tw_csrf'].map((n) => `${n}=; Path=/; SameSite=Strict; Max-Age=0`)
+  const noCookies = ['tw_session', 'tw_csrf'].map((n) => `${n}=; Path=/; SameSite=${sameSite}; Max-Age=0`)
 
   const nextRev = () => nextRevOf(db)
   const owned = (me: Me, id: string) => db.prepare('SELECT * FROM notes WHERE owner_id = ? AND id = ?').get(me.id, id) as Row | undefined
@@ -407,7 +410,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
   }
 
   /** The vault format of the plugin plus who shared it, so the folder drops into a member's Obsidian vault. */
-  function exportZip(me: Me): Buffer {
+  function exportZip(me: Me): Buffer | undefined {
     const v = vis(me)
     const rows = db.prepare(`SELECT n.*, coalesce(m.name, n.owner) AS shared_name FROM notes n LEFT JOIN members m ON m.id = n.shared_by WHERE n.team_id = ? AND n.status != 'pending' AND ${v.sql} ORDER BY n.project, n.created_at, n.owner, n.id`).all(me.team_id, ...v.args) as Row[]
     const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
@@ -435,7 +438,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       const r = live(db.prepare(`${ME} WHERE m.token_hash = ? AND m.disabled = 0`).get(hash(token)) as Row | undefined)
       if (!r) throw failed(req, new HttpError(401, 'unauthorized', 'a valid token is needed'))
 
-      return [200, member(r), { 'set-cookie': startSession(r as Me) }]
+      return [200, member(r), { 'set-cookie': startSession(r as Me).set }]
     }
     if (m === 'POST' && a === 'join' && !b) {
       const body = await readBody(req, 4096)
@@ -452,7 +455,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       // From a browser the joiner is signed in at once; the token is returned either way, to be kept for the plugin.
       const browser = body.session === true || String(req.headers.accept).includes('text/html')
 
-      return [200, { id, name, role: inv.role, token }, browser ? { 'set-cookie': startSession({ id, team_id: inv.team_id }) } : {}]
+      return [200, { id, name, role: inv.role, token }, browser ? { 'set-cookie': startSession({ id, team_id: inv.team_id }).set } : {}]
     }
 
     const me = who(req)
@@ -481,6 +484,12 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       if (me.sid) db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(hash(me.sid))
 
       return [200, { ok: true }, { 'set-cookie': noCookies }]
+    }
+    // A Hub on another host cannot read this host's tw_csrf cookie; it asks here once, with the session cookie.
+    if (m === 'GET' && a === 'session' && b === 'csrf' && !c) {
+      if (!me.sid) throw new HttpError(400, 'bad_request', 'only a browser session has a CSRF value')
+
+      return [200, { csrf: csrfOf(me.sid) }]
     }
     if (m === 'GET' && a === 'me' && !b) return [200, { id: me.id, name: me.name, role: me.role }]
     if (m === 'GET' && a === 'search' && !b) return [200, { notes: search(me, u, limit(), offset()) }]
@@ -593,8 +602,10 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     }
     if (a === 'export.zip' && !b && m === 'GET') {
       need('curate')
+      const z = exportZip(me)
+      if (!z) throw new HttpError(413, 'too_large', 'the export holds more than 65,535 files, the most a zip file can count')
 
-      return [200, exportZip(me), { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="thenwise-export.zip"' }]
+      return [200, z, { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="thenwise-export.zip"' }]
     }
     if (a === 'chat-settings' && !b) {
       need('admin')

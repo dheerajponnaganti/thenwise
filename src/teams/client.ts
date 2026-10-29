@@ -126,6 +126,7 @@ export function payloadOf(n: Payload): { payload: Payload; masked: number } {
   return { payload: { title: h.text, text: t.text, project: p.text, ...(n.kind ? { kind: n.kind } : {}), ...(src?.text ? { source: src.text } : {}) }, masked: t.count + h.count + p.count + (src?.count ?? 0) }
 }
 
+const KINDS: string[] = ['decision', 'dead_end', 'rule', 'finding']
 /** A curated note id, or a Markdown file. Chats and anything under the Claude folder are refused. */
 export function resolveNote(memDir: string, claudeDir: string, arg: string): Payload & { id: string } {
   const path = resolve(arg)
@@ -135,12 +136,13 @@ export function resolveNote(memDir: string, claudeDir: string, arg: string): Pay
     const fm = parseFrontMatter(readFileSync(path, 'utf8'))
     const d = (k: string) => (typeof fm.data[k] === 'string' ? (fm.data[k] as string) : '')
 
-    return { id: d('id') || makeId('f', path), title: d('title') || /^#\s+(.+)$/m.exec(fm.body)?.[1] || basename(path, '.md'), text: fm.body.trim(), project: d('project') }
+    const kind = d('type') || d('kind') // a decision, dead end, rule or finding keeps its stamp
+    return { id: d('id') || makeId('f', path), title: d('title') || /^#\s+(.+)$/m.exec(fm.body)?.[1] || basename(path, '.md'), text: fm.body.trim(), project: d('project'), ...(KINDS.includes(kind) ? { kind } : {}) }
   }
   const c = readNotes(memDir).find((n) => n.id === arg && n.status === 'active')
   if (!c) throw new Error(`${arg}: no such file, and no active note with that id`)
 
-  return { id: c.id, title: c.title, text: parseFrontMatter(readFileSync(c.path, 'utf8')).body.trim() || c.summary, project: c.project, kind: (['decision', 'dead_end', 'rule', 'finding'] as string[]).includes(c.type) ? c.type : 'note', source: c.sources.join(', ').slice(0, 2000) }
+  return { id: c.id, title: c.title, text: parseFrontMatter(readFileSync(c.path, 'utf8')).body.trim() || c.summary, project: c.project, kind: KINDS.includes(c.type) ? c.type : 'note', source: c.sources.join(', ').slice(0, 2000) }
 }
 
 /** Serializes load-modify-save across processes. Never wrap a network call in it. */

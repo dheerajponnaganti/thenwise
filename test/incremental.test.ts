@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
@@ -91,4 +91,46 @@ test('S3-H4: new commits are added, and chats that stated them link to them', ()
   same(w, 'a claim with no commit yet')
   w.commit(w.proj, 'src/c.ts', 'Not yet made')
   same(w, 'the commit arrives')
+})
+
+test('Windows: a refused rename leaves the rebuilt store as .next, and the next opener swaps it in', async () => {
+  const { createRequire, syncBuiltinESMExports } = await import('node:module')
+  const fs = createRequire(import.meta.url)('node:fs') as typeof import('node:fs')
+  const w = seeded(2)
+  const db = w.path('inc.db')
+  w.chat('late', { turns: [turn(700)] })
+  w.archive()
+  const orig = fs.renameSync
+  fs.renameSync = ((a: string, b: string) => {
+    if (b === db && String(a).endsWith('.tmp')) throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' })
+    return orig(a, b)
+  }) as typeof fs.renameSync
+  syncBuiltinESMExports()
+  try {
+    w.full('inc.db')
+  } finally {
+    fs.renameSync = orig
+    syncBuiltinESMExports()
+  }
+  assert.ok(fs.existsSync(`${db}.next`), 'the new store waits beside the held one')
+  const g = new Graph(db)
+  assert.ok(!fs.existsSync(`${db}.next`), 'opening the store swapped it in')
+  assert.ok([...g.nodes.values()].some((n) => n.kind === 'session' && n.id.includes('late')), 'the swapped-in store is the new one')
+  g.db.close()
+})
+
+test('Windows: an update first swaps in a waiting store, and the result equals a rebuild', () => {
+  const w = seeded(2)
+  const db = w.path('inc.db')
+  copyFileSync(db, `${db}.old`)
+  w.chat('late', { turns: [turn(701)] })
+  w.archive()
+  w.full('inc.db')
+  // As if a held store refused the rename: the new store waits, the old one is still in place.
+  copyFileSync(db, `${db}.next`)
+  copyFileSync(`${db}.old`, db)
+  w.chat('later', { turns: [turn(702)] })
+  w.archive()
+  same(w, 'an update after a waiting store')
+  assert.ok(!existsSync(`${db}.next`))
 })

@@ -246,7 +246,7 @@ test('S7-H4: off for a project archives nothing from it; on resumes; a global of
   assert.match(f.cli(['off', '--project', join(f.work, 'beta')]).stdout, /off for/)
   assert.deepEqual(f.cfg().off_projects, [join(f.work, 'beta')])
   const r = f.cli(['archive'])
-  assert.match(r.stdout, /1 chats of paused projects/)
+  assert.match(r.stdout, /1 chat of paused projects/)
   const files = allFiles(join(f.data, 'archive', 'sessions')).join('\n')
   assert.ok(!files.includes('b1.jsonl.gz') && files.includes('a1.jsonl.gz') && files.includes('p1.jsonl.gz'))
   f.cli(['on', '--project', join(f.work, 'beta')])

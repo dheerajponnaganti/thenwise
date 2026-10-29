@@ -407,8 +407,13 @@ test('S7b-B2 S7-B9: a backup never holds the archive or the store, and a pushed 
 
 test('Uninstall stops a running sync and lists what to delete by hand', async () => {
   const w = world()
-  // Uninstall only signals a process that looks like a Thenwise sync.
-  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'thenwise-sync-holder'])
+  // Uninstall only signals the sync worker (`thenwise hook sync-run`), not any process that mentions Thenwise.
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'thenwise-notes.md'])
+  writeFileSync(join(w.data, 'sync.lock'), String(other.pid))
+  assert.match(w.cli(['uninstall']).stdout, /No background sync is running/)
+  assert.equal(other.exitCode, null, 'an unrelated process keeps running')
+  other.kill()
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'hook', 'sync-run'])
   writeFileSync(join(w.data, 'sync.lock'), String(holder.pid))
   w.writeConfig({ vault: { path: join(w.home, 'vault') }, backup: { kind: 'folders', folders: [join(w.home, 'c1')] } })
   const r = w.cli(['uninstall'])

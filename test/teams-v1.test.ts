@@ -296,6 +296,7 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
       ['/v1/notes/{id}', 'put', () => t.req(tok, '/v1/notes/c1', { method: 'PUT', body: NOTE, headers: { 'if-match': String(rev) } }), 409],
       ['/v1/session', 'post', () => t.req(null, '/v1/session', { method: 'POST', body: { token: tok } }), 200],
       ['/v1/session', 'delete', () => t.req(tok, '/v1/session', { method: 'DELETE' }), 200],
+      ['/v1/session/csrf', 'get', () => t.req(tok, '/v1/session/csrf'), 400],
       ['/v1/invites', 'post', () => invited('member'), 200],
       ['/v1/join', 'post', () => join('dan'), 200],
       ['/v1/join', 'post', () => t.req(null, '/v1/join', { method: 'POST', body: { code: 'twi_nope', name: 'dan' } }), 401],
@@ -362,5 +363,16 @@ test('T17-B5: the v1 part of openapi.json is byte for byte what 0.1.16 shipped; 
     const [o, n] = part === 'paths' ? [old.paths, now.paths] : [old.components[part], now.components[part]]
     for (const k of Object.keys(o)) assert.equal(JSON.stringify(n[k]), JSON.stringify(o[k]), `${part} ${k} changed`)
   }
-  assert.ok(Object.keys(now.paths).every((p) => p in old.paths || /^\/v1\/(chats|chat-tombs|chat-settings|shared-projects)/.test(p)))
+  assert.ok(Object.keys(now.paths).every((p) => p in old.paths || /^\/v1\/(chats|chat-tombs|chat-settings|shared-projects|session\/csrf)/.test(p)))
+})
+
+test('a shared Markdown file keeps its kind from type or kind in the front matter', () => {
+  const dir = tmp('kind')
+  const note = (fm: string) => {
+    writeFileSync(join(dir, 'n.md'), `---\n${fm}\n---\nbody\n`)
+    return resolveNote(dir, join(dir, 'claude'), join(dir, 'n.md')).kind
+  }
+  assert.equal(note('type: decision'), 'decision')
+  assert.equal(note('kind: dead_end'), 'dead_end')
+  assert.equal(note('kind: poem'), undefined) // not a known kind: the server files it as a note
 })

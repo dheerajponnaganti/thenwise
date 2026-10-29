@@ -34,3 +34,13 @@ test('S1-B9: a damaged store says how to rebuild it', () => {
   writeFileSync(join(dir, 'graph.db'), Buffer.alloc(5000, 7))
   oneLine(run(dir, 'search', 'cache'), /damaged.*thenwise ingest/)
 })
+
+test('--help and --version print to stdout and exit 0', () => {
+  const data = mkdtempSync(join(tmpdir(), 'tw-flags-'))
+  const h = run(data, '--help')
+  assert.equal(h.status, 0)
+  assert.match(h.stdout, /^usage: thenwise/)
+  const v = run(data, '--version')
+  assert.equal(v.status, 0)
+  assert.match(v.stdout, /^\d+\.\d+\.\d+\n$/)
+})

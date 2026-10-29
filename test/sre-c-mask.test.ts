@@ -37,3 +37,11 @@ test('SRE-15: environment references and plain config values stay readable', asy
   for (const s of ['api_key = process.env.API_KEY', 'token: ${GITHUB_TOKEN}', 'password = os.environ["DB_PASS"]', 'cache_key="user_profile_settings_v2"', '"auth": "required"']) assert.equal(maskSecrets(s).count, 0, s)
   assert.equal(maskSecrets('{"auths":{"r":{"auth":"dXNlcjpwYXNzd29yZDEyMzQ1Ng=="}}}').count, 1)
 })
+
+test('masking stays linear on long hyphenated text, and long secret names still mask', () => {
+  const t = Date.now()
+  maskSecrets('a-'.repeat(50_000))
+  assert.ok(Date.now() - t < 500, `took ${Date.now() - t} ms for 100 KB`)
+  assert.match(maskSecrets('my-very-long-service-name-for-billing-api_key = abcd1234efgh5678ijkl').text, /\[secret masked\]/)
+  assert.match(maskSecrets('postgres://user:supersecretpass@db:5432').text, /\[secret masked\]/)
+})

@@ -446,6 +446,25 @@ test('T18-H5: forgetting a shared chat deletes it on the server, the summary say
   }
 })
 
+test('a [no-memory] marker added after a chat was shared takes it off the server, and B drops it', needs, async () => {
+  const t = await team()
+  try {
+    t.share(t.a)
+    await pushShared(t.a.cfg)
+    await fetchShared(t.b.memDir)
+    assert.equal(readChats(t.b.memDir).length, 1)
+    t.a.grow('c1', [{ prompt: '[no-memory]' }])
+    t.a.archive()
+    assert.match(await pushShared(t.a.cfg), /1 chat no longer kept, unshared/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 0)
+    assert.equal(Object.keys(loadShares(t.a.memDir).chats).length, 0)
+    await fetchShared(t.b.memDir)
+    assert.equal(readChats(t.b.memDir).length, 0)
+  } finally {
+    await t.stop()
+  }
+})
+
 test('T18-H6: unshare-chats --pause keeps the server copy and sends nothing new; unshare removes the project', needs, async () => {
   const t = await team()
   try {

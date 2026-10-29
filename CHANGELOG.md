@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.22
+
+Five bug fixes from a code review, and a corrected measurement.
+
+- Off the record: `[no-memory]` added to a chat after it was archived now drops the archived copy at the next sync, so the chat leaves the memory. An excluded project's old copies still wait for `thenwise archive --prune-excluded`.
+- Sync: an update waits for a running search instead of failing into a full rebuild.
+- Sync: an empty or half-written `sync.lock` no longer blocks syncs for an hour.
+- Git history: an update bounds commits by your own first chat, as a rebuild does, so a teammate's older shared chats no longer pull in extra history.
+- File hints: `cat -n <file>` and `bat -n <file>` get the file's dead ends and decisions, as `cat <file>` does.
+- README: plain Claude Code's individual score is corrected from 63% to 47%. In the round behind the old number, plain found leftover copies of our records on the test machine: saved tool output holding vault notes and old chats, the prompt history file, and Claude Code's own memory notes. 5 of its 19 right answers came from those copies. The re-run blocks the vault and its copies, and plain scored 47% in both of two runs. The plate now reads 1.8 times more questions answered right (83% against 47%) and 2.2 times faster answers (23 seconds against 51).
+
 ## 0.1.21
 
 Hardening: a full reliability review, 17 findings, all fixed but one that waits for a larger change.

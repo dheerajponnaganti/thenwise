@@ -217,6 +217,7 @@ interface Fresh {
 
 export function updateGraph(cfg: Config, opts: IngestOptions, dbPath: string): IngestResult {
   const db = new DatabaseSync(dbPath)
+  db.exec('PRAGMA busy_timeout = 5000') // a reader mid-statement would otherwise fail the commit and force a full rebuild
   // Stores built before the fast path lack this index; an update adds it.
   db.exec('CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind, source)')
   try {
@@ -455,7 +456,7 @@ function applyCommits(S: Store, cfg: Config, repos: string[], warnings: string[]
   const failed = new Set<string>()
   // The same bounds as a full build: shas the chats name (claims and turn refs), history since the first chat minus 90 days.
   const named = new Set<string>([...S.all("SELECT key FROM claims WHERE kind = 'sha'").map((r) => r.key as string), ...S.all("SELECT val FROM refs WHERE type = 'sha' AND (node LIKE 'turn:%' OR node LIKE 'sum:%')").map((r) => r.val as string)])
-  const since = firstChat(S.all("SELECT at FROM nodes WHERE kind = 'session'").map((r) => r.at as string)) - HISTORY_DAYS * 864e5
+  const since = firstChat(S.all("SELECT at FROM nodes WHERE kind = 'session' AND source NOT LIKE 'team:%'").map((r) => r.at as string)) - HISTORY_DAYS * 864e5
   for (const repo of repos) {
     const shas = repoShas(repo, cfg, since, named)
     if (shas === null) {

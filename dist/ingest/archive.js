@@ -265,7 +265,12 @@ function archiveLocked(cfg, opts) {
                 rmSync(tmp, { force: true });
             if (info.marked) {
                 res.excludedChats++;
-                leftover(rel);
+                // A marker added after an earlier sync: drop the archived copy now, so the next ingest drops the chat.
+                if (existsSync(dest)) {
+                    unlinkSync(dest);
+                    delete manifest[rel];
+                    res.pruned.push(rel);
+                }
                 continue;
             }
             if (isForgotten(tombs, rel, info.cwd)) {

@@ -172,7 +172,8 @@ function startSync(env: HookEnv) {
   // THENWISE_SYNC=off keeps a frozen store frozen (evaluations, CI, read-only setups).
   if (process.env.THENWISE_SYNC === 'off') return log(env, 'sync off (THENWISE_SYNC=off)')
   const lock = join(env.dir, 'sync.lock')
-  if (existsSync(lock) && alive(Number(readFileSync(lock, 'utf8').trim())) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return log(env, 'sync already running')
+  const held = existsSync(lock) ? Number(readFileSync(lock, 'utf8').trim()) : 0
+  if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return log(env, 'sync already running')
   mkdirSync(env.dir, { recursive: true })
   // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
   spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', env: { ...process.env, THENWISE_HOME: env.dir } }).unref()
@@ -266,7 +267,7 @@ export function readTarget(cmd: string, cwd: string): string | undefined {
   const args: string[] = []
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i]!
-    if (/^-[nc]$/.test(t) && name !== 'sed') i++ // head -n 20: the count is not a file
+    if (/^-[nc]$/.test(t) && (name === 'head' || name === 'tail')) i++ // head -n 20: the count is not a file
     else if (!t.startsWith('-')) args.push(t)
   }
   if (name === 'sed') args.shift() // the script, such as 1,20p

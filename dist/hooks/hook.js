@@ -163,7 +163,8 @@ function startSync(env) {
     if (process.env.THENWISE_SYNC === 'off')
         return log(env, 'sync off (THENWISE_SYNC=off)');
     const lock = join(env.dir, 'sync.lock');
-    if (existsSync(lock) && alive(Number(readFileSync(lock, 'utf8').trim())) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS)
+    const held = existsSync(lock) ? Number(readFileSync(lock, 'utf8').trim()) : 0;
+    if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS)
         return log(env, 'sync already running');
     mkdirSync(env.dir, { recursive: true });
     // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
@@ -266,7 +267,7 @@ export function readTarget(cmd, cwd) {
     const args = [];
     for (let i = 0; i < toks.length; i++) {
         const t = toks[i];
-        if (/^-[nc]$/.test(t) && name !== 'sed')
+        if (/^-[nc]$/.test(t) && (name === 'head' || name === 'tail'))
             i++; // head -n 20: the count is not a file
         else if (!t.startsWith('-'))
             args.push(t);

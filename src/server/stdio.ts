@@ -8,7 +8,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
-import { Graph } from '../query/engine.ts'
+import { Graph, swapPending } from '../query/engine.ts'
 import * as c from '../query/commands.ts'
 
 const log = logger('mcp')
@@ -77,6 +77,14 @@ export function createServer(dbPath: () => string, project = process.env.CLAUDE_
 
   function open(): Graph | undefined {
     const p = dbPath()
+    if (existsSync(`${p}.next`)) {
+      // A rebuilt store waits for this server's handle to go (Windows): let go, swap it in, and open the new one.
+      try {
+        graph?.db.close()
+      } catch {} // already closed
+      graph = undefined
+      swapPending(p)
+    }
     if (!existsSync(p)) return undefined
     const s = statSync(p)
     const now = `${s.ino}:${s.size}:${s.mtimeMs}`

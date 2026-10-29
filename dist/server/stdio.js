@@ -6,7 +6,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { resolveDataDir } from "../core/home.js";
 import { errFields, errorCode, logger, queryFields, redact } from "../core/log.js";
 import { isOff, loadConfigSafe } from "../ingest/config.js";
-import { Graph } from "../query/engine.js";
+import { Graph, swapPending } from "../query/engine.js";
 import * as c from "../query/commands.js";
 const log = logger('mcp');
 /** Whether a prompt got memory pointers in the last minute: the log then says how often a pointer leads to a call. */
@@ -71,6 +71,15 @@ export function createServer(dbPath, project = process.env.CLAUDE_PROJECT_DIR ??
     let ready = false;
     function open() {
         const p = dbPath();
+        if (existsSync(`${p}.next`)) {
+            // A rebuilt store waits for this server's handle to go (Windows): let go, swap it in, and open the new one.
+            try {
+                graph?.db.close();
+            }
+            catch { } // already closed
+            graph = undefined;
+            swapPending(p);
+        }
         if (!existsSync(p))
             return undefined;
         const s = statSync(p);

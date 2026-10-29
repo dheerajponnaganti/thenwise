@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.23
+
+Fixes from an npm package review and a Hub test, a Hub on another host, and a README that shows Thenwise at work.
+
+- Team server: a Hub on another host works with `--allow-origin`. Its session cookies can travel with a cross-site request, and the new `GET /v1/session/csrf` hands the Hub the value it cannot read from the cookie (API 1.1 addition; v1 is unchanged).
+- Windows: a full rebuild no longer fails while Claude Code holds the store open. The new store waits beside it as `graph.db.next`, and the next process that opens the store swaps it in.
+- Masking: long text with many hyphens is masked in linear time. Before, a 100 KB note could hold the team server for about 9 seconds, and a long hyphenated line slowed the archive and hooks.
+- `thenwise --help` and `thenwise --version` print to stdout and exit 0.
+- `uninstall` stops only the background sync itself, never another process that happens to reuse its pid.
+- Team server: an export past 65,535 files answers 413 with a clear message instead of failing.
+- Teams: a chat marked `[no-memory]` after it was shared leaves the team server at the next sync, and teammates drop it.
+- Teams: a Markdown file shared as a note keeps its kind (decision, dead end, rule or finding) from `type:` or `kind:` in its front matter.
+- Teams: a teammate's note shows its project in search results instead of "global".
+- Team server: `/v1/health` reports the Thenwise version.
+- Messages: `archive` names chats left out for `[no-memory]` as such, and `team share-chats` mentions later syncs only when chats are left.
+- README: what Thenwise is, the install lines and the results open the page. Three recordings of real Claude Code sessions show the same question with and without Thenwise, three questions in one session, and a dead end caught before an edit.
+- How we measured: `docs/eval.md` explains the questions, the two arms, the blind grading and the results, and how to run the harness.
+- npm: a clearer description and more keywords.
+
 ## 0.1.22
 
 Five bug fixes from a code review, and a corrected measurement.

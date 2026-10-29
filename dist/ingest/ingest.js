@@ -21,11 +21,12 @@ import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
 import { parseSession } from "./transcript.js";
+import { swapPending } from "../query/engine.js";
 export { GENERATED, datedSections } from "./parts.js";
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 export const STATE_VERSION = 3;
-/** The layout of graph.db. A store with no entry is today's (carapace) layout, which is 1. */
+/** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2;
 /** Each repo's GitHub slug as JSON, worked out here so opening a store runs no git. */
@@ -234,6 +235,9 @@ export function ingest(cfg, opts = {}) {
     const dbPath = opts.db ?? join(cfg.memDir, 'graph.db');
     return withLock(dbPath, () => {
         const t0 = Date.now();
+        swapPending(dbPath);
+        if (existsSync(`${dbPath}.next`))
+            opts = { ...opts, full: true }; // the waiting store is newer: replace it, never update the old one
         let r;
         let failed = '';
         const format = existsSync(dbPath) ? storeFormat(dbPath) : STORE_FORMAT;
@@ -468,7 +472,15 @@ function writeDb(path, g, meta, state) {
     db.exec('COMMIT');
     db.close();
     chmodSync(tmp, 0o600);
-    renameSync(tmp, path);
+    try {
+        renameSync(tmp, path);
+    }
+    catch (e) {
+        // Windows refuses a rename over a store the MCP server holds open: the new store waits as <store>.next (swapPending).
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(e.code ?? ''))
+            throw e;
+        renameSync(tmp, `${path}.next`);
+    }
 }
 /** Sorted logical dump of nodes, edges and meta (not the FTS shadow tables), as one sha256. */
 export function dumpHash(path) {

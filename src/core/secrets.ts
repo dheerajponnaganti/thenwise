@@ -29,7 +29,7 @@ const WRAPPED = /(?<![A-Za-z0-9])(?=[A-Za-z0-9_.-]{16})(?:gh[pousr]_|github_pat_
 // `curl -u user:pass`.
 const CURL_USER = /((?:\s-u|\s--user)[\s=]+["']?[^\s:"']+:)([^\s"']{3,})/g
 // The password in a URL: `postgres://user:pass@host` keeps the user and host.
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]*:)([^\s@/]{3,})@/gi
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,32}:\/\/[^\s:/@]*:)([^\s@/]{3,})@/gi
 // Upper-case env names ending in a secret word: `STRIPE_KEY=...`, `DB_PASSWORD=...`; Azure `AccountKey=...`.
 const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)|AccountKey|SharedAccessKey)(\s*=\s*["']?)([^\s"';]{8,})/g
 // The value after a secret-looking name: `api_key = abcd...`, `"password": "..."`, `Authorization: Bearer ...`.
@@ -38,9 +38,10 @@ const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIA
 // Docker config: `"auth": "<base64>"`.
 const DOCKER_AUTH = /("auth"\s*:\s*")([A-Za-z0-9+/=]{12,})(?=")/g
 // `<vendor>_key=`: only a token-like value (20+ characters with letters and digits), so `foreign_key: users.id` stays readable.
-const VENDOR_KEY = /(\b[a-z][\w-]*[_-]key["']?\s*[:=]\s*["']?)((?=(?:[\w-]*\d){3})(?=[\w-]*[a-z])[\w-]{20,})/gi
+const VENDOR_KEY = /(\b[a-z][\w-]{0,64}[_-]key["']?\s*[:=]\s*["']?)((?=(?:[\w-]*\d){3})(?=[\w-]*[a-z])[\w-]{20,})/gi
+// Name prefixes are bounded ({0,64}, {0,32}): unbounded runs after \b made masking quadratic on long hyphenated text.
 // A value that names an environment variable (`process.env.API_KEY`, `${TOKEN}`) is code, not a secret.
-const ASSIGNED = /\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?((?!(?:process\.env|import\.meta\.env|os\.environ|os\.getenv|env\.|ENV\[|\$\{?[A-Za-z_]))[^\s"',;]{8,})/gi
+const ASSIGNED = /\b([\w-]{0,64}(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?((?!(?:process\.env|import\.meta\.env|os\.environ|os\.getenv|env\.|ENV\[|\$\{?[A-Za-z_]))[^\s"',;]{8,})/gi
 
 export const MASK = '[secret masked]'
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */

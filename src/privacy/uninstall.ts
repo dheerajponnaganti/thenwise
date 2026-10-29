@@ -16,9 +16,9 @@ export function uninstall(home: string = homedir(), print: (l: string) => void =
   if (existsSync(lock)) {
     const pid = Number(readFileSync(lock, 'utf8').trim())
     try {
-      // A recycled pid must not get our signal: it has to be a live process whose command line names Thenwise.
+      // A recycled pid must not get our signal: it has to be a live sync worker (`thenwise hook sync-run`).
       const cmd = pid > 0 && Date.now() - statSync(lock).mtimeMs < 6 * 3600e3 ? execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) : ''
-      if (/thenwise|memory-v2/i.test(cmd)) (process.kill(pid, 'SIGTERM'), (stopped = true))
+      if (/\bhook sync-run\b/.test(cmd)) (process.kill(pid, 'SIGTERM'), (stopped = true))
     } catch {} // no ps, or the process is already gone: `stopped` stays false and the output says so
   }
   print(stopped ? 'Stopped the background sync.' : 'No background sync is running.')

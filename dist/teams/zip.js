@@ -1,7 +1,10 @@
 // A zip file of stored (uncompressed) text entries: enough for an export that opens in any unzip tool.
 import { crc32 } from 'node:zlib';
 const fill = (b, fields) => fields.forEach(([at, size, v]) => b.writeUIntLE(v, at, size));
+/** Undefined past 65,535 files, the most a plain (non-ZIP64) zip can count. */
 export function zip(files, at = new Date()) {
+    if (files.length > 0xffff)
+        return undefined;
     const time = (at.getHours() << 11) | (at.getMinutes() << 5) | (at.getSeconds() >> 1);
     const date = ((at.getFullYear() - 1980) << 9) | ((at.getMonth() + 1) << 5) | at.getDate();
     const body = [];

@@ -1,5 +1,5 @@
 // The `thenwise` command (also installed as `memory`). The usage line below lists every command.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expandHome } from "./core/home.js";
@@ -10,6 +10,10 @@ const flag = (name) => {
     return i > 0 ? process.argv[i + 1] : undefined;
 };
 const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
+if (cmd === '--help' || cmd === '-h' || cmd === 'help')
+    (console.log(USAGE), process.exit(0));
+if (cmd === '--version' || cmd === '-v')
+    (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0));
 if (cmd === 'setup' || cmd === 'init')
     process.exit(await (await import("./setup/setup.js")).setup(process.argv.slice(3)));
 if (cmd === 'deadend' || cmd === 'decide') {
@@ -91,7 +95,7 @@ if (cmd === 'archive' || cmd === 'ingest') {
         for (const [rel, ls] of bad)
             console.log(`  ${rel}: ${ls.length} lines did not parse (first: line ${Math.min(...ls)})`);
         if (r.excludedChats || r.off)
-            console.log(`${r.excludedChats} test chats and ${r.off} chats of paused projects were not archived`);
+            console.log(`${r.excludedChats} chat${r.excludedChats === 1 ? '' : 's'} marked [no-memory] and ${r.off} chat${r.off === 1 ? '' : 's'} of paused projects were not archived`);
         for (const p of r.pruned)
             console.log(`  removed: ${p}`);
         for (const f of r.failures)

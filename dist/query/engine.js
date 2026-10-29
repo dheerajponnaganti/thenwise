@@ -1,6 +1,6 @@
 // Deterministic retrieval over the graph (Phase C). No model anywhere: BM25 over passages, fused by reciprocal rank
 // fusion with a title lane, a graph lane and an exact lane. Every result carries the lanes that found it.
-import { existsSync } from 'node:fs';
+import { existsSync, renameSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { projectRoot, real, repoRoot } from "../ingest/repos.js";
@@ -46,6 +46,16 @@ export const endOf = (d) => {
     const guess = Date.parse(`${d}T23:59:59.999Z`);
     return new Date(guess - offsetMs(guess)).toISOString();
 };
+/** A rebuilt store that could not replace the open one (Windows refuses a rename over a file another process holds)
+ * waits beside it as `<store>.next`. Whoever opens the store next swaps it in; while a reader still holds it, it waits. */
+export function swapPending(path) {
+    if (!existsSync(`${path}.next`))
+        return;
+    try {
+        renameSync(`${path}.next`, path);
+    }
+    catch { } // still held open: the next opener tries again
+}
 export class Graph {
     db;
     nodes = new Map();
@@ -71,6 +81,7 @@ export class Graph {
     lazy;
     constructor(path, opts = {}) {
         this.lazy = !!opts.lazy;
+        swapPending(path);
         this.db = new DatabaseSync(path, { readOnly: true });
         this.db.exec('PRAGMA busy_timeout = 5000'); // an update may be committing
         if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'passages'").get())
@@ -202,7 +213,7 @@ export class Graph {
         const cwd = String(ses?.extra?.cwd ?? '');
         if (!r && cwd)
             return basename(cwd);
-        return r ? basename(r) : n.kind === 'session' || n.kind === 'turn' || n.kind === 'summary' || n.kind === 'commit' || n.kind === 'pr' ? n.project || 'global' : 'global';
+        return r ? basename(r) : n.kind === 'session' || n.kind === 'turn' || n.kind === 'summary' || n.kind === 'commit' || n.kind === 'pr' || n.kind === 'team' ? n.project || 'global' : 'global';
     }
     isHub(id) {
         if (this.nodes.get(id)?.kind !== 'file')

@@ -18,19 +18,32 @@
 
 <br>
 
+**Thenwise is a Claude Code plugin that gives Claude a local memory of your past chats, commits, pull requests and notes.** Install it in two lines:
+
+```
+/plugin marketplace add dheerajponnaganti/thenwise
+/plugin install thenwise@thenwise
+```
+
+Graded blind on hidden answers: **83%** right against 47% for plain Claude Code on your own history, and **88%** against 25% from a teammate's shared chats. [How we measured](#measured-with-the-answers-hidden).
+
 Your project lays down history every day. A chat settles a question. A commit lands. An idea fails on a Tuesday and nobody writes it down. Weeks later the reason is buried, and Claude starts from zero.
 
 Thenwise keeps every layer, dated and in order, and drills straight to the one that answers.
 
 ## The same question, twice
 
-<p align="center"><img src="assets/readme/two-answers.png" width="100%" alt="The question: why did we split the cache into shards? Without Thenwise, Claude reads git log, finds the commit, and admits the commit does not say why. With Thenwise, Claude calls memory_why and answers: on 6 October the single cache file locked up under load at the Friday peak, it was reverted the same day and moved to eight shards keyed by store id, and it cites the chat."></p>
+<p align="center"><img src="assets/readme/g1-same-question.gif" width="100%" alt="Two Claude Code terminals get the same question in one repository: why did we split the cache into shards? Without Thenwise, Claude runs git show twice and answers that the history does not say why; it guesses at contention and says Maya Rao would know. With Thenwise, Claude calls memory_why and memory_read and answers that the cache was split to fix checkout timeouts at the Friday peak: one prices.json file with a single writer held the lock for up to 900 ms, a mutex pool made it worse and was reverted, the cache is now eight shards keyed by store id, p99 went back to 120 ms, and the split is commit e0a23e3 from 2026-10-06. Real Claude Code output."></p>
 
-That second answer came from a chat you had three weeks ago and forgot about. Thenwise kept it.
+Same repository, same question, real Claude Code output. That second answer came from a chat you had three weeks ago and forgot about. Thenwise kept it.
 
 ## Born for three questions
 
 <p align="center"><img src="assets/readme/three-questions.png" width="100%" alt="Three specimens. A fossil: why did we choose this? Decisions come back with their reasons, their day and their commit. A filled-in tunnel: what did we already try? Dead ends stay marked and dated. A pin in a layer: what was true on that day? Claude answers from what was known then."></p>
+
+In one session, each with its day and its source:
+
+<p align="center"><img src="assets/readme/g3-three-questions.gif" width="100%" alt="One Claude Code session with Thenwise answers three questions. Why did we split the cache into shards: memory_why, the Friday peak timeouts, the reverted mutex pool. What did we already try for the price fetch retries: memory_tried, two approaches on 2026-10-14, plain retries dropped because every client retried at once. What did the price cache look like on 1 October: memory_asof, the version from commit 2953f33, one JsonFileCache on prices.json. Real Claude Code output."></p>
 
 ## The past comes to you
 
@@ -42,13 +55,17 @@ You will not always think to ask. Thenwise slips the right history in at the rig
 - **Open a file** and Claude learns its dead ends and decisions before it changes a line.
 - **Across sessions and projects**, the memory follows you.
 
+Ask Claude to change a file with a dead end in its past, and it checks before it edits:
+
+<p align="center"><img src="assets/readme/g5-dead-end.gif" width="100%" alt="Asked to add retries to the price fetch in src/fetch.ts, Claude reads the file, calls memory_trace on it, and finds that four plain retries were tried on 2026-10-14 and reverted because every client retried at the same moment. It makes no change and says it did not add plain retries again because that approach is a known dead end. Real Claude Code output."></p>
+
 ## Measured, with the answers hidden
 
 Sounds good. Does it hold up? We tested it the hard way.
 
 <p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 1.8 times more questions answered right (83% with Thenwise, 47% for plain Claude Code reading git, about 13% with no git), 40% fewer tokens per answer, 2.2 times faster answers (23 seconds against 51). Teams, from a teammate's shared chats: 3.5 times more questions answered right (88% against 25%), 24% fewer tokens, 1.5 times faster (22 seconds against 33). And 2,500 chats remembered 84 seconds after install."></p>
 
-Individual: Claude answers about your own history. Teams: a teammate asks about a project they never worked on and answers from its shared chats. In both tests, plain Claude Code could read the repository and its git history. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them.
+Individual: Claude answers about your own history. Teams: a teammate asks about a project they never worked on and answers from its shared chats. In both tests, plain Claude Code could read the repository and its git history. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them. [How we measured](docs/eval.md): the questions, the two arms and the blind grading.
 
 ## Your memory stays yours
 

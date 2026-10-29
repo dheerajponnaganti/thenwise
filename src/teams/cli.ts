@@ -1,5 +1,6 @@
 // `thenwise team ...`, `share` and `unshare` (teams preview). Called from main.ts; returns the exit code.
 
+import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -48,6 +49,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
     if (sub === 'serve') {
       const app = createTeamServer({
         dir: serverDir,
+        version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version, // /v1/health names the build
         ...(flag('host') ? { host: flag('host')! } : {}),
         port: Number(flag('port') ?? 8788),
         ...(flag('console') ? { console: resolve(flag('console')!) } : {}),
@@ -115,7 +117,7 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       })
       await setServerStatus(dir, pv.project, 'active')
       console.log(await pushShared(cfg))
-      console.log(`The rest goes ${PUSH_PER_SYNC} chats at a time at each sync. \`thenwise team unshare-chats ${pv.project}\` takes them back.`)
+      console.log(`${pv.chats > PUSH_PER_SYNC ? `The rest goes ${PUSH_PER_SYNC} chats at a time at each sync. ` : ''}\`thenwise team unshare-chats ${pv.project}\` takes them back.`)
     } else if (sub === 'unshare-chats') {
       if (!words[0]) return (console.error(TEAM_USAGE), 2)
       console.log(await unshareChats(cfg, words[0], { pause: process.argv.includes('--pause') }))

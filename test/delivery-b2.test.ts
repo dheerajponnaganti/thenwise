@@ -196,6 +196,7 @@ test('B2-27/28: the file hint is spent only on an answer, per agent; a plain Bas
   assert.equal(readTarget('head -n 5 a.ts', '/x'), '/x/a.ts')
   assert.equal(readTarget('tail -n 5 /y/a.ts', '/x'), '/y/a.ts')
   assert.equal(readTarget('rm a.ts', '/x'), undefined)
+  assert.equal(readTarget('cat -n a.ts', '/x'), '/x/a.ts')
 })
 
 test('B2-28: the Bash hook on a non-read command is cheap and never opens the store', () => {

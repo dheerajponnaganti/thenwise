@@ -100,3 +100,16 @@ test('a 600 MB chat archives', { skip: process.env.THENWISE_SLOW !== '1' }, () =
   assert.equal(r.archived, 1)
   assert.equal(r.failed.length, 0)
 })
+
+test('a [no-memory] marker added after a sync drops the archived copy', () => {
+  const w = world()
+  const file = join(w.dir, 's.jsonl')
+  writeFileSync(file, `${row(1, 'first turn')}\n`)
+  assert.equal(archive(w.cfg).archived, 1)
+  appendFileSync(file, `${row(2, '[no-memory]')}\n`)
+  const r = archive(w.cfg)
+  assert.equal(r.excludedChats, 1)
+  assert.deepEqual(r.pruned, ['-x/s.jsonl'])
+  assert.throws(() => readFileSync(dest(w.home)))
+  assert.ok(!('-x/s.jsonl' in JSON.parse(readFileSync(join(w.home, '.memory/archive/manifest.json'), 'utf8'))))
+})

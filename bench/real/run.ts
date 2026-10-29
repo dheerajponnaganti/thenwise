@@ -68,7 +68,11 @@ function workspace(): { cwd: string; extra: string[] } {
     writeFileSync(join(ws, 'CLAUDE.md'), `# Project records\n${RECORDS[SET]!.text}`)
     const settings = JSON.stringify({ env: { CLAUDE_CODE_PLUGIN_DIRS: '' }, enabledPlugins: OFF_PLUGINS })
 
-    return { cwd: ws, extra: ['--settings', settings, '--add-dir', ...RECORDS[SET]!.dirs, ...(arm === 'plugin' ? ['--plugin-dir', PLUGIN] : [])] }
+    // THENWISE_EVAL_VAULT gives the plugin arm direct read access to a notes vault (a leak-free copy), on top of the plugin.
+    const vault = arm === 'plugin' ? process.env.THENWISE_EVAL_VAULT : undefined
+    if (vault) writeFileSync(join(ws, 'CLAUDE.md'), `# Project records\n${RECORDS[SET]!.text}\n- the notes vault: ${vault}/\n`)
+
+    return { cwd: ws, extra: ['--settings', settings, '--add-dir', ...RECORDS[SET]!.dirs, ...(vault ? [vault] : []), ...(arm === 'plugin' ? ['--plugin-dir', PLUGIN] : [])] }
   }
   const ws = join(HOME, 'carapace-crew/eval-ws', arm)
   mkdirSync(ws, { recursive: true })
@@ -90,7 +94,9 @@ function ask(q: RealQuestion): Promise<Answer> {
   return new Promise(resolve => {
     // The prompt goes on stdin: a trailing prompt argument would be read as one more --disallowedTools entry.
     const gate = arm === 'plain' || arm === 'plugin'
-    const deny = [...NO_PEEKING, ...(gate ? ['Read(~/.memory/**)', 'Read(~/Library/Mobile Documents/**)', 'Read(~/carapace-crew/**)'] : [])]
+    // The vault copy is the plugin arm's alone: plain may not find it by searching the home folder.
+    const vaultCopy = arm === 'plain' && process.env.THENWISE_EVAL_VAULT ? [`Read(${process.env.THENWISE_EVAL_VAULT.replace(HOME, '~')}/**)`] : []
+    const deny = [...NO_PEEKING, ...(gate ? ['Read(~/.memory/**)', 'Read(~/Library/Mobile Documents/**)', 'Read(~/carapace-crew/**)', ...vaultCopy] : [])]
     const child = spawn('claude', ['-p', ...(gate ? [] : [PROMPT(q)]), '--output-format', 'json', '--model', model, ...extra, '--allowedTools', ...READ_ONLY,
       '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'WebSearch', 'WebFetch', 'Agent', ...deny], { cwd, stdio: [gate ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...NO_CARAPACE, ...(arm === 'plugin' ? { THENWISE_HOME: join(GATE, 'store'), THENWISE_SYNC: 'off' } : {}) } })
     if (gate) child.stdin!.end(PROMPT(q))

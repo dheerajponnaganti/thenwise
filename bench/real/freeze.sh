@@ -14,6 +14,8 @@ c = json.load(open(os.path.expanduser('~/.memory/config.json')))
 # A frozen store never writes outside its folder: forget would rewrite a configured vault, backups or team notes.
 for k in ('views', 'vault', 'backup', 'team', 'teams'): c.pop(k, None)
 c['exclude_projects'] = sorted(set(c.get('exclude_projects', []) + ['*-eval-ws*'])); c['scope'] = 'all'
+# THENWISE_EVAL_VAULT swaps the vault for a leak-free copy (eval notes removed) when an arm may read the vault.
+if os.environ.get('THENWISE_EVAL_VAULT'): c.setdefault('ingest', {})['vaults'] = [os.environ['THENWISE_EVAL_VAULT']]
 json.dump(c, open(f'{r}/gate/store/config.json', 'w'), indent=1)
 e3 = json.load(open(os.path.expanduser('~/.memory/eval/records.json')))['e3']['dirs']
 json.dump({'version': 1, 'scope': 'all', 'exclude_projects': c['exclude_projects'], 'ingest': {'roots': e3, 'repos': e3, 'github_repos': [], 'vaults': [], 'prs': False}}, open(f'{r}/e3/store/config.json', 'w'), indent=1)

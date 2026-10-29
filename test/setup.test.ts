@@ -266,7 +266,7 @@ test('S7-H4: isOff matches the project and folders inside it', () => {
   assert.ok(isOff({ off: true, offProjects: [] }, '/anywhere'))
 })
 
-test('S7-B1 S7-B2: excluded chats are never archived; old copies are counted, and --prune-excluded removes them', () => {
+test('S7-B1 S7-B2: excluded chats are never archived; the old copy of a marked chat goes at once, that of an excluded project waits for --prune-excluded', () => {
   const f = f1()
   f.cli(['setup', '--yes', '--no-sync'])
   const sess = join(f.data, 'archive', 'sessions')
@@ -275,15 +275,19 @@ test('S7-B1 S7-B2: excluded chats are never archived; old copies are counted, an
   writeFileSync(join(sess, '-work-alpha', 'a2.jsonl.gz'), 'x')
   mkdirSync(join(sess, '-work-personal'), { recursive: true })
   writeFileSync(join(sess, '-work-personal', 'p1.jsonl.gz'), 'x')
+  const cfgFile = join(f.data, 'config.json')
+  const user = JSON.parse(readFileSync(cfgFile, 'utf8'))
+  writeFileSync(cfgFile, JSON.stringify({ ...user, exclude_projects: [...(user.exclude_projects ?? []), '-work-personal'] }))
   const cfg = loadConfigSafe(f.home).config!
-  cfg.excludeProjects.push('-work-personal')
   const r = archive(cfg)
   assert.equal(r.excludedChats, 1)
-  assert.deepEqual(r.leftover.sort(), ['-work-alpha/a2.jsonl', '-work-personal/p1.jsonl'])
-  assert.ok(existsSync(join(sess, '-work-alpha', 'a2.jsonl.gz')), 'nothing is deleted without the flag')
+  assert.deepEqual(r.pruned, ['-work-alpha/a2.jsonl'])
+  assert.ok(!existsSync(join(sess, '-work-alpha', 'a2.jsonl.gz')), 'a [no-memory] chat is never kept')
+  assert.deepEqual(r.leftover, ['-work-personal/p1.jsonl'])
+  assert.ok(existsSync(join(sess, '-work-personal', 'p1.jsonl.gz')), 'an excluded project is not deleted without the flag')
   assert.match(f.cli(['archive']).stdout, /archived chats belong to excluded/)
   const p = archive(cfg, { prune: true })
-  assert.equal(p.pruned.length, 2)
+  assert.deepEqual(p.pruned, ['-work-personal/p1.jsonl'])
   assert.ok(!existsSync(join(sess, '-work-alpha', 'a2.jsonl.gz')) && !existsSync(join(sess, '-work-personal', 'p1.jsonl.gz')))
   assert.deepEqual(archive(cfg).leftover, [])
 })

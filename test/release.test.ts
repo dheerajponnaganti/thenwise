@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { fileURLToPath } from 'node:url'
 
 import { CONFIG_VERSION, loadConfigSafe } from '../src/ingest/config.ts'
 import { STORE_FORMAT, storeFormat } from '../src/ingest/ingest.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(ROOT, 'src/cli.ts')
 
 // R-H3: licence, changelog and one version everywhere.
@@ -105,8 +106,9 @@ const scanDir = (dir: string) => spawnSync(process.execPath, [join(ROOT, 'script
 test('R-B4: the npm tarball and the release tree hold no owner data', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'tw-scan-'))
   try {
-    // Tarball: pack builds dist first (prepack).
-    const name = execFileSync('npm', ['pack', '--pack-destination', tmp, '--silent'], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' }).trim().split(/\r?\n/).pop()!
+    // Tarball: prepack deletes and rebuilds dist, which breaks test files running at the same time, so it runs only when dist is missing.
+    const scripts = existsSync(join(ROOT, 'dist/cli.js')) ? ['--ignore-scripts'] : []
+    const name = execFileSync('npm', ['pack', ...scripts, '--pack-destination', tmp, '--silent'], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' }).trim().split(/\r?\n/).pop()!
     const out = join(tmp, 'x')
     mkdirSync(out)
     execFileSync('tar', ['-xzf', join(tmp, name), '-C', out])

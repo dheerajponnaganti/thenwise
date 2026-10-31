@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Windows: project folders, notes and file paths are compared with forward slashes everywhere, so a chat from a deleted repo keeps its project and a note's links resolve.
+- Windows: `thenwise uninstall` stops a running background sync.
+
 ## 0.1.24
 
 More secrets masked in shell commands, and shell commands now link files and commits on every system.

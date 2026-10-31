@@ -12,7 +12,7 @@ import { tempDir } from './mcp-fixture.ts'
 
 test('fast path prints the same file history and resume brief as the full graph', () => {
   const dir = tempDir()
-  const mk = (n: string) => (mkdirSync(join(dir, n, '.git'), { recursive: true }), realpathSync(join(dir, n)))
+  const mk = (n: string) => (mkdirSync(join(dir, n, '.git'), { recursive: true }), realpathSync(join(dir, n)).replace(/\\/g, '/'))
   const a = mk('alpha')
   const b = mk('beta')
   mkdirSync(join(a, 'My Docs'), { recursive: true })

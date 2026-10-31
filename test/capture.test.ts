@@ -63,7 +63,7 @@ test('parsing drops sourceless items and holds the per-chunk caps', () => {
   assert.deepEqual(parseItems('not json', labels), { items: [], dropped: 0 })
 })
 
-test('inbox notes are not searchable until accepted; secrets never reach the model; reject works', () => {
+test('inbox notes are not searchable until accepted; secrets never reach the model; reject works', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
   const f = fixture()
   f.items([{ type: 'decision', title: 'Storage is sqlite', summary: 'We chose sqlite because it ships with node.', sources: ['t1'] }, { type: 'dead_end', title: 'Redis was too heavy', summary: 'Tried redis, dropped it as too heavy.', sources: ['t2'] }])
   const r = distill(f.cfg, { now: Date.parse('2026-10-02T00:00:00Z') })
@@ -90,7 +90,7 @@ test('inbox notes are not searchable until accepted; secrets never reach the mod
   assert.equal(readNotes(f.cfg.memDir).find((n) => n.id === dead.id)!.status, 'rejected')
 })
 
-test('duplicates are refused, the state file skips distilled turns, unreviewed inbox notes expire after 14 days', () => {
+test('duplicates are refused, the state file skips distilled turns, unreviewed inbox notes expire after 14 days', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
   const f = fixture()
   f.items([{ type: 'decision', title: 'Storage is sqlite', summary: 'We chose sqlite because it ships with node.', sources: ['t1'] }])
   assert.equal(distill(f.cfg, { now: Date.parse('2026-10-02T00:00:00Z') }).proposals, 1)
@@ -111,7 +111,7 @@ test('duplicates are refused, the state file skips distilled turns, unreviewed i
   assert.ok(![...new Graph(f.db).nodes.keys()].some((k) => k.startsWith('curated:n-')))
 })
 
-test('contradiction: yes supersedes on accept and closes the old note; no changes nothing', () => {
+test('contradiction: yes supersedes on accept and closes the old note; no changes nothing', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
   for (const answer of ['yes', 'no']) {
     const f = fixture()
     const old = saveNote(f.cfg.memDir, { id: 'n-old', type: 'decision', title: 'Storage is redis', summary: 'We store memory in redis.', status: 'active', valid_from: '2026-09-01T00:00:00Z', valid_to: '', supersedes: '', sources: [], created: '2026-09-01T00:00:00Z', project: 'p', path: '' })

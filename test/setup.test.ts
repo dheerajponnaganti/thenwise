@@ -2,15 +2,16 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { archive } from '../src/ingest/archive.ts'
 import { isOff, loadConfigSafe, readConfigFile } from '../src/ingest/config.ts'
 import { runDoctor } from '../src/setup/doctor.ts'
 import { discoverProjects } from '../src/setup/projects.ts'
 
-const CLI = new URL('../src/cli.ts', import.meta.url).pathname
+const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
 const MARK = '[no-memory]'
 
 function chat(dir: string, name: string, cwd: string, prompt: string) {
@@ -230,11 +231,13 @@ test('S2-H9 S2-B9: doctor names every check, and gives one fix line per broken p
   assert.match(hurt.detail, /thenwise ingest/)
   writeFileSync(join(f.home, '.claude', 'plugins', 'installed_plugins.json'), '{"plugins":{}}')
   assert.match(bad(await runDoctor(f.home, { gh: () => true }), 'plugin').detail, /\/plugin install/)
-  chmodSync(f.data, 0o500)
-  const ro = bad(await runDoctor(f.home, { gh: () => true }), 'data folder')
-  chmodSync(f.data, 0o700)
-  assert.equal(ro.ok, false)
-  assert.match(ro.detail, /not writable/)
+  if (process.platform !== 'win32') {
+    chmodSync(f.data, 0o500)
+    const ro = bad(await runDoctor(f.home, { gh: () => true }), 'data folder')
+    chmodSync(f.data, 0o700)
+    assert.equal(ro.ok, false)
+    assert.match(ro.detail, /not writable/)
+  }
   const empty = mkdtempSync(join(tmpdir(), 'tw-doc-'))
   const none = await runDoctor(empty, { gh: () => true })
   assert.match(bad(none, 'archive').detail, /thenwise archive/)
@@ -244,7 +247,7 @@ test('S2-H9 S2-B9: doctor names every check, and gives one fix line per broken p
 test('S7-H4: off for a project archives nothing from it; on resumes; a global off pauses everything', () => {
   const f = f1()
   assert.match(f.cli(['off', '--project', join(f.work, 'beta')]).stdout, /off for/)
-  assert.deepEqual(f.cfg().off_projects, [join(f.work, 'beta')])
+  assert.deepEqual(f.cfg().off_projects.map((p: string) => resolve(p)), [resolve(f.work, 'beta')])
   const r = f.cli(['archive'])
   assert.match(r.stdout, /1 chat of paused projects/)
   const files = allFiles(join(f.data, 'archive', 'sessions')).join('\n')

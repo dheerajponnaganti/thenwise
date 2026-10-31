@@ -15,7 +15,7 @@ import { skippedNotes } from '../src/vault/user.ts'
 import { World } from './world.ts'
 
 const SECRET = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-const tree = (d: string): Record<string, string> => Object.fromEntries((existsSync(d) ? (readdirSync(d, { recursive: true, withFileTypes: true }) as any[]) : []).filter((e) => e.isFile()).map((e) => [join(e.parentPath, e.name).slice(d.length + 1), readFileSync(join(e.parentPath, e.name), 'utf8')]))
+const tree = (d: string): Record<string, string> => Object.fromEntries((existsSync(d) ? (readdirSync(d, { recursive: true, withFileTypes: true }) as any[]) : []).filter((e) => e.isFile()).map((e) => [join(e.parentPath, e.name).slice(d.length + 1).replace(/\\/g, '/'), readFileSync(join(e.parentPath, e.name), 'utf8')]))
 const notesOf = (d: string) => Object.fromEntries(Object.entries(tree(d)).filter(([k]) => k.endsWith('.md') && !k.startsWith('.edited')))
 
 /** A world with chats, decisions and a dead end in git, and a separate output vault. */

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { test } from 'node:test'
 
 import { backup } from '../src/backup/backup.ts'
@@ -73,7 +73,7 @@ test('Forget keeps a similar folder name, and ingest drops forgotten and paused 
   for (const r of [repo, off, join(work, 'my-app')]) mkdirSync(r, { recursive: true })
   for (const r of [repo, off]) {
     spawnSync('git', ['-C', r, 'init', '-q'])
-    spawnSync('git', ['-C', r, 'remote', 'add', 'origin', `https://github.com/o/${r.split('/').pop()}.git`])
+    spawnSync('git', ['-C', r, 'remote', 'add', 'origin', `https://github.com/o/${basename(r)}.git`])
   }
   const cfg = cfgOf(home, { ingest: { roots: [work], repos: [repo, off, join(work, 'my-app')], prs: false }, off_projects: [off] })
   const keyDir = join(cfg.memDir, 'archive/sessions/-work-my-app')
@@ -89,7 +89,7 @@ test('Forget keeps a similar folder name, and ingest drops forgotten and paused 
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(cfg.memDir, 'prs-cache.json'), 'utf8'))), ['o/other'])
 })
 
-test('Notes are written 0600 in 0700 folders, and tighten also fixes an older ~/.memory', () => {
+test('Notes are written 0600 in 0700 folders, and tighten also fixes an older ~/.memory', { skip: process.platform === 'win32' && 'no POSIX file modes' }, () => {
   const home = tmp()
   const mem = join(home, '.thenwise')
   mkdirSync(mem, { mode: 0o700 })
@@ -107,7 +107,7 @@ test('Notes are written 0600 in 0700 folders, and tighten also fixes an older ~/
 test('Uninstall does not signal a process that is not Thenwise, and lists the extras', async () => {
   const home = tmp()
   const cfg = cfgOf(home)
-  const holder = spawn('sleep', ['30'])
+  const holder = spawn('sleep', ['300']) // long enough for a slow PowerShell lookup on a busy Windows runner
   writeFileSync(join(cfg.memDir, 'sync.lock'), String(holder.pid))
   writeFileSync(join(cfg.memDir, 'team.json'), '{}')
   const lines: string[] = []

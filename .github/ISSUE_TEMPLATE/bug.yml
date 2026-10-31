@@ -9,6 +9,17 @@ body:
       description: What you did, what you expected, and what Thenwise did instead.
     validations:
       required: true
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Tool
+      description: Where it happened.
+      options:
+        - Claude Code
+        - Terminal (npm install)
+        - Team server or Hub
+    validations:
+      required: true
   - type: textarea
     id: steps
     attributes:

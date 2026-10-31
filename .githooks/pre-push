@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses private history and owner data before a push. Turn on once per clone: git config core.hooksPath .githooks
+exec node "$(dirname "$0")/../scripts/pre-push.mjs" "$@"

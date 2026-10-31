@@ -12,9 +12,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
       - run: node scripts/scan-owner.mjs
+      # A pull request's title, description and commit messages stay public, so they get the same check as the hook.
+      - name: Scan the pull request's text
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          # Only the owner has private data to leak. Outside commits and bots rightly carry emails and co-author lines.
+          OWNER_PR: ${{ github.event.pull_request.user.login == github.repository_owner }}
+        run: |
+          printf '%s\n' "$TITLE" | node scripts/scan-owner.mjs --title
+          if [ "$OWNER_PR" = true ]; then
+            printf '%s\n%s\n' "$TITLE" "$BODY" | node scripts/scan-owner.mjs --text
+            git log --format=%B "$BASE..$HEAD" | node scripts/scan-owner.mjs --text
+          fi
   unit:
     strategy:
       fail-fast: false

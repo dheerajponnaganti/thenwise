@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename, delimiter } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync } from 'node:zlib'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { backup } from '../src/backup/backup.ts'
 import { saveNote } from '../src/capture/notes.ts'
@@ -14,8 +15,8 @@ import { forget } from '../src/privacy/forget.ts'
 import { joinTeam, payloadOf, resolveNote, share, sharedIds } from '../src/teams/client.ts'
 import { createTeamServer, invite, openTeamDb } from '../src/teams/server.ts'
 
-const CLI = new URL('../src/cli.ts', import.meta.url).pathname
-const NONET = new URL('./no-net.mjs', import.meta.url).pathname
+const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+const NONET = fileURLToPath(new URL('./no-net.mjs', import.meta.url))
 
 function chat(dir: string, name: string, cwd: string, prompt: string, extra: unknown[] = []) {
   mkdirSync(dir, { recursive: true })
@@ -38,7 +39,7 @@ function world(prompts: Record<string, string> = { a1: 'billing exporter retries
   const bin = join(home, 'bin')
   mkdirSync(bin)
   writeFileSync(join(bin, 'gh'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
-  const env: Record<string, string | undefined> = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}:/usr/bin:/bin`, THENWISE_HOME: data }
+  const env: Record<string, string | undefined> = { ...process.env, HOME: home, USERPROFILE: home, PATH: process.platform === 'win32' ? `${bin}${delimiter}${process.env.PATH}` : `${bin}:/usr/bin:/bin`, THENWISE_HOME: data }
   const writeConfig = (extra: Record<string, unknown> = {}) => writeFileSync(join(data, 'config.json'), JSON.stringify({ version: 1, ingest: { roots: [work], repos: [], prs: false }, ...extra }), { mode: 0o600 })
   writeConfig()
   const cli = (args: string[], more: Record<string, string> = {}) => spawnSync(process.execPath, [CLI, ...args], { env: { ...env, ...more }, encoding: 'utf8', cwd: home })
@@ -159,7 +160,7 @@ test('S7-H1: planted secrets are masked in the archive, store, tool results and 
 test('S7-B5: setup, archive, ingest, search, the MCP server and hooks make no outside connection', async () => {
   const w = world()
   const log = join(w.home, 'nonet.log')
-  const env = { NONET_LOG: log, NODE_OPTIONS: `--import=${NONET}` }
+  const env = { NONET_LOG: log, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(NONET).href}`.trim() }
   const run = (args: string[], input = '') => spawnSync(process.execPath, [CLI, ...args], { env: { ...w.env, ...env }, encoding: 'utf8', input, cwd: w.home })
   assert.equal(run(['setup', '--yes']).status, 0)
   assert.equal(run(['archive']).status, 0)
@@ -248,7 +249,7 @@ test('S7-H3: forget a project folder removes every chat of that project and no o
   const r = w.cli(['forget', join(w.work, 'alpha'), '--yes'])
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /Forgot 2 chats/)
-  assert.deepEqual(archived(w.data).map((f) => f.split('/').slice(-2).join('/')), ['-work-beta/b1.jsonl.gz'])
+  assert.deepEqual(archived(w.data).map((f) => f.split(/[\\/]/).slice(-2).join('/')), ['-work-beta/b1.jsonl.gz'])
   assert.match(search(w, 'zanzibar'), /not recorded/)
   assert.match(search(w, 'quokka'), /not recorded/)
   assert.match(search(w, 'pelican'), /pelican/)
@@ -290,7 +291,7 @@ test('S7-B8: a forgotten chat does not come back on the next sync', () => {
   assert.match(search(w, 'quokka'), /quokka/)
 })
 
-test('S7-B10: the data folder, archive, store and team file are readable by the user only', async () => {
+test('S7-B10: the data folder, archive, store and team file are readable by the user only', { skip: process.platform === 'win32' && 'no POSIX file modes' }, async () => {
   const w = world()
   w.sync()
   spawnSync(process.execPath, [CLI, 'hook', 'session-start'], { env: w.env, input: JSON.stringify({ source: 'resume', cwd: join(w.work, 'alpha') }) })
@@ -355,7 +356,7 @@ test('S7b-H2: backup to listed folders copies the vault, and runs at most once a
   assert.ok(existsSync(join(c1, 'vault/sub/b.md')))
 })
 
-test('S7b-B1: a missing or read-only target gives a clear error and leaves the vault untouched', () => {
+test('S7b-B1: a missing or read-only target gives a clear error and leaves the vault untouched', { skip: process.platform === 'win32' && 'no read-only folders through chmod' }, () => {
   const w = world()
   const vault = join(w.home, 'vault')
   mkdirSync(vault)
@@ -379,9 +380,9 @@ test('S7b-B2 S7-B9: a backup never holds the archive or the store, and a pushed 
   w.sync()
   const vault = join(w.home, 'vault')
   writeFileSync(join(vault, 'note.md'), 'a plain note')
-  const remote = join(w.home, '..', `${w.home.split('/').pop()}-remote.git`)
+  const remote = join(w.home, '..', `${basename(w.home)}-remote.git`)
   assert.equal(spawnSync('git', ['init', '--bare', '-q', remote]).status, 0)
-  const copies = join(w.home, '..', `${w.home.split('/').pop()}-copies`)
+  const copies = join(w.home, '..', `${basename(w.home)}-copies`)
   mkdirSync(copies)
   w.writeConfig({ vault: { path: vault }, backup: { kind: 'folders', folders: [copies] } })
   assert.equal(w.cli(['backup']).status, 0)

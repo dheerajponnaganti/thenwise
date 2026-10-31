@@ -12,6 +12,7 @@ import { real } from '../src/ingest/repos.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { execFileSync, spawn } from 'node:child_process'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { loadConfigSafe } from '../src/ingest/config.ts'
 import { trimTrace } from '../src/hooks/hook.ts'
@@ -187,7 +188,7 @@ test('T19-H1: a teammate\'s cached chat becomes tses, tturn and tsum nodes with 
   const w = new World()
   try {
     cache(w, wire())
-    assert.equal(statSync(join(w.memDir, 'team-chats.db')).mode & 0o777, 0o600)
+    if (process.platform !== 'win32') assert.equal(statSync(join(w.memDir, 'team-chats.db')).mode & 0o777, 0o600)
     w.archive()
     w.ingest('g.db')
     const g = new Graph(w.path('g.db'))
@@ -210,7 +211,7 @@ test('T19-H2: a team turn links to this machine\'s file, and the file hint names
     w.archive()
     w.ingest('g.db')
     const g = new Graph(w.path('g.db'))
-    const file = `file:${w.proj}/src/a.ts`
+    const file = `file:${w.proj.replace(/\\/g, '/')}/src/a.ts`
     assert.ok(g.nodes.has(file))
     assert.ok((g.adj.get(file) ?? []).some((e) => e.to === 'tturn:alice/t1'))
     g.scopeTo(w.proj)
@@ -834,9 +835,10 @@ test('F6 no network: with a team and shared chats, search, hooks and MCP tools m
     t.share(t.a)
     await pushShared(t.a.cfg)
     await fetchShared(t.b.memDir)
-    const env = { ...process.env, HOME: t.b.home, THENWISE_HOME: t.b.memDir, THENWISE_SYNC: 'off', NONET_LOG: log, NONET_ALL: '1', NODE_OPTIONS: `--import=${new URL('./no-net.mjs', import.meta.url).pathname}` }
-    const cli = new URL('../src/cli.ts', import.meta.url).pathname
-    const run = (args: string[], input = '') => spawnSync(process.execPath, [cli, ...args], { env, encoding: 'utf8', input, cwd: t.b.home })
+    const env = { ...process.env, HOME: t.b.home, THENWISE_HOME: t.b.memDir, THENWISE_SYNC: 'off', NONET_LOG: log, NONET_ALL: '1', NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./no-net.mjs', import.meta.url).href}`.trim() }
+    const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+    // A stuck child must fail this test, not block the whole file: this one held the Windows run for over half an hour.
+    const run = (args: string[], input = '') => (console.error(`F6: ${args[0]} ${args[1] ?? ''}`), spawnSync(process.execPath, [cli, ...args], { env, encoding: 'utf8', input, cwd: t.b.home, timeout: 60_000 }))
     assert.equal(run(['archive']).status, 0)
     assert.equal(run(['ingest']).status, 0)
     assert.match(run(['search', 'quokka exporter shards', '--all']).stdout, /quokka/)

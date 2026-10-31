@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 import { compare, score, summarize, type GoldLine } from '../bench/gold/run.ts'
 import { logger } from '../src/core/log.ts'
@@ -63,7 +64,7 @@ test('R6-B1: a bare #n reaches the exact lane only next to PR, pull or the repo 
 test('R6-B2: twenty hint marks written at once are all kept', async () => {
   const dir = tempDir()
   const files = Array.from({ length: 20 }, (_, i) => `/x/p/f${i}.ts`)
-  const code = (f: string) => `import('${resolve('src/hooks/hook.ts')}').then((h) => h.markSeen({ dir: ${JSON.stringify(dir)}, cli: '' }, 's', undefined, ${JSON.stringify(f)}))`
+  const code = (f: string) => `import('${pathToFileURL(resolve('src/hooks/hook.ts')).href}').then((h) => h.markSeen({ dir: ${JSON.stringify(dir)}, cli: '' }, 's', undefined, ${JSON.stringify(f)}))`
   await Promise.all(files.map((f) => new Promise((r) => spawn(process.execPath, ['--input-type=module', '-e', code(f)]).on('exit', r))))
   for (const f of files) assert.ok(seen({ dir, cli: '' }, 's', undefined, f), f)
   const state = readdirSync(join(dir, 'hook-state'))

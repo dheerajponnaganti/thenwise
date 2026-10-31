@@ -206,7 +206,9 @@ test('T17-B3: a viewer cannot push and a member cannot delete another member\'s 
 })
 
 test('T17-B4: the 61st chat push in a minute is a 429 with Retry-After, and reads are unaffected', async () => {
-  const t = await team()
+  // The limit counts per clock minute: a frozen clock stops the run from crossing into a new minute.
+  const frozen = Date.now()
+  const t = await team(undefined, undefined, () => frozen)
   try {
     const small = unit(1, { turns: [{ id: 'a', at: 1, passages: ['x'] }] })
     let last = 200

@@ -75,7 +75,7 @@ test('the archive command prints one line per damaged file', () => {
   assert.equal(r.stdout.split('\n').filter((l) => l.includes('unparsed:') || l.includes('lines did not parse (first')).length, 1)
 })
 
-test('an unreadable chat is reported with its reason and size, in the result and in the log', { skip: process.getuid?.() === 0 }, () => {
+test('an unreadable chat is reported with its reason and size, in the result and in the log', { skip: process.getuid?.() === 0 || process.platform === 'win32' }, () => {
   process.env.THENWISE_LOG = 'info' // the test runner turns logging off
   const w = world()
   const file = join(w.dir, 's.jsonl')

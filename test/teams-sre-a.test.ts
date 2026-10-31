@@ -12,9 +12,9 @@ import { backupTeam, createTeamServer, invite, openTeamDb, removeMember, restore
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), `twa-${p}-`))
 const NOTE = { title: 'Cache plan', text: 'Eight shards for the exporter.', project: 'alpha' }
 
-async function team(names: string[], roles: Record<string, string> = {}) {
+async function team(names: string[], roles: Record<string, string> = {}, now?: () => number) {
   const dir = tmp('srv')
-  const app = createTeamServer({ dir })
+  const app = createTeamServer({ dir, now })
   const { port } = await app.listen()
   const base = `http://127.0.0.1:${port}`
   const db = openTeamDb(dir)
@@ -127,7 +127,9 @@ test('SRE-09: a raw PUT with a secret is stored masked', async () => {
 })
 
 test('SRE-10: 30 bad tokens give 429 from the 21st and one audit row', async () => {
-  const t = await team(['root'])
+  // The limit counts per clock minute: a frozen clock stops the run from crossing into a new minute.
+  const frozen = Date.now()
+  const t = await team(['root'], {}, () => frozen)
   try {
     const codes: number[] = []
     for (let i = 0; i < 30; i++) codes.push((await t.req(`tw_bad${i}`, '/v1/me')).status)

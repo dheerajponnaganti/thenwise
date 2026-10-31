@@ -14,9 +14,9 @@ import { createTeamServer, invite, LIMITS, listMembers, removeMember, rotate } f
 delete process.env.THENWISE_LOG // B2 reads the client's log
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), `tw9-${p}-`))
 
-async function team(names = ['alice', 'bob']) {
+async function team(names = ['alice', 'bob'], now?: () => number) {
   const dir = tmp('srv')
-  const app = createTeamServer({ dir, version: 'test' })
+  const app = createTeamServer({ dir, version: 'test', now })
   const { port } = await app.listen()
   const base = `http://127.0.0.1:${port}`
   const db = openTeamDb(dir)
@@ -208,7 +208,9 @@ test('T9-B3: bad input is a 400 with a code on /v1; the old routes are a 404 tha
 })
 
 test('T9-B4: past the read limit a token gets 429 with Retry-After; another token is not affected', async () => {
-  const t = await team()
+  // The limit counts per clock minute: a frozen clock stops the run from crossing into a new minute.
+  const frozen = Date.now()
+  const t = await team(undefined, () => frozen)
   try {
     for (let i = 0; i < LIMITS.reads; i++) assert.equal((await t.req(t.tokens.alice!, '/v1/me')).status, 200)
     const r = await t.req(t.tokens.alice!, '/v1/me')

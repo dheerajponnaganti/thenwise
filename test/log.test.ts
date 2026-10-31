@@ -22,7 +22,7 @@ test('log writes one masked JSON line per event, at or above the level', () => {
   assert.deepEqual(evs.map((e) => e.ev), ['tool_ok', 'tool_failed'])
   assert.equal(evs[0]!.c, 'mcp')
   assert.doesNotMatch(String(evs[1]!.err), /ghp_/)
-  assert.equal(statSync(logFile(dir)).mode & 0o777, 0o600)
+  if (process.platform !== 'win32') assert.equal(statSync(logFile(dir)).mode & 0o777, 0o600)
   process.env.THENWISE_LOG = 'debug'
   log.debug('shown')
   delete process.env.THENWISE_LOG

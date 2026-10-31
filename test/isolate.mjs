@@ -6,3 +6,8 @@ delete process.env.MEMORY_HOME
 process.env.THENWISE_SYNC = 'off'
 // Code under test logs to the default data folder, which is the real one: the log test turns logging back on.
 process.env.THENWISE_LOG = 'off'
+if (process.platform === 'win32') {
+  const home = new URL('./win-home.mjs', import.meta.url).href
+  process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${home}`.trim()
+  await import(home)
+}

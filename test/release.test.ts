@@ -1,3 +1,5 @@
+// @ts-expect-error a plain script with no types
+import { checkVersions } from '../scripts/check-versions.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,13 +20,10 @@ test('R-H3: Apache 2.0, a changelog entry for the version, and one version in pa
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   const plugin = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8'))
   const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'))
-  assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
-  assert.equal(plugin.version, pkg.version)
-  assert.ok(!('version' in market.plugins[0]), 'plugin.json is the single version source')
+  assert.deepEqual(checkVersions(ROOT), [])
   assert.equal(market.plugins[0].name, plugin.name)
   assert.equal(pkg.license, 'Apache-2.0')
   assert.match(readFileSync(join(ROOT, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0[\s\S]*Copyright 2026 /)
-  assert.ok(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8').includes(`\n## ${pkg.version}\n`))
 })
 
 // A home with one small chat, run through the real CLI.

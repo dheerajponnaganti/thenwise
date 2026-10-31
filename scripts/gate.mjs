@@ -10,7 +10,9 @@ const STEPS = [
   ['type check', 'npm', ['run', 'check']],
   ['build', 'npm', ['run', 'build']],
   ['tests', 'npm', ['test']],
+  ['versions', process.execPath, ['scripts/check-versions.mjs']],
   ['package', process.execPath, ['scripts/pack-check.mjs']],
+  ['plugin build', process.execPath, ['scripts/check-plugin-build.mjs', '--self']],
   ['hooks', process.execPath, ['scripts/hooks-check.mjs']],
   ['owner-data scan', process.execPath, ['scripts/scan-owner.mjs']],
 ]

@@ -30,16 +30,12 @@ if (version.status !== 0 || version.stdout.trim() !== pkg.version) problems.push
 const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' })
 if (help.status !== 0 || !/usage/i.test(help.stdout)) problems.push(`thenwise --help exited ${help.status} or printed no usage`)
 
-// One version source: plugin.json carries it; a marketplace entry that differs would silently lose to it.
+// Plugins install from this entry. check-versions.mjs covers the version numbers.
 const plugin = json('.claude-plugin/plugin.json')
 const market = json('.claude-plugin/marketplace.json')
 const entry = market.plugins?.find((p) => p.name === plugin.name)
-if (plugin.version !== pkg.version) problems.push(`plugin.json version ${plugin.version} differs from package.json ${pkg.version}`)
 if (!entry) problems.push(`marketplace.json has no entry named ${plugin.name}`)
-else {
-  if ('version' in entry) problems.push('marketplace.json carries a version; plugin.json is the single source')
-  if (entry.source?.ref !== 'release') problems.push(`marketplace.json source ref is ${entry.source?.ref}, expected release`)
-}
+else if (entry.source?.ref !== 'release') problems.push(`marketplace.json source ref is ${entry.source?.ref}, expected release`)
 
 if (problems.length) {
   console.error(`pack check: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n${problems.map((p) => `  ${p}`).join('\n')}`)

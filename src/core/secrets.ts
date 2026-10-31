@@ -43,9 +43,14 @@ const VENDOR_KEY = /(\b[a-z][\w-]{0,64}[_-]key["']?\s*[:=]\s*["']?)((?=(?:[\w-]*
 // A value that names an environment variable (`process.env.API_KEY`, `${TOKEN}`) is code, not a secret.
 const ASSIGNED = /\b([\w-]{0,64}(?:api[_-]?key|secret|token|passw(?:or)?d|authorization|bearer|secret[_-]?access[_-]?key))\b(["']?\s*[:=]\s*["']?|\s+(?=(?:bearer|basic)\s)|(?<=(?<![\w-])bearer)\s+)((?:bearer|basic)\s+)?((?!(?:process\.env|import\.meta\.env|os\.environ|os\.getenv|env\.|ENV\[|\$\{?[A-Za-z_]))[^\s"',;]{8,})/gi
 
+// A secret passed as the next word: --password hunter2, -Token abc. --token-file and --password-stdin end differently, and $X is a variable.
+const SHELL_FLAG = /((?<![\w-])--?[\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d)\s+["']?)((?!\$)[^\s"'-][^\s"']{7,})/gi
+// Windows ways to set one: setx NAME value, SetEnvironmentVariable("NAME","value"), ConvertTo-SecureString "value", PSCredential("user","value").
+const SHELL_SET = /(\bsetx\s+\w*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)\s+["']?|SetEnvironmentVariable\(\s*["'][\w-]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)["']\s*,\s*["']|ConvertTo-SecureString\s+(?:-String\s+)?["']|PSCredential\w*\(\s*["'][^"']*["']\s*,\s*["'])([^\s"']{4,})/gi
+
 export const MASK = '[secret masked]'
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */
-export const MASK_VERSION = 6
+export const MASK_VERSION = 7
 
 export function maskSecrets(text: string): { text: string; count: number } {
   let count = 0
@@ -74,6 +79,9 @@ export function maskSecrets(text: string): { text: string; count: number } {
   out = out.replace(DOCKER_AUTH, (m, head: string, v: string) => (Buffer.from(v, 'base64').toString('latin1').includes(':') ? (count++, `${head}${MASK}`) : m))
   out = out.replace(VENDOR_KEY, (_m, head: string) => (count++, `${head}${MASK}`))
   out = out.replace(CURL_USER, (m, head: string, pass: string) => (pass.startsWith('[secret') ? m : (count++, `${head}${MASK}`)))
+  for (const re of [SHELL_FLAG, SHELL_SET]) {
+    out = out.replace(re, (m, before: string, value: string) => (value.startsWith('[secret') ? m : (count++, `${before}${MASK}`)))
+  }
   out = out.replace(ENV, (m, name: string, sep: string, value: string) => (value.startsWith('[secret') ? m : (count++, `${name}${sep}${MASK}`)))
   out = out.replace(ASSIGNED, (m, name: string, sep: string, bearer: string | undefined, value: string) => {
     if (/\(\)?$/.test(value) || value === MASK || value.startsWith('[secret') || value.startsWith('masked]')) return m

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -13,13 +13,13 @@ const ROOT = new URL('..', import.meta.url).pathname
 const CLI = join(ROOT, 'src/cli.ts')
 
 // R-H3: licence, changelog and one version everywhere.
-test('R-H3: Apache 2.0, a changelog entry for the version, and one version in package, plugin and marketplace', () => {
+test('R-H3: Apache 2.0, a changelog entry for the version, and one version in package and plugin (none in the marketplace)', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   const plugin = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8'))
   const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'))
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.equal(plugin.version, pkg.version)
-  assert.equal(market.plugins[0].version, pkg.version)
+  assert.ok(!('version' in market.plugins[0]), 'plugin.json is the single version source')
   assert.equal(market.plugins[0].name, plugin.name)
   assert.equal(pkg.license, 'Apache-2.0')
   assert.match(readFileSync(join(ROOT, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0[\s\S]*Copyright 2026 /)
@@ -99,25 +99,8 @@ test('R-B3: a newer store or config is refused with a message and nothing is cha
   }
 })
 
-// R-B4: nothing in what ships may carry the owner's data.
-const OWNER = [/\/Users\/dheeraj/i, /\/home\/dheeraj/i, /carapace-private/i, /carapace-crew/i, /\.memory\/eval/, /claude mods/i, /iCloud~md~obsidian/]
-// The author's name is allowed only where a licence, a manifest or a repo URL names the author.
-const NAME_OK = new Set(['LICENSE', 'package.json', 'package-lock.json', 'README.md', 'CHANGELOG.md', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'])
-const NAME = /dheeraj|ponnaganti/i
-
-function scanDir(dir: string, label: string): string[] {
-  const hits: string[] = []
-  for (const e of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!e.isFile()) continue
-    const full = join(e.parentPath, e.name)
-    const rel = full.slice(dir.length + 1).replace(/\\/g, '/')
-    const text = readFileSync(full, 'latin1')
-    for (const re of OWNER) if (re.test(text)) hits.push(`${label}: ${rel} matches ${re}`)
-    if (NAME.test(text) && !NAME_OK.has(rel.replace(/^package\//, ''))) hits.push(`${label}: ${rel} names the author`)
-  }
-
-  return hits
-}
+// R-B4: nothing in what ships may carry the owner's data. The patterns live in scripts/scan-owner.mjs, which CI also runs over the repo.
+const scanDir = (dir: string) => spawnSync(process.execPath, [join(ROOT, 'scripts/scan-owner.mjs'), '--dir', dir], { encoding: 'utf8' })
 
 test('R-B4: the npm tarball and the release tree hold no owner data', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'tw-scan-'))
@@ -127,7 +110,8 @@ test('R-B4: the npm tarball and the release tree hold no owner data', () => {
     const out = join(tmp, 'x')
     mkdirSync(out)
     execFileSync('tar', ['-xzf', join(tmp, name), '-C', out])
-    assert.deepEqual(scanDir(out, 'tarball'), [])
+    const t = scanDir(out)
+    assert.equal(t.status, 0, `tarball: ${t.stderr}`)
 
     // Release tree: tracked files that scripts/release-branch.mjs keeps, plus dist.
     const skip = ['test', 'bench', 'fixtures', 'docs', 'scripts', '.github']
@@ -139,7 +123,8 @@ test('R-B4: the npm tarball and the release tree hold no owner data', () => {
     }
     mkdirSync(join(tree, 'dist'))
     execFileSync(process.execPath, ['-e', `require('fs').cpSync(${JSON.stringify(join(out, 'package/dist'))}, ${JSON.stringify(join(tree, 'dist'))}, {recursive:true})`])
-    assert.deepEqual(scanDir(tree, 'release'), [])
+    const r = scanDir(tree)
+    assert.equal(r.status, 0, `release tree: ${r.stderr}`)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }

@@ -2,7 +2,7 @@
   "label": "phase0-sqlite",
   "date": "2026-10-22T18:01:15.687Z",
   "backend": "sqlite",
-  "vault": "~/carapace-crew/memv2-sqlite/fixtures/vault-sample",
+  "vault": "fixtures/vault-sample",
   "index": {
     "files": 100,
     "parsed": 100,

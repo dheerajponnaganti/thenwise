@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Claude Code plugin: a local memory of your past chats, commits and notes. Ask why, what was tried and what was true then. SQLite, no telemetry.",
   "type": "module",
   "engines": {
@@ -8,12 +8,13 @@
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
-    "test": "node --import ./test/isolate.mjs --test 'test/*.test.ts'",
+    "test": "node --import ./test/isolate.mjs --test \"test/*.test.ts\"",
     "check": "tsc -p .",
-    "bench": "node bench/run.ts",
-    "perf": "node bench/perf.ts",
+    "bench": "node bench/gold/run.ts",
     "prepack": "npm run build",
-    "release:branch": "node scripts/release-branch.mjs"
+    "release:branch": "node scripts/release-branch.mjs",
+    "gate": "node scripts/gate.mjs",
+    "scan": "node scripts/scan-owner.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

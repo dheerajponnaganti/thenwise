@@ -3,6 +3,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
@@ -289,7 +290,7 @@ function currentTail(file: unknown): string {
     closeSync(fd)
   }
   // A tail read starts mid-line; the parser skips lines that are not JSON.
-  const turns = parseSession(buf.toString('utf8'), 'current', process.env.HOME ?? '').turns.slice(-3)
+  const turns = parseSession(buf.toString('utf8'), 'current', homedir()).turns.slice(-3)
   if (!turns.length) return ''
   const cut1 = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}...` : t)
 

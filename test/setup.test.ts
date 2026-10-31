@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -75,7 +75,7 @@ test('S2-H8: a fresh home defaults roots to the projects found, with no owner fo
   assert.deepEqual(config!.repos, [join(f.work, 'alpha')])
   assert.deepEqual(config!.githubRepos, [])
   assert.deepEqual(config!.vaults, [])
-  assert.ok(!JSON.stringify(config).includes('dheeraj'))
+  assert.ok(!JSON.stringify(config).includes(homedir()), 'nothing from the real home folder')
 })
 
 test('S2-H7: a second run shows the current answers and changes only what is asked', () => {

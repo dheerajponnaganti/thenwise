@@ -67,7 +67,7 @@ test('B2-15/16: the compaction brief is for this repo and this session, and puts
     return p
   }
   const mine = mk('carapace')
-  const crew = mk('carapace-crew')
+  const crew = mk('carapace-tools')
   const ses = (id: string, cwd: string, at: string): N => [id, 'session', 'work', 'work', at, '', { cwd }, keyOf(cwd)]
   const nodes: N[] = [
     ses('ses:mine', mine, '2026-10-01T09:00:00Z'),

@@ -47,7 +47,7 @@ if (mode === 'owner') {
   }
   console.log(`owner archive: ${n} chat files, linked read only into ${cfg.memDir}`)
   cwd = join(homedir(), 'memory-v2')
-  key = '-Users-dheeraj-memory-v2'
+  key = cwd.replace(/[^A-Za-z0-9]/g, '-') // Claude Code's folder key for this path
 } else if (mode === 'synthetic') {
   const chats = arg('chats', 5000)
   const projects = arg('projects', 40)

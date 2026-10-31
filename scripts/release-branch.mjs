@@ -10,7 +10,7 @@ const git = (args, env = {}) => execFileSync('git', args, { encoding: 'utf8', en
 const branch = process.env.RELEASE_BRANCH ?? 'release-public'
 const parent = process.env.RELEASE_PARENT ?? 'refs/remotes/origin/release'
 // Tests, benchmarks, fixtures and internal docs stay on main.
-const NOT_SHIPPED = ['test', 'bench', 'fixtures', 'docs', 'scripts', '.github']
+const NOT_SHIPPED = ['test', 'bench', 'fixtures', 'docs', 'scripts', '.github', '.githooks', 'AGENTS.md', 'CLAUDE.md', 'ARCHITECTURE.md', 'ROADMAP.md', 'RELEASING.md']
 
 if (git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('commit your changes first')
 execFileSync('npm', ['run', 'build'], { stdio: 'inherit', shell: process.platform === 'win32' })

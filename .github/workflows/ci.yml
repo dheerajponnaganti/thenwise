@@ -49,7 +49,8 @@ jobs:
       - run: npm run build
       - run: npm test
   unit-windows:
-    # A warning until it is green twice in a row; then it blocks releases like the rest.
+    # Runs on pull requests only for now. A warning until it is green twice in a row; then it joins main and blocks like the rest.
+    if: github.event_name == 'pull_request'
     continue-on-error: true
     # Windows starts each test's processes slowly, and the run has also stalled for hours after printing its results.
     timeout-minutes: 40

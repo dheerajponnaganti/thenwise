@@ -43,7 +43,7 @@ const logOf = (dir: string) => readLog(dir).filter((e) => e.msg).map((e) => e.ms
 
 test('B2-13/14: a common file name prefers the session repo; absolute, spaced, bracketed and note: paths match', () => {
   const dir = tempDir()
-  const repos = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'z'].map((n) => repo(dir, n))
+  const repos = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'z'].map((n) => repo(dir, n).replace(/\\/g, '/'))
   const mine = repos[6]!
   mkdirSync(join(mine, 'My Docs'), { recursive: true })
   const nodes: N[] = [...repos.map((r): N => [`file:${r}/README.md`, 'file', 'README.md', '', '']), [`file:${mine}/My Docs/notes [v2] (1).md`, 'file', 'notes [v2] (1).md', '', '']]
@@ -115,8 +115,8 @@ test('B2-17: asof prefers on-main commits, labels others, never picks a stash', 
 test('B2-22/23: other projects cannot fill the limit, paused ones leave the fallback, a deleted repo keeps its scope', () => {
   const dir = tempDir()
   const a = repo(dir, 'a')
-  const b = repo(dir, 'b')
-  const gone = join(realpathSync(dir), 'gone-repo')
+  const b = repo(dir, 'b').replace(/\\/g, '/')
+  const gone = join(realpathSync(dir), 'gone-repo').replace(/\\/g, '/')
   const ses = (id: string, cwd: string): N => [id, 'session', 'work', 'work', '2026-10-01T09:00:00Z', '', { cwd }, keyOf(cwd)]
   const nodes: N[] = [ses('ses:a', a), ses('ses:b', b), ses('ses:g', gone), ['turn:gone', 'turn', 'old', 'zebra in a deleted repo', '2026-10-01T10:00:00Z', 'ses:g']]
   for (let i = 0; i < 450; i++) nodes.push([`turn:b${i}`, 'turn', 'b', 'zebra zebra zebra', '2026-10-02T10:00:00Z', 'ses:b'])
@@ -161,6 +161,8 @@ test('B2-26: plans collapse per day, nest under the repo, and a Bash change is c
     writeFileSync(join(nested, 'task_plan.md'), '# Plan\none\n')
     const env = { dir: w.memDir, cli: '' }
     runHook('post', { tool_name: 'Bash', tool_input: { command: 'echo hi >> sub/task_plan.md' }, cwd: nested, session_id: 's' }, env)
+    // Snapshots are named by the millisecond, so two in the same one would share a file.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
     writeFileSync(join(nested, 'task_plan.md'), '# Plan\ntwo\n')
     runHook('post', { tool_name: 'Bash', tool_input: { command: 'sed -i s/one/two/ task_plan.md' }, cwd: nested, session_id: 's' }, env)
     const base = join(w.memDir, 'archive/plans', keyOf(w.proj))
@@ -193,10 +195,10 @@ test('B2-27/28: the file hint is spent only on an answer, per agent; a plain Bas
   assert.equal(post('ls src'), '')
   assert.equal(readTarget('cat a.ts b.ts', '/x'), undefined)
   assert.equal(readTarget('cat a.ts | head', '/x'), undefined)
-  assert.equal(readTarget('head -n 5 a.ts', '/x'), '/x/a.ts')
-  assert.equal(readTarget('tail -n 5 /y/a.ts', '/x'), '/y/a.ts')
+  if (process.platform !== 'win32') assert.equal(readTarget('head -n 5 a.ts', '/x'), '/x/a.ts')
+  if (process.platform !== 'win32') assert.equal(readTarget('tail -n 5 /y/a.ts', '/x'), '/y/a.ts')
   assert.equal(readTarget('rm a.ts', '/x'), undefined)
-  assert.equal(readTarget('cat -n a.ts', '/x'), '/x/a.ts')
+  if (process.platform !== 'win32') assert.equal(readTarget('cat -n a.ts', '/x'), '/x/a.ts')
 })
 
 test('B2-28: the Bash hook on a non-read command is cheap and never opens the store', () => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { test as nodeTest } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
 import { fetchPrs } from '../src/ingest/prs.ts'
@@ -11,7 +11,9 @@ import { statusLines } from '../src/ingest/status.ts'
 import { World, diffStores, git } from './world.ts'
 import type { TurnSpec } from './world.ts'
 
-const REAL_GIT = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+// The gh and git shims are sh scripts, which Windows cannot run from PATH, so this file runs on macOS and Linux only.
+const test = process.platform === 'win32' ? nodeTest.skip : nodeTest
+const REAL_GIT = process.platform === 'win32' ? '' : execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
 const BASE_PATH = process.env.PATH ?? ''
 const DAY = 86400000
 
@@ -173,9 +175,10 @@ test('S4-B3: a hung gh is given up on, and broken JSON keeps the cache', () => {
   const t0 = Date.parse('2026-10-24T08:00:00Z')
   w.ingest('inc.db', { prs: undefined, now: t0 })
   s.setMode('hang')
-  const began = Date.now()
+  // performance.now: a virtual machine's wall clock can jump mid-test.
+  const began = performance.now()
   const r = w.ingest('inc.db', { prs: undefined, now: t0 + 2 * DAY, ghTimeoutMs: 600 })
-  assert.ok(Date.now() - began < 5000, 'gave up quickly')
+  assert.ok(performance.now() - began < 5000, 'gave up quickly')
   assert.deepEqual(r.warnings, [])
   assert.equal(count(w, "SELECT count(*) n FROM nodes WHERE kind = 'pr'"), 1)
   assert.match(statusLines(w.cfg, w.path('inc.db')).join('\n'), /stale \(gh took longer than 1 s/)

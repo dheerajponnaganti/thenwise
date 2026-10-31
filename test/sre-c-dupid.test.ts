@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { fileURLToPath } from 'node:url'
 
 import { forget } from '../src/privacy/forget.ts'
 import { loadConfigSafe } from '../src/ingest/config.ts'
 
-const CLI = join(new URL('..', import.meta.url).pathname, 'src/cli.ts')
+const CLI = join(fileURLToPath(new URL('..', import.meta.url)), 'src/cli.ts')
 
 // Two project folders, one session id (same uuids too, as a copied folder has).
 function world() {

@@ -34,8 +34,8 @@ jobs:
   unit-windows:
     # A warning until it is green twice in a row; then it blocks releases like the rest.
     continue-on-error: true
-    # The test run has stalled here for hours after printing its results.
-    timeout-minutes: 15
+    # Windows starts each test's processes slowly, and the run has also stalled for hours after printing its results.
+    timeout-minutes: 40
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
-      - run: npm test
+      # A test file on Windows can stay alive after its last test, so the run exits once the tests are done.
+      - run: node --test-force-exit --import ./test/isolate.mjs --test "test/*.test.ts"
   package:
     # What npm would publish, the CLI's own contract, the plugin manifests and the hooks file.
     runs-on: ubuntu-latest

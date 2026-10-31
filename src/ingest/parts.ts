@@ -136,8 +136,8 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
     node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
     edge(tid, sid, 'part_of', t.at)
-    if (st && 'file' in st && st.file) edge(tid, `file:${st.file}`, 'dead_end', t.at)
-    for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${p}`, kind, t.at)
+    if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
+    for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)
     for (const m of t.commitMsgs) claims.push({ node: tid, kind: 'sub', val: m.subject, at: m.at, turnAt: t.at })
     for (const short of t.commitShas) claims.push({ node: tid, kind: 'sha', val: short, at: t.at, turnAt: t.at })
     for (const u of t.prUrls) claims.push({ node: tid, kind: 'url', val: u, at: t.at, turnAt: t.at })
@@ -178,7 +178,7 @@ export function parseLog(raw: string, repo: string, until?: string, main?: Set<s
 
   return out
 }
-export const commitEdges = (c: CommitRec): GEdge[] => c.files.map((f) => ({ src: c.node.id, dst: `file:${posix.join(c.node.source, f)}`, kind: 'changed', at: c.node.at, extra: {} }))
+export const commitEdges = (c: CommitRec): GEdge[] => c.files.map((f) => ({ src: c.node.id, dst: `file:${posix.join(normPath(c.node.source), f)}`, kind: 'changed', at: c.node.at, extra: {} }))
 
 // 3. Pull requests -------------------------------------------------------------------------------------------------
 
@@ -222,7 +222,7 @@ export function prPart(inputs: PrInput[], repos: string[], commit: CommitLook, u
       for (const f of p.files ?? []) {
         const repoPath = (mc && commit.repo(mc)) || repo
         if (!repoPath || !f.path) continue
-        out.edges.push({ src: id, dst: `file:${posix.join(repoPath, f.path)}`, kind: 'touches', at: p.createdAt ?? '', extra: {} })
+        out.edges.push({ src: id, dst: `file:${posix.join(normPath(repoPath), f.path)}`, kind: 'touches', at: p.createdAt ?? '', extra: {} })
       }
     }
   }
@@ -280,7 +280,7 @@ export function notesPart(cfg: Config, until?: string): Part {
     const files: string[] = []
     walk(vault, (n) => n.endsWith('.md'), files)
     for (const f of files) {
-      const rel = f.slice(vault.length + 1)
+      const rel = normPath(f.slice(vault.length + 1))
       if (rel.startsWith(GENERATED)) continue // `memory views` output: the memory never reads its own output
       const raw = readFileSync(f, 'utf8')
       if (skipReason(f, rel, raw)) continue // the vault writer's output, conflict copies, broken front matter

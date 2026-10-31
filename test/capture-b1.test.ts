@@ -105,7 +105,7 @@ test('18: CLAUDE.md files of clones below a root are not global rules', () => {
     mkdirSync(join(w.proj, 'plain'), { recursive: true })
     writeFileSync(join(w.proj, 'plain/CLAUDE.md'), '- a rule of this very project\n')
     const sources = docsPart(w.cfg).nodes.map((n) => n.source)
-    assert.ok(sources.some((s) => s.endsWith('plain/CLAUDE.md')))
+    assert.ok(sources.some((s) => s.replace(/\\/g, '/').endsWith('plain/CLAUDE.md')))
     assert.ok(!sources.some((s) => s.includes('clone')))
   } finally {
     w.destroy()

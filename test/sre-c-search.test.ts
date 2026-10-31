@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { fileURLToPath } from 'node:url'
 
 import { STORE_FORMAT, storeFormat } from '../src/ingest/ingest.ts'
 
-const CLI = join(new URL('..', import.meta.url).pathname, 'src/cli.ts')
+const CLI = join(fileURLToPath(new URL('..', import.meta.url)), 'src/cli.ts')
 
 function home(rows: [string, string, string][]) {
   const h = mkdtempSync(join(tmpdir(), 'tw-src-'))

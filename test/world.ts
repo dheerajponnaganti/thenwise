@@ -89,7 +89,12 @@ export class World {
     this.cfg.prs = true
   }
   destroy() {
-    rmSync(this.home, { recursive: true, force: true })
+    try {
+      rmSync(this.home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    } catch (e) {
+      // shortcut: Windows refuses to delete a folder another process still has open; the temp folder stays behind. Fix by finding the holder if the runner's disk fills.
+      if (process.platform !== 'win32') throw e
+    }
   }
   get memDir() {
     return this.cfg.memDir

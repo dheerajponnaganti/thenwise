@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { projectRoot, real, repoRoot } from '../ingest/repos.ts'
 
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from './language.ts'
+import { normPath } from '../core/vault-index.ts'
 
 export interface Node {
   id: string
@@ -175,7 +176,7 @@ export class Graph {
    *  A folder outside any repository (a home folder, a scratch folder) is no project, so everything stays in scope. */
   scopeTo(folder: string) {
     const repo = repoRoot(folder)
-    this.scope = repo ? real(repo) : undefined
+    this.scope = repo ? normPath(real(repo)) : undefined
   }
   /** The project folder a node belongs to, or '' when it belongs to none (vault notes, personal rules). */
   rootOf(n: Node): string {

@@ -60,7 +60,7 @@ test('S5-H4: 100 calls keep one connection and flat memory', () => {
   assert.ok(process.memoryUsage().rss - before < 60e6)
 })
 
-test('S5-H6: a replaced store file is seen by the next call', () => {
+test('S5-H6: a replaced store file is seen by the next call', { skip: process.platform === 'win32' && 'Windows refuses to replace an open file' }, () => {
   const dir = tempDir()
   const db = writeGraph(dir)
   const { textOf } = ready(db)

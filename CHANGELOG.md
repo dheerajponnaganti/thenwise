@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.24
+
+More secrets masked in shell commands, and shell commands now link files and commits on every system.
+
+- More secrets are masked: `--password value`, `-Token value`, `setx`, `SetEnvironmentVariable`, `ConvertTo-SecureString` and `PSCredential`. Older chats are masked again at the next sync.
+- Shell commands link files on Linux and Windows as they do on macOS, including relative paths. Commits are linked when written as `git -c x=y commit`, `git commit -F file` or `--amend`. The first sync after updating rebuilds the store once.
+
 ## 0.1.23
 
 Fixes from an npm package review and a Hub test, a Hub on another host, and a README that shows Thenwise at work.

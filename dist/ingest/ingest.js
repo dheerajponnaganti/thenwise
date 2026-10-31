@@ -25,7 +25,8 @@ import { swapPending } from "../query/engine.js";
 export { GENERATED, datedSections } from "./parts.js";
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
-export const STATE_VERSION = 3;
+// 4 (0.1.24): shell commands link more files and commits (Linux and Windows paths, relative paths, `git -c`), so older chats are read again.
+export const STATE_VERSION = 4;
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2;

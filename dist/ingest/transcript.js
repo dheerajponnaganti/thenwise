@@ -2,7 +2,12 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { normPath } from "../core/vault-index.js";
-const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users)\/[^\s"'`;|&)<>]+)/g;
+const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users|\/home|\/root)\/[^\s"'`;|&)<>]+|[A-Za-z]:[\\/][^\s"'`;|&)<>]+)/g;
+const BASH_ABS = /(?:^|[\s"'=(])(\/[^\s"'`;|&)<>]+)/g;
+// src/a.ts or ./a/b.py: a folder and a file with an extension. github.com/x/y.git is a site, not a folder.
+const BASH_REL = /(?:^|[\s"'=(])((?:\.\.?\/)?[\w.@-]+(?:\/[\w.@+-]+)*\/[\w.@+-]+\.[A-Za-z]\w{0,7})(?=$|[\s"'`;|&)<>:,])/g;
+const LEADING_CD = /^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|;)/;
+const GIT_COMMIT = /\bgit(?:\s+(?:-[cC]\s+\S+|--\S+))*\s+commit\b/;
 const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|system-reminder|task-notification|command-message|bash-input|bash-stdout|bash-stderr|user-prompt-submit-hook|ide_opened_file|ide_selection|ide_diagnostics';
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`);
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`);
@@ -15,13 +20,27 @@ export function normalizePath(path, home, cwd = '/') {
     const abs = p.startsWith('~/') ? posix.join(normPath(home), p.slice(2)) : p.startsWith('/') || /^[A-Za-z]:\//.test(p) ? p : posix.join(normPath(cwd) || '/', p);
     return posix.normalize(abs).replace(/\/+$/, '') || '/';
 }
-export function bashPaths(cmd, home) {
+export function bashPaths(cmd, home, cwd = '') {
     const out = new Set();
     for (const m of cmd.matchAll(BASH_PATH)) {
         const p = m[1].replace(/[.,:]+$/, '');
         if (p.length > 3 && !p.endsWith('/'))
             out.add(normalizePath(p, home));
     }
+    if (!cwd)
+        return [...out];
+    // Other paths need the folder the command ran in: a `cd` leading the command, else the chat's own.
+    const top = normPath(cwd);
+    for (const m of cmd.matchAll(BASH_ABS)) {
+        const p = m[1].replace(/[.,:]+$/, '');
+        if (p.startsWith(`${top}/`))
+            out.add(normalizePath(p, home));
+    }
+    const cd = LEADING_CD.exec(cmd)?.[1]?.replace(/^(["'])(.*)\1$/, '$2');
+    const base = cd ? normalizePath(cd, home, cwd) : cwd;
+    for (const m of cmd.matchAll(BASH_REL))
+        if (!/^[\w-]+\.[\w.-]+\//.test(m[1]))
+            out.add(normalizePath(m[1], home, base));
     return [...out];
 }
 const textOf = (c) => typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (typeof b?.text === 'string' ? b.text : '')).join('\n') : '';
@@ -96,9 +115,13 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                         out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))); // a subagent's report to the turn that asked
                     else if (hit.kind === 'test')
                         hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true });
-                    else if (hit.kind === 'commit')
-                        for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\]/g))
+                    else if (hit.kind === 'commit') {
+                        for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {
                             hit.turn.commitShas.add(m[1]);
+                            if (hit.at && m[2]?.trim())
+                                hit.turn.commitMsgs.push({ subject: m[2].trim(), at: hit.at });
+                        }
+                    }
                     else
                         for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g))
                             hit.turn.prUrls.add(m[0]);
@@ -139,22 +162,23 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                 if (turn && AGENT_TOOLS.test(b.name))
                     pending.set(b.id, { turn, kind: 'agent' });
                 if (b.name === 'Bash' && typeof inp.command === 'string') {
-                    for (const p of bashPaths(inp.command, home)) {
+                    for (const p of bashPaths(inp.command, home, s.cwd)) {
                         s.paths.add(p);
                         turn?.ran.add(p);
                     }
                     if (turn && TEST_RUN.test(inp.command))
                         pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at });
-                    if (turn && /\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(inp.command)) {
-                        pending.set(b.id, { turn, kind: 'commit' });
+                    if (turn && GIT_COMMIT.test(inp.command)) {
                         const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command);
                         const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n');
                         // -m "$(cat <<'EOF' ... EOF)": the subject is the first line after the heredoc opener.
                         const subject = (/^\$\(cat\s*<</.test(msg[0]) ? (msg.slice(1).find((l) => l.trim()) ?? '') : msg[0]).trim();
+                        // -F file, --amend or an editor: the subject comes from what git prints.
+                        pending.set(b.id, { turn, kind: 'commit', at: subject ? undefined : (d.timestamp ?? turn.at) });
                         if (subject)
                             turn.commitMsgs.push({ subject, at: d.timestamp ?? turn.at });
                     }
-                    if (turn && !/\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(inp.command) && /\bgh\s+pr\s+create\b/.test(inp.command))
+                    if (turn && !GIT_COMMIT.test(inp.command) && /\bgh\s+pr\s+create\b/.test(inp.command))
                         pending.set(b.id, { turn, kind: 'pr' });
                 }
             }

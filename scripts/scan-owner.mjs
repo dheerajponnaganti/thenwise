@@ -3,6 +3,8 @@
 //   node scripts/scan-owner.mjs                 every file git tracks or would add (not ignored)
 //   node scripts/scan-owner.mjs --staged        only the staged files (a pre-push or pre-commit hook)
 //   node scripts/scan-owner.mjs --dir <folder>  every file in a folder (a tarball or a release tree)
+//   node scripts/scan-owner.mjs --text          a pull request title and description, from stdin
+//   node scripts/scan-owner.mjs --title         checks a pull request title's form, from stdin
 // Exits 1 and lists each hit. Imported by test/release.test.ts (R-B4).
 
 import { execFileSync } from 'node:child_process'
@@ -48,6 +50,21 @@ export function scanFile(rel, text) {
   return hits
 }
 
+// What a commit message or pull request must not say: these are public for good. Stricter than files, since a message
+// has no reason to name a machine, a private worktree or an email address, and commits carry no AI attribution.
+const MESSAGE = [/\bworktree\b/i, /\btw-[a-z]/i, /(^|[\s(`'"])~\//m, /\/Users\//, /[\w.+-]+@[\w-]+\.[a-z]{2,}/i, /co-authored-by/i, /generated (with|by) /i, /claude-session/i, /claude\.ai\/code/i]
+
+// Pull request titles become the commit subjects on main: type(area): what changed.
+export const TITLE = /^(fix|feat|docs|test|ci|chore|refactor|perf)(\([a-z-]+\))?!?: \S.*$/
+
+/** The hits for a commit message or a pull request title and description. */
+export function scanMessage(text) {
+  const hits = [...OWNER, ...MESSAGE].filter((re) => re.test(text)).map((re) => `message matches ${re}`)
+  if (NAME.test(text.replace(HANDLE, ''))) hits.push('message names the author outside a repo URL')
+
+  return hits
+}
+
 const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean)
 
 function walk(dir) {
@@ -73,6 +90,20 @@ export function scanFiles(files, base) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2)
+  if (args.includes('--title')) {
+    if (TITLE.test(readFileSync(0, 'utf8').trim())) process.exit(0)
+    console.error('Pull request titles look like: fix(hooks): keep the store open. Types: fix, feat, docs, test, ci, chore, refactor, perf.')
+    process.exit(1)
+  }
+  if (args.includes('--text')) {
+    const hits = scanMessage(readFileSync(0, 'utf8'))
+    if (hits.length) {
+      console.error(hits.join('\n'))
+      process.exit(1)
+    }
+    console.log('owner-data scan: text clean')
+    process.exit(0)
+  }
   const dirAt = args.indexOf('--dir')
   let base = ROOT
   let files

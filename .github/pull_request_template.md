@@ -4,8 +4,6 @@
 
 Issue: #
 
-<!-- Pull requests are applied by hand and land in the next release; you will get a comment naming it. -->
-
 ## How it was tested
 
 - [ ] A test that fails without this change (named `#<issue>: ...` for a bug)

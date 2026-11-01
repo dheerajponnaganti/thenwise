@@ -11,6 +11,7 @@ import { gunzipSync, gzipSync } from 'node:zlib'
 import { archive } from '../src/ingest/archive.ts'
 import { loadConfig } from '../src/ingest/config.ts'
 import { dumpHash, ingest, report } from '../src/ingest/ingest.ts'
+import { passagesOf } from '../src/query/passages.ts'
 
 // Everything here is synthetic: fake keys, fake prompts, a throwaway git repo.
 const KEYS = ['AKIAIOSFODNN7EXAMPLE', `ghp_${'a1B2c3D4e5'.repeat(4)}`, `sk-ant-api03-${'Zz9Yy8Xx7W'.repeat(3)}`, 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r', 'hunter2hunter2']
@@ -248,4 +249,10 @@ test('a dated log note splits into one section per dated heading', async () => {
   assert.deepEqual(s.map((x) => x.date), ['2026-10-14', '2026-10-13'])
   assert.match(s[1]!.body, /\/better to \/upgrade[\s\S]*plain heading/)
   assert.equal(datedSections('## 2026-10-13\nonly one').length, 1)
+})
+
+test('#28: a title word the body never says gets a passage, and a body that repeats the title adds none', () => {
+  assert.deepEqual(passagesOf('Decision: eight shards', 'Split the walrus cache', '{}').at(-1), 'Split the walrus cache')
+  assert.equal(passagesOf('Split the walrus cache into shards', 'Split the walrus cache', '{}').length, 1)
+  assert.equal(passagesOf('', 'Only a subject', '{}').length, 1)
 })

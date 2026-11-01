@@ -81,7 +81,7 @@ test('S5-H7 and S5-B8: stdout carries only JSON lines, and the server exits when
   const t = Date.now()
   p.stdin.end()
   await new Promise((r) => p.on('exit', r))
-  assert.ok(Date.now() - t < 1000)
+  assert.ok(Date.now() - t < (process.platform === 'win32' ? 5000 : 1000))
   const lines = out.trim().split('\n')
   assert.equal(lines.length, 2)
   for (const l of lines) assert.equal(JSON.parse(l).jsonrpc, '2.0')

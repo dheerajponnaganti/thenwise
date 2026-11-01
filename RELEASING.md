@@ -5,7 +5,7 @@
 1. Branch from `main`.
 2. Run `npm run gate`.
 3. Open a pull request titled `type(area): what changed`. The title becomes the commit subject on `main`, with the issue number added, such as `(#12)`, and the description becomes the message.
-4. CI must pass. Windows is a warning until it is green twice in a row.
+4. CI must pass on macOS, Linux and Windows.
 5. Squash and merge.
 
 ## Does it need a version?

@@ -1,20 +1,56 @@
 name: ci
-# Runs on every push (including the ci/<name> snapshot branches pushed before a release) and every pull request.
-on: [push, pull_request]
+# Runs on every pull request and every push to main. Publishing lives in release.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-permissions:
-  contents: read
+permissions: {}
 jobs:
-  scan:
-    # Owner data and eval data never reach the public repo.
+  changed:
+    # A change that only touches docs skips the test jobs. Done with a job and not paths-ignore, so required checks still report.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-node@v4
-        with: { node-version: '24' }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          if files=$(git diff --name-only "$BASE" "$HEAD"); then
+            if printf '%s\n' "$files" | grep -vE '^(.*\.md|docs/.*|assets/.*|LICENSE|\.github/ISSUE_TEMPLATE/.*)$' | grep -q .; then
+              echo code=true >> "$GITHUB_OUTPUT"
+            else
+              echo code=false >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo code=true >> "$GITHUB_OUTPUT"
+          fi
+  scan:
+    # Owner data and eval data never reach the public repo. Always runs, docs included.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - run: node scripts/scan-owner.mjs
       # A pull request's title, description and commit messages stay public, so they get the same check as the hook.
       - name: Scan the pull request's text
@@ -33,32 +69,50 @@ jobs:
             git log --format=%B "$BASE..$HEAD" | node scripts/scan-owner.mjs --text
           fi
   unit:
+    needs: changed
+    if: needs.changed.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: ['24', '26']
+        include:
+          - { os: ubuntu-latest, node: '24' }
+          - { os: ubuntu-latest, node: '26' }
+          - { os: macos-latest, node: '26' }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '${{ matrix.node }}', cache: npm }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
       - run: npm ci
       - run: npm run check
       # Built first, so the tests that run dist/ run here too.
       - run: npm run build
       - run: npm test
   unit-windows:
+    needs: changed
     # Runs on pull requests only for now. A warning until it is green twice in a row; then it joins main and blocks like the rest.
-    if: github.event_name == 'pull_request'
+    if: needs.changed.outputs.code == 'true' && github.event_name == 'pull_request'
     continue-on-error: true
     # Windows starts each test's processes slowly, and the run has also stalled for hours after printing its results.
     timeout-minutes: 40
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '26', cache: npm }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+          cache: npm
       - run: npm ci
       - run: npm run check
       - run: npm run build
@@ -67,26 +121,64 @@ jobs:
       - run: node --test-force-exit --test-timeout=600000 --import ./test/isolate.mjs --test "test/*.test.ts"
   package:
     # What npm would publish, the CLI's own contract, the plugin manifests and the hooks file.
+    needs: changed
+    if: needs.changed.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24', cache: npm }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
       - run: npm ci
       - run: npm run build
       - run: node scripts/pack-check.mjs
       - run: node scripts/hooks-check.mjs
   fresh-install:
+    needs: changed
+    if: needs.changed.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        node: ['22.16', '24', '26']
+        include:
+          # The oldest Node we support on every system, and the newest on Linux.
+          - { os: ubuntu-latest, node: '22.16' }
+          - { os: macos-latest, node: '22.16' }
+          - { os: windows-latest, node: '22.16' }
+          - { os: ubuntu-latest, node: '26' }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '${{ matrix.node }}', cache: npm }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
       - run: npm ci
       - run: npm run build
       - run: node bench/fresh/check.mjs
+  all-passed:
+    # The one check a merge requires. A skipped matrix job never reports its own name, so requiring those would wait forever.
+    # unit-windows joins this list once it is green twice in a row. Until then it is a warning and must not block a merge.
+    needs: [scan, unit, package, fresh-install]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "*) exit 1 ;;
+          esac

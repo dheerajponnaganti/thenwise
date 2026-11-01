@@ -294,3 +294,13 @@ test('S7-B1 S7-B2: excluded chats are never archived; the old copy of a marked c
   assert.ok(!existsSync(join(sess, '-work-alpha', 'a2.jsonl.gz')) && !existsSync(join(sess, '-work-personal', 'p1.jsonl.gz')))
   assert.deepEqual(archive(cfg).leftover, [])
 })
+
+test('decide names a similar note and still saves the new one', () => {
+  const f = f1()
+  assert.equal(f.cli(['decide', 'Keep the price cache in eight shards by store id']).status, 0)
+  const again = f.cli(['decide', 'Keep the price cache in nine shards by store id'])
+  assert.equal(again.status, 0)
+  assert.match(again.stdout, /saved as/)
+  assert.match(again.stdout, /Similar note: n-\S+: Keep the price cache in eight shards/)
+  assert.doesNotMatch(f.cli(['decide', 'Ship the billing export on Fridays only']).stdout, /Similar note/)
+})

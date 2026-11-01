@@ -8,6 +8,7 @@
 - `thenwise team join` works on a fresh install, before anything has made the data folder.
 - Windows: `thenwise distill` and automatic capture start Claude Code when npm installed it as `claude.cmd`.
 - Security: `Decision:` and `Dead-end:` lines in commits and PRs now wait in the inbox. Anyone who lands a commit could write one, and it became a trusted note. Accept them with `thenwise accept --all-of decision`.
+- `thenwise decide` and `thenwise deadend` name a similar note you already have.
 
 ## 0.1.24
 

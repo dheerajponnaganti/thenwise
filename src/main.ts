@@ -23,7 +23,8 @@ if (cmd === 'deadend' || cmd === 'decide') {
   const text = process.argv.slice(3).filter((a) => !a.startsWith('--')).join(' ').trim()
   if (!text) (console.error(`usage: thenwise ${cmd} "<what>" [--here]`), process.exit(2))
   const { loadConfig } = await import('./ingest/config.ts')
-  const { makeId, saveNote } = await import('./capture/notes.ts')
+  const { makeId, readNotes, saveNote } = await import('./capture/notes.ts')
+  const { related } = await import('./capture/similar.ts')
   const { Graph } = await import('./query/engine.ts')
   const cfg = loadConfig()
   const db = join(cfg.memDir, 'graph.db')
@@ -37,8 +38,12 @@ if (cmd === 'deadend' || cmd === 'decide') {
   }
   const type = cmd === 'deadend' ? 'dead_end' : 'decision'
   const now = new Date().toISOString()
+  const active = readNotes(cfg.memDir).filter((x) => x.status === 'active')
+  const near = related({ type, title: text.slice(0, 80), summary: text }, active, active)
+  const like = near.dup ?? near.candidate
   const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '' })
   console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}The next sync adds it to the memory.`)
+  if (like) console.log(`Similar note: ${like.id}: ${like.title}. Check that the two agree.`)
   process.exit(0)
 }
 if (cmd === 'report') process.exit(await (await import('./report/report.ts')).reportCommand(process.argv.slice(3)))

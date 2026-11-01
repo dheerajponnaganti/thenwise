@@ -9,7 +9,7 @@
   <br>
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-8a7f6e">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-B3361F">
-  <a href="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml"><img alt="CI on macOS, Linux and Windows" src="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/dheerajponnaganti/thenwise/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/dheerajponnaganti/thenwise/discussions"><img alt="Questions welcome" src="https://img.shields.io/badge/questions-discussions-8a7f6e"></a>
   <a href="CONTRIBUTING.md"><img alt="Pull requests welcome" src="https://img.shields.io/badge/PRs-welcome-241C15"></a>
 </p>

@@ -9,6 +9,10 @@ updates:
     commit-message:
       prefix: chore(deps)
     labels: ['area: ci']
+    # A major compiler or Node types jump can change the reproducible build, so those are upgrades we choose on purpose.
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       dev-tools:
         patterns: ['*']

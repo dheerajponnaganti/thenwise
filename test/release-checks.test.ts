@@ -62,6 +62,7 @@ function project() {
   const dir = mkdtempSync(join(tmpdir(), 'thenwise-build-t-'))
   const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, encoding: 'utf8' }).trim()
   git('init', '-q', '-b', 'main')
+  git('config', 'core.autocrlf', 'false')
   mkdirSync(join(dir, 'src'))
   writeFileSync(join(dir, 'src/a.ts'), 'export const a: number = 1\n')
   writeFileSync(join(dir, 'tsconfig.json'), readFileSync(join(ROOT, 'tsconfig.json')))

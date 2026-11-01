@@ -1,10 +1,10 @@
 // Timing of the incremental update (S3). Never writes in the owner's data folder.
-//   node bench/incremental.ts owner               the owner's archive, read only (symlinks into a temp data folder)
+//   node bench/incremental.ts owner               the owner's archive, read only (hard links in a temp data folder: the scan skips symlinks)
 //   node bench/incremental.ts synthetic [--chats 5000] [--projects 40]
 // Prints the full rebuild, an update after one new chat, an update after one chat grew, an update with nothing new,
 // and whether the updated store equals a full rebuild.
 
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -19,7 +19,7 @@ import type { ChatSpec } from '../test/world.ts'
 const mode = process.argv[2]
 const arg = (name: string, d: number) => (process.argv.includes(`--${name}`) ? Number(process.argv[process.argv.indexOf(`--${name}`) + 1]) : d)
 const tmp = mkdtempSync(join(tmpdir(), 'thenwise-bench-'))
-const rss = () => `${Math.round(process.memoryUsage().rss / 1e6)} MB`
+const rss = () => `${Math.round(process.memoryUsage().rss / 1e6)} MB, peak ${Math.round((process.resourceUsage().maxRSS * 1024) / 1e6)} MB`
 const time = <T>(label: string, f: () => T): T => {
   const t = Date.now()
   const r = f()
@@ -43,7 +43,7 @@ if (mode === 'owner') {
   let n = 0
   for (const k of readdirSync(real)) {
     mkdirSync(join(cfg.memDir, 'archive/sessions', k))
-    for (const f of readdirSync(join(real, k))) if (f.endsWith('.jsonl.gz')) (symlinkSync(join(real, k, f), join(cfg.memDir, 'archive/sessions', k, f)), n++)
+    for (const f of readdirSync(join(real, k))) if (f.endsWith('.jsonl.gz')) (linkSync(join(real, k, f), join(cfg.memDir, 'archive/sessions', k, f)), n++)
   }
   console.log(`owner archive: ${n} chat files, linked read only into ${cfg.memDir}`)
   cwd = join(homedir(), 'memory-v2')

@@ -18,7 +18,7 @@ import { parseTrailers, syncTrailers } from '../capture/notes.ts'
 import { fillSynonyms, keepWord, toks } from '../query/language.ts'
 import { noteKeys, passagesOf } from '../query/passages.ts'
 import type { Config } from './config.ts'
-import { ALL_REFS, DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from './ingest.ts'
+import { ALL_REFS, DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, shaOfFile, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
 import { plansPart } from './plans.ts'
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from './parts.ts'
@@ -256,13 +256,12 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
     const old = known.get(sf.file)
     const recheck = rootsMoved && (old?.status === 'in' || old?.status === 'out')
     if (!recheck && old && old.size === sf.size && old.mtime === sf.mtime && old.ctime === sf.ctime && old.ino === sf.ino) continue
-    const bytes = readFileSync(sf.path)
-    const sha = sha256(bytes)
+    const sha = shaOfFile(sf.path)
     if (!recheck && old && old.sha === sha) {
       S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
       continue
     }
-    const s = parseSf(sf, bytes, cfg.home)
+    const s = parseSf(sf, cfg.home)
     const status = classify(cfg, s)
     if (recheck && old.sha === sha && status === old.status) {
       S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file)
@@ -415,7 +414,7 @@ function applySessions(S: Store, cfg: Config, fresh: Fresh[], gone: string[], by
     let m = loaded.get(file)
     if (!m) {
       const sf = byFile.get(file)!
-      const s = parseSf(sf, readFileSync(sf.path), cfg.home)
+      const s = parseSf(sf, cfg.home)
       m = new Map(sessionPart(s, sf.key, sf.sfx).nodes.map((n) => [n.id, n]))
       loaded.set(file, m)
     }

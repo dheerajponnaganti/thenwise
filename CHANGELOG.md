@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Long chats take far less memory: a full rebuild on a real history with a 260 MB chat fell from about 2.6 GB to about 500 MB, and the store it builds is the same. The first sync after updating rewrites older long chats in the archive once, which peaks around 1.8 GB. Their text does not change.
+
 ## 0.1.25
 
 One security fix, Windows fixes with Windows tests now required in CI, fixes for search, setup and sync, and a notice when a new version is out. The first sync after updating rebuilds the store once. This is the first release published from CI, with provenance.

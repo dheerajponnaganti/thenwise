@@ -12,7 +12,7 @@ test('ARCHITECTURE.md: every file and entry point it names exists and is exporte
     assert.ok(existsSync(file), `${file} does not exist`)
     assert.ok(symbols.length > 0, `${file} names no entry point`)
     const text = readFileSync(file, 'utf8')
-    for (const s of symbols) assert.match(text, new RegExp(`^export (async )?(function|const|class) ${s}\\b`, 'm'), `${file} does not export ${s}`)
+    for (const s of symbols) assert.match(text, new RegExp(`^export (async )?(function\\*?|const|class) ${s}\\b`, 'm'), `${file} does not export ${s}`)
   }
 })
 

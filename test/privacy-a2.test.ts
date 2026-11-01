@@ -107,7 +107,7 @@ test('Notes are written 0600 in 0700 folders, and tighten also fixes an older ~/
 test('Uninstall does not signal a process that is not Thenwise, and lists the extras', async () => {
   const home = tmp()
   const cfg = cfgOf(home)
-  const holder = spawn('sleep', ['300']) // long enough for a slow PowerShell lookup on a busy Windows runner
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300000)']) // long enough for a slow PowerShell lookup on a busy Windows runner
   writeFileSync(join(cfg.memDir, 'sync.lock'), String(holder.pid))
   writeFileSync(join(cfg.memDir, 'team.json'), '{}')
   const lines: string[] = []

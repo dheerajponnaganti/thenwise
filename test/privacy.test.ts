@@ -260,7 +260,7 @@ test('S7-H3: forget a project folder removes every chat of that project and no o
 test('S7-B7: forget waits for a running sync, and the item is gone after both end', async () => {
   const w = world()
   w.sync()
-  const holder = spawn('sleep', ['2'])
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 2000)'])
   writeFileSync(join(w.data, 'sync.lock'), String(holder.pid))
   const t = Date.now()
   const child = spawn(process.execPath, [CLI, 'forget', 'a1', '--yes'], { env: w.env, cwd: w.home })

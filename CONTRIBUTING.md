@@ -29,6 +29,8 @@ Run the CLI from source with `node src/cli.ts <command>`. The plugin runs the bu
 
 ## Where things live
 
+[ARCHITECTURE.md](ARCHITECTURE.md) explains how the parts connect, and [ROADMAP.md](ROADMAP.md) shows where the project is heading. Coding agents read [AGENTS.md](AGENTS.md).
+
 | Folder | What it holds |
 | --- | --- |
 | `src/ingest` | Archiving chats, reading commits, PRs and plans, building the store |

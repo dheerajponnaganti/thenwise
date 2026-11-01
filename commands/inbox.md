@@ -1,5 +1,5 @@
 ---
-description: Review the notes Thenwise proposed, and accept or reject them
+description: Review the notes Thenwise proposed from chats, commits and PRs, and accept or reject them
 argument-hint: [accept <id...> | reject <id...>]
 allowed-tools: Bash, AskUserQuestion
 ---

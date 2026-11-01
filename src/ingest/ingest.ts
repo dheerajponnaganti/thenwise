@@ -385,7 +385,7 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const pr = prPart(loadPrInputs(cfg, opts, repos, warnings), repos, { id: (sha) => commits.get(sha)?.id, repo: (sha) => commits.get(sha)?.repo }, opts.until)
   trailerItems.push(...pr.trailers)
   const layers = [pr, notesPart(cfg, opts.until)]
-  // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
+  // Trailers go to the inbox first; inbox, rejected and expired notes stay out of the store.
   if (!opts.until) syncTrailers(cfg.memDir, trailerItems)
   const teamIn = opts.until ? [] : teamChats(cfg)
   layers.push(curatedPart(cfg, opts.until), teamPart(cfg), ...(opts.until ? [] : [teamChatsPart(cfg, repos, teamIn)]), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until))

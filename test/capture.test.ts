@@ -142,14 +142,17 @@ test('contradiction: yes supersedes on accept and closes the old note; no change
   }
 })
 
-test('trailers become active notes, once', () => {
+test('trailers wait in the inbox, once, until accepted', () => {
   const f = fixture()
   f.run()
   const first = readNotes(f.cfg.memDir)
-  assert.deepEqual(first.map((n) => [n.type, n.status, n.title]).sort(), [['dead_end', 'active', 'a database server'], ['decision', 'active', 'use plain files']])
+  assert.deepEqual(first.map((n) => [n.type, n.status, n.title]).sort(), [['dead_end', 'inbox', 'a database server'], ['decision', 'inbox', 'use plain files']])
+  assert.equal([...new Graph(f.db).nodes.keys()].filter((k) => k.startsWith('curated:tr-')).length, 0, 'a commit cannot write a trusted note')
   assert.match(first.find((n) => n.type === 'decision')!.summary, /Why: nothing to install/)
   reject(f.cfg.memDir, []) // no-op
   f.run()
   assert.equal(readNotes(f.cfg.memDir).length, 2)
-  assert.ok(new Graph(f.db).nodes.size > 0 && [...new Graph(f.db).nodes.keys()].filter((k) => k.startsWith('curated:tr-')).length === 2)
+  accept(f.cfg.memDir, { ids: first.map((n) => n.id) }, new Date().toISOString())
+  f.run()
+  assert.equal([...new Graph(f.db).nodes.keys()].filter((k) => k.startsWith('curated:tr-')).length, 2)
 })

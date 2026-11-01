@@ -232,7 +232,7 @@ In Claude Code:
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.
-- `/thenwise:inbox [accept <id...> | reject <id...>]`: review the notes Thenwise proposed from your chats.
+- `/thenwise:inbox [accept <id...> | reject <id...>]`: review the notes Thenwise proposed from your chats, commits and PRs.
 - `/thenwise:logs`: the latest log lines, errors first.
 - `/thenwise:report [what happened]`: report a problem or an idea. Claude drafts it, you read every line, nothing is sent without your yes.
 

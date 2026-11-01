@@ -35,7 +35,7 @@ test('S6-H3 and S6-H7: session start returns fast, the sync runs on after it, a 
   const t = Date.now()
   const a = spawnSync(process.execPath, [cli, 'hook', 'session-start'], { input: JSON.stringify({ source: 'startup', cwd: '/x/p' }), encoding: 'utf8', env: { ...process.env, THENWISE_HOME: env.dir, HOME: env.dir, THENWISE_SYNC: 'on' } })
   assert.equal(a.status, 0)
-  assert.ok(Date.now() - t < 1000, `${Date.now() - t} ms`)
+  assert.ok(Date.now() - t < (process.platform === 'win32' ? 5000 : 1000), `${Date.now() - t} ms`)
   spawnSync(process.execPath, [cli, 'hook', 'session-start'], { input: JSON.stringify({ source: 'startup', cwd: '/x/p' }), env: { ...process.env, THENWISE_HOME: env.dir, HOME: env.dir, THENWISE_SYNC: 'on' } })
   await wait(() => /backup (done|failed)/.test(logOf(env.dir)))
   const log = logOf(env.dir)

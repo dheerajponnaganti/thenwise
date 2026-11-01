@@ -44,7 +44,7 @@ const PLUGIN = ROOT ? join(ROOT, 'plugin') : join(GATE, 'plugin')
 const { CLAUDE_CODE_PLUGIN_DIRS: _carapace, ...NO_CARAPACE } = process.env
 const E4 = arm === 'plain' || arm === 'plugin'
 const TOOLS = ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash(git:*)', 'Bash(ls:*)', 'Bash(node:*)', 'Bash(npm test:*)', 'Bash(npm run check:*)', ...(arm === 'plugin' ? ['mcp__plugin_thenwise_thenwise__*'] : [])]
-const OFF_PLUGINS = Object.fromEntries(['swift-lsp@claude-plugins-official', 'cloudflare@cloudflare', 'ponytail@ponytail', 'impeccable@impeccable', 'typesafe@typesafe-ai', 'rasterless@dheeraj-skills'].map((p) => [p, false]))
+const OFF_PLUGINS = Object.fromEntries(['swift-lsp@claude-plugins-official', 'cloudflare@cloudflare', 'ponytail@ponytail', 'impeccable@impeccable', 'typesafe@typesafe-ai', 'rasterless@dheeraj-skills', 'thenwise@thenwise'].map((p) => [p, false]))
 const POINTER = `Project records you may read: the Obsidian vault of notes at ${CORPUS}/vault/ and the carapace pull requests at ${CORPUS}/prs.json.`
 // Claude Code keys a project's auto memory by its folder path, with / . and _ turned into -.
 const memoryDirFor = (dir: string) => join(HOME, '.claude/projects', dir.replace(/[/._]/g, '-'), 'memory')

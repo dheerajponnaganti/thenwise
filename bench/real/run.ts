@@ -37,9 +37,11 @@ const PLUGIN = process.env.THENWISE_EVAL_ROOT ? join(ROOT, 'plugin') : join(ROOT
 // Each set names the repos and folders its questions come from. They name private projects, so they live outside the repo:
 // { "<set>": { "text": "...", "dirs": ["~/..."] } } in ~/.memory/eval/records.json (or THENWISE_EVAL_RECORDS), with ~ for the home folder.
 const RECORDS: Record<string, { text: string; dirs: string[] }> = JSON.parse(readFileSync(process.env.THENWISE_EVAL_RECORDS ?? join(HOME, '.memory/eval/records.json'), 'utf8').replaceAll('~/', `${HOME}/`))
-const READ_ONLY = ['Read', 'Grep', 'Glob', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git -C:*)', 'Bash(ls:*)', ...(arm === 'memory' ? [`Bash(${join(HOME, '.memory/bin/memory-eval')}:*)`] : []), ...(arm === 'plain' || arm === 'plugin' ? ['Bash(gh pr view:*)', 'Bash(gh pr list:*)'] : []), ...(arm === 'plugin' ? ['mcp__plugin_thenwise_thenwise__*'] : [])]
+// A macOS sandbox profile to run every candidate in. Live PRs are off with it: `gh` reads today, past the cutoff.
+const SANDBOX = process.env.THENWISE_EVAL_SANDBOX
+const READ_ONLY = ['Read', 'Grep', 'Glob', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git -C:*)', 'Bash(ls:*)', ...(arm === 'memory' ? [`Bash(${join(HOME, '.memory/bin/memory-eval')}:*)`] : []), ...((arm === 'plain' || arm === 'plugin') && !SANDBOX ? ['Bash(gh pr view:*)', 'Bash(gh pr list:*)'] : []), ...(arm === 'plugin' ? ['mcp__plugin_thenwise_thenwise__*'] : [])]
 // Gate arms load no plugins and no carapace; the plugin arm adds Thenwise only.
-const OFF_PLUGINS = Object.fromEntries(['swift-lsp@claude-plugins-official', 'cloudflare@cloudflare', 'ponytail@ponytail', 'impeccable@impeccable', 'typesafe@typesafe-ai', 'rasterless@dheeraj-skills'].map((p) => [p, false]))
+const OFF_PLUGINS = Object.fromEntries(['swift-lsp@claude-plugins-official', 'cloudflare@cloudflare', 'ponytail@ponytail', 'impeccable@impeccable', 'typesafe@typesafe-ai', 'rasterless@dheeraj-skills', 'thenwise@thenwise'].map((p) => [p, false]))
 export const MEMORY_BIN = join(HOME, '.memory/bin/memory-eval')
 const MEMORY_HELP = `# Project memory: use it first
 A memory of this project's whole history (chat turns, compaction summaries, PRs, commits, vault notes, rules) is searchable with one command. Use it FIRST for any question about why something is the way it is, what was tried, when something changed, what was current at a date, or how two things connect; then check details in the files if needed. Each result shows its source and date.
@@ -97,7 +99,7 @@ function ask(q: RealQuestion): Promise<Answer> {
     // The vault copy is the plugin arm's alone: plain may not find it by searching the home folder.
     const vaultCopy = arm === 'plain' && process.env.THENWISE_EVAL_VAULT ? [`Read(${process.env.THENWISE_EVAL_VAULT.replace(HOME, '~')}/**)`] : []
     const deny = [...NO_PEEKING, ...(gate ? ['Read(~/.memory/**)', 'Read(~/Library/Mobile Documents/**)', 'Read(~/carapace-crew/**)', ...vaultCopy] : [])]
-    const child = spawn('claude', ['-p', ...(gate ? [] : [PROMPT(q)]), '--output-format', 'json', '--model', model, ...extra, '--allowedTools', ...READ_ONLY,
+    const child = spawn(SANDBOX ? 'sandbox-exec' : 'claude', [...(SANDBOX ? ['-f', SANDBOX, 'claude'] : []), '-p', ...(gate ? [] : [PROMPT(q)]), '--output-format', 'json', '--model', model, ...extra, '--allowedTools', ...READ_ONLY,
       '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'WebSearch', 'WebFetch', 'Agent', ...deny], { cwd, stdio: [gate ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...NO_CARAPACE, ...(arm === 'plugin' ? { THENWISE_HOME: join(GATE, 'store'), THENWISE_SYNC: 'off' } : {}) } })
     if (gate) child.stdin!.end(PROMPT(q))
     let stdout = ''
@@ -112,11 +114,10 @@ function ask(q: RealQuestion): Promise<Answer> {
     child.on('close', () => {
       clearTimeout(timer)
       if (missing) return
-      // The usage limit answers with a notice instead of an answer: wait for the reset and ask again.
+      // The usage limit answers with a notice instead of an answer: stop, and a rerun picks up where this one ended.
       if (/hit your (session|usage|weekly) limit/i.test(stdout)) {
-        missing = true
-        setTimeout(() => resolve(ask(q)), 5 * 60 * 1000)
-        return
+        console.error('USAGE_LIMIT: stopping')
+        process.exit(75)
       }
       let r: { result?: string; usage?: Record<string, number>; total_cost_usd?: number; num_turns?: number } = {}
       try {

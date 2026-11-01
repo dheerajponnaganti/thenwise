@@ -2,7 +2,26 @@
 
 ## Unreleased
 
+A full rebuild now uses far less memory, and answers hold up in new evals.
+
+**Why this release:** one very long chat could push a full rebuild past 2.5 GB of memory, enough to slow or stop a sync on a smaller machine. Sync should never be the thing you notice.
+
 - Long chats take far less memory: a full rebuild on a real history with a 260 MB chat fell from about 2.6 GB to about 500 MB, and the store it builds is the same. The first sync after updating rewrites older long chats in the archive once, which peaks around 1.8 GB. Their text does not change.
+
+**New evals, graded blind on hidden answers:**
+
+| | Plain Claude Code | Thenwise | Difference |
+| --- | --- | --- | --- |
+| Your own history: correct | 37% | **93%** | 2.5 times more |
+| Your own history: raw tokens | 7.1 million | **3.6 million** | 50% fewer |
+| Your own history: seconds per answer | 26 | **14** | 1.9 times faster |
+| A teammate's shared chats: correct | 17% | **88%** | 5.3 times more |
+| A teammate's shared chats: raw tokens | 5.0 million | **3.1 million** | 39% fewer |
+| A teammate's shared chats: seconds per answer | 24 | **16** | 1.5 times faster |
+
+Every source was frozen before the questions were written, and a sandbox blocked everything else on the machine. On your own history, this build scored 93% against 87% for 0.1.24, with the same token use. [How we measured](https://github.com/dheerajponnaganti/thenwise/blob/main/docs/eval.md).
+
+**Why these numbers changed:** earlier rounds scored 83% against 47% on your own history, and 88% against 25% on shared chats. Plain fell because it can no longer read live repositories, live pull requests or anything written after the questions: all of that once helped it. Thenwise rose on your own history because its test store now holds every chat and note from before the cutoff, where earlier rounds missed some. Token figures also moved from a weighted count per answer to raw totals, so they don't compare directly with earlier numbers.
 
 ## 0.1.25
 

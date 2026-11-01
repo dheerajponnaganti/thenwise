@@ -128,11 +128,13 @@ test('S6-B10: with memory off for the project, compact and Read add nothing', ()
 
 // npx runs once, to fetch the old Node: running every hook through it failed now and then on CI, before Node even started.
 const oldNode = existsSync('dist/cli.js') ? spawnSync('npx', ['-y', 'node@22.15.0', '-p', 'process.execPath'], { encoding: 'utf8' }) : undefined
-test('S6-B2: on a Node without FTS5 the hooks stay silent, and session start says it once', { skip: oldNode?.status !== 0 }, () => {
+test('S6-B2, #43: on a Node without FTS5 the hooks stay silent, and session start tells the user once', { skip: oldNode?.status !== 0 }, () => {
   const old = (name: string) => spawnSync(oldNode!.stdout.trim(), [resolve('dist/cli.js'), 'hook', name], { input: '{}', encoding: 'utf8' })
   const start = old('session-start')
   assert.equal(start.status, 0, start.stderr)
-  assert.match(start.stdout, /needs Node 22.16/)
+  const out = JSON.parse(start.stdout)
+  assert.match(out.systemMessage, /needs Node 22.16.*nodejs\.org/)
+  assert.equal(out.hookSpecificOutput.additionalContext, out.systemMessage)
   const read = old('read')
   assert.equal(read.status, 0)
   assert.equal(read.stdout + read.stderr, '')

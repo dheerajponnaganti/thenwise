@@ -23,10 +23,10 @@ try {
   db.exec("CREATE VIRTUAL TABLE t USING fts5(x, tokenize='porter unicode61')")
   db.close()
 } catch {
-  const msg = `Thenwise needs Node 22.16 or later with built-in SQLite; you have ${process.version}.`
-  // Hooks stay quiet, except at session start, where stdout reaches the chat once.
+  const msg = `Thenwise needs Node 22.16 or later with built-in SQLite; you have ${process.version}. Install a newer Node from https://nodejs.org, then start a new session.`
+  // Hooks stay quiet, except at session start: a system message is what the user sees, the context is what Claude sees.
   if (process.argv[2] === 'hook') {
-    if (process.argv[3] === 'session-start') console.log(msg)
+    if (process.argv[3] === 'session-start') console.log(JSON.stringify({ systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }))
     process.exit(0)
   }
   console.error(msg)

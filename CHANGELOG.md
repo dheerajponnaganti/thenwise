@@ -3,6 +3,8 @@
 ## Unreleased
 
 - One empty chat file no longer stops all memory updates. Before, every sync failed while that file existed.
+- The default vault folder is made on the first write. Before, a fresh setup recorded `~/Thenwise` but never made it, so no notes were written and every sync logged an error.
+- The sync log says why a step failed when the step reports it on standard output.
 - Search finds a word that appears only in a title, such as the subject of a commit that also has a message body. Before, it said the word was not recorded. The first sync after updating rebuilds the store once.
 - Windows: project folders, notes and file paths are compared with forward slashes everywhere, so a chat from a deleted repo keeps its project and a note's links resolve.
 - Windows: `thenwise uninstall` stops a running background sync.

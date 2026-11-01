@@ -4,6 +4,7 @@
 
 - Windows: project folders, notes and file paths are compared with forward slashes everywhere, so a chat from a deleted repo keeps its project and a note's links resolve.
 - Windows: `thenwise uninstall` stops a running background sync.
+- Windows: `thenwise team share-chats` no longer hangs on a chat that started outside a repository.
 
 ## 0.1.24
 

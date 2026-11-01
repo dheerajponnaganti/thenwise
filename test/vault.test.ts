@@ -265,6 +265,17 @@ test('V-B9: a user note with broken front matter is skipped and reported', () =>
   assert.ok(ids.some((i) => i.includes('Plan.md')) && !ids.some((i) => i.includes('Broken')))
 })
 
+test('#32: the default vault folder in your home is made on the first write, and only that one', () => {
+  const { cfg } = setup()
+  const home = mkdtempSync(join(tmpdir(), 'thenwise-home-'))
+  const r = writeVault({ ...cfg, home, vault: { ...cfg.vault, place: 'central', path: join(home, 'Thenwise') } })
+  assert.equal(r.stopped, undefined)
+  assert.ok(existsSync(join(home, 'Thenwise', '_thenwise')))
+  const obsidian = join(home, 'Obsidian')
+  assert.match(writeVault({ ...cfg, home, vault: { ...cfg.vault, place: 'obsidian', path: obsidian } }).stopped!, /was not found/)
+  assert.ok(!existsSync(obsidian))
+})
+
 test('V-B10: a vault folder that vanished is never recreated', () => {
   const { out, write } = setup()
   rmSync(out, { recursive: true })

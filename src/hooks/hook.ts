@@ -219,7 +219,7 @@ export function syncRun(env: HookEnv) {
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
-      log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
+      log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? (r.stderr.trim() || r.stdout.trim()).split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
     }
   } finally {
     tighten(env.dir)

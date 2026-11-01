@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 
-import { checkUrl, flush, locked, joinTeam, payloadOf, search, share, sharedIds, unshare } from '../src/teams/client.ts'
+import { checkUrl, flush, locked, joinTeam, payloadOf, save, search, share, sharedIds, unshare } from '../src/teams/client.ts'
 import { createTeamServer, invite, openTeamDb, removeMember } from '../src/teams/server.ts'
 
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), `tw-${p}-`))
@@ -259,4 +259,11 @@ describe('teams preview', () => {
     const u = spawnSync(process.execPath, ['src/main.ts', 'team'], { env: { ...process.env, THENWISE_HOME: tmp('c') }, encoding: 'utf8' })
     assert.match(u.stderr, /teams preview/)
   })
+})
+
+test('#17: team state saves on a fresh install, in a private new data folder', () => {
+  const dir = join(tmp('fresh'), 'no', 'data', 'folder', 'yet')
+  save(dir, { url: 'http://127.0.0.1:1', token: 't' } as Parameters<typeof save>[1])
+  assert.equal(JSON.parse(readFileSync(join(dir, 'team.json'), 'utf8')).token, 't')
+  if (process.platform !== 'win32') assert.equal(statSync(dir).mode & 0o777, 0o700)
 })

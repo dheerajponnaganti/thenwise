@@ -10,7 +10,8 @@ export const STEMS = ['task_plan', 'findings', 'progress']
 export const READERS = /^(?:cat|head|tail|less|bat|sed)$/
 
 // Words that ask about the past. A prompt without one gets no pointers: most prompts are about the work at hand.
-const CUE = /\b(?:why (?:did|do|does|is|was) (?:we|i|you|it)|last time|before|earlier|we decided|remember|again|what happened|used to|previously|history of)\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:PR|pull request)\s*#?\d+|(?:^|\s)#\d{1,5}\b|[\w.-]+\/[\w./-]*\.\w{1,6}\b/i
+// "did you" stays out: it usually asks about this chat, and the chat already holds that answer.
+const CUE = /\b(?:why (?:did|do|does|is|was) (?:we|i|you|it)|why (?:was|were|did|has|have|had)|(?:what|how|when|where|who) did (?:we|i)|(?:did|have|had) (?:we|i)|we (?:chose|picked|tried|dropped|rejected|settled|agreed)|last time|before|earlier|we decided|remember|again|what happened|used to|previously|history of)\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:PR|pull request)\s*#?\d+|(?:^|\s)#\d{1,5}\b|[\w.-]+\/[\w./-]*\.\w{1,6}\b/i
 /** A prompt that may want past work: a cue, and not a slash command. */
 export const asksAboutThePast = (prompt: string) => !!prompt.trim() && !prompt.trimStart().startsWith('/') && CUE.test(prompt.slice(0, 2000))
 

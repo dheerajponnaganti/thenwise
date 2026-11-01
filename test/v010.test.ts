@@ -54,6 +54,11 @@ test('a long prompt searches only its question, so the pointer search stays insi
   assert.ok(flat.split(' ').length <= 60)
 })
 
+test('a past question without "we" still gets pointers, and a question about this chat or the present does not', () => {
+  for (const q of ['Why was the cache split into shards?', 'why were the retries removed', 'what did we decide about the cache', 'did we try a single file', 'how did we fix the login', 'we tried a queue here, what came of it']) assert.equal(asksAboutThePast(q), true, q)
+  for (const q of ['did you run the tests', 'what did you change', 'why is the build red', 'fix the cache', 'what does this function return']) assert.equal(asksAboutThePast(q), false, q)
+})
+
 test('R10-H3: the server names five question shapes and the marker once; no tool says "Use FIRST"', () => {
   const s = createServer(() => writeGraph(tempDir()))
   const init = s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) as any

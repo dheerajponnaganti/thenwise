@@ -24,7 +24,8 @@ Plugin users get new code only when the version changes, and npm publishes a ver
 4. Tag that commit on `main` as `v<version>` and push the tag. Tags cannot be moved or deleted, so check the version first.
 5. The `release` workflow checks that the tag matches every version, that the release branch ships the same source, and that its `dist/` is exactly what that source builds to. Then it builds the package and stages it on npm. Nobody can install it yet.
 6. Review it under Staged Packages on npmjs.com, or with `npm stage download <id>`, and approve it with 2FA.
-7. Confirm provenance with `npm view thenwise@<version> dist.attestations`, then create the GitHub release from the changelog section.
+7. Confirm provenance with `npm view thenwise@<version> dist.attestations`.
+8. The workflow drafts the GitHub release from the changelog. Publish the draft.
 
 If a run fails after the tag, fix the cause in a new version. Reruns are safe: a version already on npm is left alone.
 

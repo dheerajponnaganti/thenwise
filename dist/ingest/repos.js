@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { normPath } from "../core/vault-index.js";
 /** The main repository folder that holds `dir`. A linked worktree maps to its main repo (what `--git-common-dir` gives). */
 export function repoRoot(dir) {
     for (let d = resolve(dir);; d = dirname(d)) {
@@ -37,7 +38,7 @@ export const real = (p) => {
     }
 };
 /** The folder a project is known by: its repository (or the folder itself), as a real path, so two spellings compare equal. */
-export const projectRoot = (dir) => real(repoRoot(dir) ?? resolve(dir));
+export const projectRoot = (dir) => normPath(real(repoRoot(dir) ?? resolve(dir)));
 /** The configured repos first, then the repos of the given working folders, each once, in a stable order. */
 export function discoverRepos(configured, cwds) {
     const out = [];

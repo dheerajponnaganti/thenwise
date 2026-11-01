@@ -8,6 +8,7 @@ import { resolveDataDir } from "../core/home.js";
 import { logger, recentErrors } from "../core/log.js";
 import { readConfigFile } from "../ingest/config.js";
 import { diskRoom } from "../ingest/ingest.js";
+import { updateStatus } from "./update.js";
 export function ghSignedIn() {
     try {
         return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 }).status === 0;
@@ -88,7 +89,17 @@ export async function runDoctor(home = homedir(), opts = {}) {
     }
     add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise');
     add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.');
-    add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', 'gh is not signed in (only needed for PRs). Run: gh auth login');
+    add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000 }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com');
+    // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.
+    const prsOn = cfg.raw?.ingest?.prs === true;
+    const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000 }).error !== undefined;
+    const signedIn = (opts.gh ?? ghSignedIn)();
+    if (signedIn || prsOn)
+        add('gh', signedIn, 'signed in', noGh ? 'gh is not installed, and GitHub PR reading is on. Get it from https://cli.github.com' : 'gh is not signed in, and GitHub PR reading is on. Run: gh auth login');
+    else
+        checks.push({ name: 'gh', ok: true, detail: 'not needed: GitHub PR reading is off' });
+    const version = updateStatus({ memDir, off: cfg.raw?.off === true, updateCheck: cfg.raw?.update_check !== false });
+    checks.push({ name: 'version', ok: true, warn: version.newer, detail: version.line });
     return checks;
 }
 export async function doctorCommand(home = homedir()) {

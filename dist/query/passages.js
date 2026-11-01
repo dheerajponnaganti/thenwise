@@ -47,6 +47,7 @@ export function noteKeys(kind, extra) {
 }
 /** Create passages, passages_fts and titles_fts from the nodes table. Deterministic: nodes are read in id order. */
 /** The passages of a node: a teammate's turn keeps the ones its sharer sent, everything else is split here. */
+const WORD = /[\p{L}\p{N}]+/gu;
 export function passagesOf(text, title, extra) {
     if (extra.includes('"passages"')) {
         try {
@@ -56,7 +57,12 @@ export function passagesOf(text, title, extra) {
         }
         catch { /* fall through to a split */ }
     }
-    return splitPassages(text || title || '');
+    const parts = splitPassages(text || title || '');
+    // Search looks words up in passages, so a title word the body never says gets a passage of its own (a commit's subject, say).
+    const body = new Set(text.toLowerCase().match(WORD) ?? []);
+    if (text && title && (title.toLowerCase().match(WORD) ?? []).some((w) => !body.has(w)))
+        parts.push(title);
+    return parts;
 }
 export function buildPassageIndex(db) {
     db.exec(`CREATE TABLE passages(pid TEXT PRIMARY KEY, node TEXT NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL);

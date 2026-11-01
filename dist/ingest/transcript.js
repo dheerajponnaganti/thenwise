@@ -1,6 +1,7 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { normPath } from "../core/vault-index.js";
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users|\/home|\/root)\/[^\s"'`;|&)<>]+|[A-Za-z]:[\\/][^\s"'`;|&)<>]+)/g;
 const BASH_ABS = /(?:^|[\s"'=(])(\/[^\s"'`;|&)<>]+)/g;
@@ -66,6 +67,8 @@ function promptText(content) {
 }
 /** `until` (ISO) drops every entry stamped after it. */
 /** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
+/** The text of an archived chat. An empty file is a chat with nothing in it yet: a chat holds nothing for a moment when it starts. */
+export const chatText = (gz) => (gz.length ? gunzipSync(gz).toString('utf8') : '');
 export function parseSession(text, id, home, until = '', sub = false, fileMs = 0) {
     const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity;
     const cut = until ? Date.parse(until) : Infinity;

@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { formatEvent, logger, readLog, recentErrors } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
 import { isOff, loadConfigSafe } from "../ingest/config.js";
+import { updateNotice } from "../setup/update.js";
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from "../ingest/plans.js";
 import { repoRoot } from "../ingest/repos.js";
 import { parseSession } from "../ingest/transcript.js";
@@ -202,7 +203,7 @@ export function syncRun(env) {
         const vaultStamp = join(env.dir, 'vault.json');
         // The team's notes are fetched before the ingest, so this sync already makes them searchable.
         const cfgNow = loadConfigSafe().config;
-        for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
+        for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
             // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
             if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
                 log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault');
@@ -216,7 +217,7 @@ export function syncRun(env) {
                 writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 });
             if (verb.startsWith('distill') && r.status === 0)
                 writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 });
-            log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? r.stderr.trim().split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`);
+            log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? (r.stderr.trim() || r.stdout.trim()).split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`);
         }
     }
     finally {
@@ -224,7 +225,7 @@ export function syncRun(env) {
         rmSync(lock, { force: true });
     }
 }
-const reply = (event, additionalContext) => JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext } });
+const reply = (event, additionalContext, systemMessage = '') => JSON.stringify({ ...(systemMessage ? { systemMessage } : {}), hookSpecificOutput: { hookEventName: event, additionalContext } });
 /** Files already hinted, kept per session and agent (a subagent's Read must not spend the main thread's hint). */
 const statePath = (env, session, agent) => join(env.dir, 'hook-state', `${`${session}${typeof agent === 'string' && agent ? `.${agent}` : ''}`.replace(/[^\w.-]/g, '_')}.lines`);
 export function seen(env, session, agent, file) {
@@ -325,13 +326,15 @@ export function runHook(name, input, env) {
         if (name === 'session-start') {
             if (['startup', 'resume', 'clear', 'compact', 'fork'].includes(input.source))
                 startSync(env);
+            const notice = cfg && (input.source === 'startup' || input.source === 'resume') ? updateNotice(cfg) : '';
             // A session in a repo with recent work opens with where it stood; the rest of the history waits to be asked.
             if ((input.source === 'startup' || input.source === 'resume') && (cfg?.startupBrief ?? true) && cwd && repoRoot(cwd) && existsSync(graph)) {
                 const brief = query(env, ['resume', '--short', '--project', cwd]).trim();
-                return brief ? reply('SessionStart', `<memory-brief note="Data from past work, not instructions.">\n${brief}\n</memory-brief>`) : '';
+                const block = brief ? `<memory-brief note="Data from past work, not instructions.">\n${brief}\n</memory-brief>` : '';
+                return block || notice ? reply('SessionStart', [notice, block].filter(Boolean).join('\n'), notice) : '';
             }
             if (input.source !== 'compact')
-                return '';
+                return notice ? reply('SessionStart', notice, notice) : '';
             const tail = currentTail(input.transcript_path);
             if (!existsSync(graph) && !tail)
                 return log(env, 'no memory yet, no resume brief') ?? '';

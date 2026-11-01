@@ -4,13 +4,12 @@
 // The unit is read from the masked archive, masked again, and cleaned of the member's redact list.
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { basename, dirname, join, resolve } from 'node:path';
 import { MASK_VERSION, maskSecrets } from "../core/secrets.js";
 import { editDirs, isMarked, workDirs, sessionPart, under } from "../ingest/parts.js";
 import { isOff } from "../ingest/config.js";
 import { githubSlug, real, repoRoot, sessionRepo } from "../ingest/repos.js";
-import { parseSession } from "../ingest/transcript.js";
+import { chatText, parseSession } from "../ingest/transcript.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { splitPassages } from "../query/passages.js";
 import { call, errText, load, locked, save } from "./client.js";
@@ -90,17 +89,22 @@ export function archived(cfg) {
     return out;
 }
 const worktreeTop = (cwd) => {
-    for (let d = cwd; d && d !== '/'; d = resolve(d, '..'))
+    if (!cwd)
+        return undefined;
+    // Stops when the parent is itself: a filesystem root, which is not `/` on Windows.
+    for (let d = resolve(cwd);; d = dirname(d)) {
         if (existsSync(join(d, '.git')))
             return d;
-    return undefined;
+        if (dirname(d) === d)
+            return undefined;
+    }
 };
 /** A folder path followed by a separator (captured) or by the end of the path token, so a sibling like `proj-other` is left alone. */
 const atBoundary = (dir) => new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:([/\\\\])|(?![\\w-])(?!\\.\\w))`, 'g');
 /** What one archived chat gives as a unit, or why it stays home. `repo` is the shared project's checkout. */
 export function buildChat(cfg, repo, c, scrub, opts = {}) {
     const read = (path, sub = false) => {
-        const s = parseSession(gunzipSync(readFileSync(path)).toString('utf8'), c.session, cfg.home, '', sub);
+        const s = parseSession(chatText(readFileSync(path)), c.session, cfg.home, '', sub);
         for (const t of s.turns)
             t.reply = t.reply.filter((r) => !t.agentReports.includes(r)); // tool output never travels
         return s;

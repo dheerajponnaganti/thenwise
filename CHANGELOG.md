@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.25
+
+One security fix, Windows fixes with Windows tests now required in CI, fixes for search, setup and sync, and a notice when a new version is out. The first sync after updating rebuilds the store once. This is the first release published from CI, with provenance.
+
+- Thenwise tells you when a new version is out, once per version at the start of a session, and says when it has been updated. Once a day the background sync asks npm for the newest version and sends nothing about you or your work. Turn it off with `thenwise update-check off`. Search, tools and foreground hooks stay offline.
+- One empty chat file no longer stops all memory updates. Before, every sync failed while that file existed.
+- The default vault folder is made on the first write. Before, a fresh setup recorded `~/Thenwise` but never made it, so no notes were written and every sync logged an error.
+- The sync log says why a step failed when the step reports it on standard output.
+- Search finds a word that appears only in a title, such as the subject of a commit that also has a message body. Before, it said the word was not recorded. The first sync after updating rebuilds the store once.
+- Windows: project folders, notes and file paths are compared with forward slashes everywhere, so a chat from a deleted repo keeps its project and a note's links resolve.
+- Windows: `thenwise uninstall` stops a running background sync.
+- Windows: `thenwise team share-chats` no longer hangs on a chat that started outside a repository.
+- `thenwise team join` works on a fresh install, before anything has made the data folder.
+- Windows: `thenwise distill` and automatic capture start Claude Code when npm installed it as `claude.cmd`.
+- Security: `Decision:` and `Dead-end:` lines in commits and PRs now wait in the inbox. Anyone who lands a commit could write one, and it became a trusted note. Accept them with `thenwise accept --all-of decision`.
+- `thenwise decide` and `thenwise deadend` name a similar note you already have.
+- `thenwise doctor` says when `gh` is not installed, in place of asking you to sign in.
+- `thenwise doctor` checks for `git`, which reads your commits on any host. Having no `gh` only fails when GitHub PR reading is on.
+
 ## 0.1.24
 
 More secrets masked in shell commands, and shell commands now link files and commits on every system.

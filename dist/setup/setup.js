@@ -220,6 +220,8 @@ export async function setup(argv, home = homedir()) {
             console.error(`warning: ${w}`);
         out(`Found ${found.length} project${found.length === 1 ? '' : 's'}: ${chosen.length} kept, ${dropped.size} dropped.`);
         out(`Archived ${r.archived + r.skipped} chats (${r.excludedChats} test chats and ${r.excluded} chats of dropped projects left out). ${g.sessionsIn} chats are in the memory.`);
+        out('Once a day Thenwise asks npm for the newest version, and sends nothing about you. Turn that off with: thenwise update-check off');
+        out('For updates on their own: open /plugin, go to Marketplaces, pick thenwise, Enable auto-update.');
         out('Try: thenwise search <words>');
         return 0;
     }

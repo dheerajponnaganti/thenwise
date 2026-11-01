@@ -7,7 +7,6 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { gunzipSync } from 'node:zlib';
 import { syncTrailers } from "../capture/notes.js";
 import { errFields, logger } from "../core/log.js";
 import { buildLanguage } from "../query/language.js";
@@ -20,13 +19,14 @@ import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
-import { parseSession } from "./transcript.js";
+import { chatText, parseSession } from "./transcript.js";
 import { swapPending } from "../query/engine.js";
 export { GENERATED, datedSections } from "./parts.js";
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 // 4 (0.1.24): shell commands link more files and commits (Linux and Windows paths, relative paths, `git -c`), so older chats are read again.
-export const STATE_VERSION = 4;
+// 5 (0.1.25): a title word the body never says gets a passage, so existing stores rebuild to find it.
+export const STATE_VERSION = 5;
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2;
@@ -70,7 +70,7 @@ export const sessionId = (name) => name.replace(/\.jsonl\.gz$/, '');
 /** Parses one archived chat file; a subagent file is read as turns of its parent session. */
 export function parseSf(sf, bytes, home, until = '') {
     const sub = sf.name.includes('/subagents/');
-    return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub, sf.mtime);
+    return parseSession(chatText(bytes), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub, sf.mtime);
 }
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */
 const defaultRef = (repo) => gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
@@ -345,7 +345,7 @@ function fullBuild(cfg, opts, dbPath) {
     const pr = prPart(loadPrInputs(cfg, opts, repos, warnings), repos, { id: (sha) => commits.get(sha)?.id, repo: (sha) => commits.get(sha)?.repo }, opts.until);
     trailerItems.push(...pr.trailers);
     const layers = [pr, notesPart(cfg, opts.until)];
-    // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
+    // Trailers go to the inbox first; inbox, rejected and expired notes stay out of the store.
     if (!opts.until)
         syncTrailers(cfg.memDir, trailerItems);
     const teamIn = opts.until ? [] : teamChats(cfg);

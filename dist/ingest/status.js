@@ -7,6 +7,7 @@ import { prStatus } from "./prs.js";
 import { skippedDocs } from "./parts.js";
 import { sharesStatus } from "../teams/chats.js";
 import { teamStatus } from "../teams/client.js";
+import { updateStatus } from "../setup/update.js";
 export function statusLines(cfg, dbPath) {
     if (!existsSync(dbPath))
         return [`no store at ${dbPath}: run \`thenwise ingest\``];
@@ -34,6 +35,7 @@ export function statusLines(cfg, dbPath) {
     }
     const repos = JSON.parse(all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value ?? '[]');
     out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`);
+    out.push(`version: ${updateStatus(cfg).line}`);
     out.push(...prStatus(cfg, repos));
     out.push(...teamStatus(cfg.memDir));
     const sharing = sharesStatus(cfg).summary;

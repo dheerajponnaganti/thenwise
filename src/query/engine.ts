@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { projectRoot, real, repoRoot } from '../ingest/repos.ts'
 
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from './language.ts'
+import { normPath } from '../core/vault-index.ts'
 
 export interface Node {
   id: string
@@ -175,7 +176,7 @@ export class Graph {
    *  A folder outside any repository (a home folder, a scratch folder) is no project, so everything stays in scope. */
   scopeTo(folder: string) {
     const repo = repoRoot(folder)
-    this.scope = repo ? real(repo) : undefined
+    this.scope = repo ? normPath(real(repo)) : undefined
   }
   /** The project folder a node belongs to, or '' when it belongs to none (vault notes, personal rules). */
   rootOf(n: Node): string {
@@ -208,7 +209,7 @@ export class Graph {
       // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
       if (n.kind === 'session') {
         const cwd = String(n.extra?.cwd ?? '')
-        this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? resolve(cwd) : '')
+        this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '')
         this.keyRoots.set(n.project, this.roots.get(n.id)!)
       }
       else if (n.kind === 'commit') this.roots.set(n.id, of(n.source))

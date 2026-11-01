@@ -5,6 +5,7 @@ import { basename, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { projectRoot, real, repoRoot } from "../ingest/repos.js";
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from "./language.js";
+import { normPath } from "../core/vault-index.js";
 const STOP = new Set(`a about above after again all also am an and any are as at be because been before being below between both but by can could did do does doing down during each few for from further had has have having he her here hers him his how i if in into is it its me more most my no nor not of off on once only or other our ours out over own same she should so some such than that the their theirs them then there these they this those through to too under until up us very was we were what when where which while who whom why will with would you your yours tell show find remember mean means made make get got use used using`.split(/\s+/));
 export const GOOD = 0.5; // idf-weighted query coverage a passage needs to count as a match
 const K = 60; // RRF constant
@@ -141,7 +142,7 @@ export class Graph {
      *  A folder outside any repository (a home folder, a scratch folder) is no project, so everything stays in scope. */
     scopeTo(folder) {
         const repo = repoRoot(folder);
-        this.scope = repo ? real(repo) : undefined;
+        this.scope = repo ? normPath(real(repo)) : undefined;
     }
     /** The project folder a node belongs to, or '' when it belongs to none (vault notes, personal rules). */
     rootOf(n) {
@@ -181,7 +182,7 @@ export class Graph {
             // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
             if (n.kind === 'session') {
                 const cwd = String(n.extra?.cwd ?? '');
-                this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? resolve(cwd) : '');
+                this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '');
                 this.keyRoots.set(n.project, this.roots.get(n.id));
             }
             else if (n.kind === 'commit')

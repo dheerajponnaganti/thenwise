@@ -8,7 +8,6 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { gunzipSync } from 'node:zlib'
 
 import { syncTrailers } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
@@ -25,7 +24,7 @@ import type { Claim, GEdge, Look, PrInput, SessionPart, Status } from './parts.t
 import { plansPart } from './plans.ts'
 import { fetchPrs } from './prs.ts'
 import { discoverRepos, githubSlug } from './repos.ts'
-import { parseSession } from './transcript.ts'
+import { chatText, parseSession } from './transcript.ts'
 import type { Session } from './transcript.ts'
 import { swapPending } from '../query/engine.ts'
 
@@ -59,7 +58,8 @@ export interface IngestOptions {
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 // 4 (0.1.24): shell commands link more files and commits (Linux and Windows paths, relative paths, `git -c`), so older chats are read again.
-export const STATE_VERSION = 4
+// 5 (0.1.25): a title word the body never says gets a passage, so existing stores rebuild to find it.
+export const STATE_VERSION = 5
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2
@@ -116,7 +116,7 @@ export const sessionId = (name: string) => name.replace(/\.jsonl\.gz$/, '')
 export function parseSf(sf: SessionFile, bytes: Buffer, home: string, until = ''): Session {
   const sub = sf.name.includes('/subagents/')
 
-  return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
+  return parseSession(chatText(bytes), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
 }
 
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */
@@ -385,7 +385,7 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const pr = prPart(loadPrInputs(cfg, opts, repos, warnings), repos, { id: (sha) => commits.get(sha)?.id, repo: (sha) => commits.get(sha)?.repo }, opts.until)
   trailerItems.push(...pr.trailers)
   const layers = [pr, notesPart(cfg, opts.until)]
-  // Owner-written trailers become active notes first; inbox, rejected and expired notes stay out.
+  // Trailers go to the inbox first; inbox, rejected and expired notes stay out of the store.
   if (!opts.until) syncTrailers(cfg.memDir, trailerItems)
   const teamIn = opts.until ? [] : teamChats(cfg)
   layers.push(curatedPart(cfg, opts.until), teamPart(cfg), ...(opts.until ? [] : [teamChatsPart(cfg, repos, teamIn)]), docsPart(cfg), memoryPart(cfg, sessions.map((x) => x.key), opts.memoryFrom), plansPart(cfg, opts.until))

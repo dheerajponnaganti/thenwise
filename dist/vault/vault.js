@@ -3,7 +3,7 @@
 // A note is rewritten only when its text changed. A note a person edited is saved to .edited/ first. No model.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { parseFrontMatter, quote } from "../core/frontmatter.js";
 import { maskSecrets } from "../core/secrets.js";
 import { Graph, local } from "../query/engine.js";
@@ -161,7 +161,10 @@ export function writeVault(cfg, opts = {}) {
     const root = resolve(cfg.vault.path);
     const dir = join(root, OURS);
     const res = { ...none, dir };
-    // Never create the vault itself: a missing folder or an unmounted drive must not leave a new vault behind.
+    // The default folder in your home is ours to make: setup only records it, and a home folder is never unmounted.
+    if (cfg.vault.place === 'central' && cfg.vault.path && cfg.home && root.startsWith(`${resolve(cfg.home)}${sep}`))
+        mkdirSync(root, { recursive: true, mode: 0o700 });
+    // Any other vault is never created: a missing folder or an unmounted drive must not leave a new vault behind.
     if (!cfg.vault.path || !existsSync(root) || !statSync(root).isDirectory())
         return { ...res, stopped: `the vault folder ${root} was not found (moved, deleted or not mounted); nothing was written` };
     const dbPath = opts.db ?? join(cfg.memDir, 'graph.db');

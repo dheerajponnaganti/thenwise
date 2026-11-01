@@ -5,8 +5,7 @@
 
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
 import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
@@ -14,7 +13,7 @@ import type { SessionPart } from '../ingest/parts.ts'
 import { isOff } from '../ingest/config.ts'
 import type { Config } from '../ingest/config.ts'
 import { githubSlug, real, repoRoot, sessionRepo } from '../ingest/repos.ts'
-import { parseSession } from '../ingest/transcript.ts'
+import { chatText, parseSession } from '../ingest/transcript.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { splitPassages } from '../query/passages.ts'
 import { call, errText, load, locked, save } from './client.ts'
@@ -148,9 +147,12 @@ export function archived(cfg: Config): Candidate[] {
 }
 
 const worktreeTop = (cwd: string): string | undefined => {
-  for (let d = cwd; d && d !== '/'; d = resolve(d, '..')) if (existsSync(join(d, '.git'))) return d
-
-  return undefined
+  if (!cwd) return undefined
+  // Stops when the parent is itself: a filesystem root, which is not `/` on Windows.
+  for (let d = resolve(cwd); ; d = dirname(d)) {
+    if (existsSync(join(d, '.git'))) return d
+    if (dirname(d) === d) return undefined
+  }
 }
 
 export type Skip = 'no-memory' | 'paused' | 'forgotten' | 'entry' | 'empty' | 'other' | 'since'
@@ -173,7 +175,7 @@ const atBoundary = (dir: string) => new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\
 /** What one archived chat gives as a unit, or why it stays home. `repo` is the shared project's checkout. */
 export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: string) => string, opts: { since?: string; tombs?: ReturnType<typeof loadTombs> } = {}): Built | { skip: Skip } {
   const read = (path: string, sub = false) => {
-    const s = parseSession(gunzipSync(readFileSync(path)).toString('utf8'), c.session, cfg.home, '', sub)
+    const s = parseSession(chatText(readFileSync(path)), c.session, cfg.home, '', sub)
     for (const t of s.turns) t.reply = t.reply.filter((r) => !t.agentReports.includes(r)) // tool output never travels
 
     return s

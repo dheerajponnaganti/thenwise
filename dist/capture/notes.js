@@ -93,8 +93,9 @@ export function parseTrailers(text, source, at, project) {
         out.push({ type: 'dead_end', title: d.slice(0, 120), summary: d, source, at, project });
     return out;
 }
-/** Owner-written trailers become active notes. The id comes from the source and text, so a second run writes nothing,
- * and a note the owner later rejected or edited stays as it is. */
+/** Trailers wait in the inbox: anyone who lands a commit or a PR can write one, so the owner decides what becomes a note.
+ * The id comes from the source and text, so a second run writes nothing, and a note the owner later rejected or edited stays as it is.
+ * `created` is now: an inbox note expires by it, and a trailer in an old commit is new to the owner. */
 export function syncTrailers(memDir, items) {
     const have = new Set(readNotes(memDir).map((n) => n.id));
     let wrote = 0;
@@ -103,7 +104,7 @@ export function syncTrailers(memDir, items) {
         if (have.has(id))
             continue;
         have.add(id);
-        saveNote(memDir, { id, type: it.type, title: it.title, summary: it.summary, status: 'active', valid_from: it.at, valid_to: '', supersedes: '', sources: [it.source], created: it.at, project: it.project, path: '' });
+        saveNote(memDir, { id, type: it.type, title: it.title, summary: it.summary, status: 'inbox', valid_from: it.at, valid_to: '', supersedes: '', sources: [it.source], created: new Date().toISOString(), project: it.project, path: '' });
         wrote++;
     }
     return wrote;

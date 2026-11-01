@@ -50,7 +50,7 @@ catch (e) {
         ? ` The store is damaged: delete graph.db in ${dir} and run: thenwise ingest`
         : err?.code === 'EACCES' || err?.code === 'EPERM'
             ? ` Check the permissions of ${dir}, or set THENWISE_HOME to a folder you can write.`
-            : err?.code === 'ENOTDIR' || err?.code === 'EEXIST'
+            : err?.code === 'ENOTDIR' || err?.code === 'EEXIST' || (err?.code === 'ENOENT' && (await import('node:fs')).statSync(dir, { throwIfNoEntry: false })?.isFile())
                 ? ` ${dir} must be a folder: set THENWISE_HOME to a folder.`
                 : err?.code === 'ENOENT'
                     ? ` Run thenwise setup first, or check that ${dir} can be created.`

@@ -3,14 +3,14 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, closeSync, existsSync, unlinkSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
 import { errFields, logger } from "../core/log.js";
 import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { withLock } from "./lock.js";
 import { isMarked } from "./parts.js";
-import { parseSession } from "./transcript.js";
+import { chatText, parseSession } from "./transcript.js";
 function maskLine(line) {
     try {
         return { text: JSON.stringify(maskDeep(JSON.parse(line))), bad: false };
@@ -253,7 +253,7 @@ function archiveLocked(cfg, opts) {
                     chmodSync(d, 0o700);
                 st = streamMask(src.path, tmp, parts.length === 2); // a long chat is read in chunks, never whole
             }
-            const raw = unchanged ? (old.checked === check ? null : gunzipSync(readFileSync(dest)).toString('utf8')) : st.slim;
+            const raw = unchanged ? (old.checked === check ? null : chatText(readFileSync(dest))) : st.slim;
             let info = parents.get(parts.length === 4 ? `${parts[0]}/${parts[1]}.jsonl` : '') ?? { cwd: old?.cwd ?? '', marked: false };
             if (parts.length === 2 && raw !== null) {
                 const s = parseSession(raw, parts[1], cfg.home);
@@ -295,7 +295,7 @@ function archiveLocked(cfg, opts) {
                     }
                     else {
                         // shortcut: the archived copy is gunzipped whole here (no sync streaming gunzip), only when the source is gone and the mask version moved
-                        const m = maskTranscript(gunzipSync(readFileSync(dest)).toString('utf8'));
+                        const m = maskTranscript(chatText(readFileSync(dest)));
                         writeFileSync(tmp, gzipSync(m.text), { mode: 0o600 });
                         renameSync(tmp, dest);
                         manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: createHash('sha256').update(m.text).digest('hex'), mask: MASK_VERSION, unparsed: m.unparsed, pending: m.pending, lines: m.text.split('\n').length - 1 };

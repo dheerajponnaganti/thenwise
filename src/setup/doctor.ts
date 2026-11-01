@@ -10,6 +10,7 @@ import { resolveDataDir } from '../core/home.ts'
 import { logger, recentErrors } from '../core/log.ts'
 import { readConfigFile } from '../ingest/config.ts'
 import { diskRoom } from '../ingest/ingest.ts'
+import { updateStatus } from './update.ts'
 
 export interface Check {
   name: string
@@ -63,7 +64,7 @@ function pluginRegistered(home: string): boolean {
   return [...names(join(claude, 'plugins', 'installed_plugins.json'), (j) => j.plugins), ...names(join(claude, 'settings.json'), (j) => j.enabledPlugins)].some((k) => /thenwise/i.test(k))
 }
 
-export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: string; gh?: () => boolean; mcp?: () => boolean } = {}): Promise<Check[]> {
+export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: string; gh?: () => boolean; git?: () => boolean; mcp?: () => boolean } = {}): Promise<Check[]> {
   const checks: Check[] = []
   const add = (name: string, ok: boolean, good: string, fix: string) => checks.push({ name, ok, detail: ok ? good : fix })
   const memDir = resolveDataDir(home)
@@ -110,7 +111,15 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
 
   add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
-  add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', 'gh is not signed in (only needed for PRs). Run: gh auth login')
+  add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000 }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
+  // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.
+  const prsOn = cfg.raw?.ingest?.prs === true
+  const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000 }).error !== undefined
+  const signedIn = (opts.gh ?? ghSignedIn)()
+  if (signedIn || prsOn) add('gh', signedIn, 'signed in', noGh ? 'gh is not installed, and GitHub PR reading is on. Get it from https://cli.github.com' : 'gh is not signed in, and GitHub PR reading is on. Run: gh auth login')
+  else checks.push({ name: 'gh', ok: true, detail: 'not needed: GitHub PR reading is off' })
+  const version = updateStatus({ memDir, off: cfg.raw?.off === true, updateCheck: cfg.raw?.update_check !== false })
+  checks.push({ name: 'version', ok: true, warn: version.newer, detail: version.line })
 
   return checks
 }

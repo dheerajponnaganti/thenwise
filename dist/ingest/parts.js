@@ -87,10 +87,10 @@ export function sessionPart(s, key, sfx = '') {
         node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } });
         edge(tid, sid, 'part_of', t.at);
         if (st && 'file' in st && st.file)
-            edge(tid, `file:${st.file}`, 'dead_end', t.at);
+            edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at);
         for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']])
             for (const p of paths)
-                edge(tid, `file:${p}`, kind, t.at);
+                edge(tid, `file:${normPath(p)}`, kind, t.at);
         for (const m of t.commitMsgs)
             claims.push({ node: tid, kind: 'sub', val: m.subject, at: m.at, turnAt: t.at });
         for (const short of t.commitShas)
@@ -127,7 +127,7 @@ export function parseLog(raw, repo, until, main) {
     }
     return out;
 }
-export const commitEdges = (c) => c.files.map((f) => ({ src: c.node.id, dst: `file:${posix.join(c.node.source, f)}`, kind: 'changed', at: c.node.at, extra: {} }));
+export const commitEdges = (c) => c.files.map((f) => ({ src: c.node.id, dst: `file:${posix.join(normPath(c.node.source), f)}`, kind: 'changed', at: c.node.at, extra: {} }));
 export function prPart(inputs, repos, commit, until) {
     const out = { nodes: [], edges: [], trailers: [], numbers: new Map(), ambiguous: new Set(), urls: new Map() };
     for (const { full, list, repo: known } of inputs) {
@@ -157,7 +157,7 @@ export function prPart(inputs, repos, commit, until) {
                 const repoPath = (mc && commit.repo(mc)) || repo;
                 if (!repoPath || !f.path)
                     continue;
-                out.edges.push({ src: id, dst: `file:${posix.join(repoPath, f.path)}`, kind: 'touches', at: p.createdAt ?? '', extra: {} });
+                out.edges.push({ src: id, dst: `file:${posix.join(normPath(repoPath), f.path)}`, kind: 'touches', at: p.createdAt ?? '', extra: {} });
             }
         }
     }
@@ -214,7 +214,7 @@ export function notesPart(cfg, until) {
         const files = [];
         walk(vault, (n) => n.endsWith('.md'), files);
         for (const f of files) {
-            const rel = f.slice(vault.length + 1);
+            const rel = normPath(f.slice(vault.length + 1));
             if (rel.startsWith(GENERATED))
                 continue; // `memory views` output: the memory never reads its own output
             const raw = readFileSync(f, 'utf8');

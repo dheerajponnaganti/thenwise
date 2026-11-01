@@ -303,4 +303,17 @@ test('decide names a similar note and still saves the new one', () => {
   assert.match(again.stdout, /saved as/)
   assert.match(again.stdout, /Similar note: n-\S+: Keep the price cache in eight shards/)
   assert.doesNotMatch(f.cli(['decide', 'Ship the billing export on Fridays only']).stdout, /Similar note/)
+
+test('#22: doctor says gh is not installed when it is not there', async () => {
+  const f = f1()
+  const path = process.env.PATH
+  process.env.PATH = join(f.home, 'no-such-bin')
+  try {
+    const gh = (await runDoctor(f.home, { mcp: () => true })).find((c) => c.name === 'gh')!
+    assert.equal(gh.ok, false)
+    assert.match(gh.detail, /gh is not installed/)
+    assert.doesNotMatch(gh.detail, /gh auth login/)
+  } finally {
+    process.env.PATH = path
+  }
 })

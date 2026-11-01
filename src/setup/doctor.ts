@@ -110,7 +110,8 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
 
   add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
-  add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', 'gh is not signed in (only needed for PRs). Run: gh auth login')
+  const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000 }).error !== undefined
+  add('gh', (opts.gh ?? ghSignedIn)(), 'signed in', noGh ? 'gh is not installed (only needed for PRs). Get it from https://cli.github.com' : 'gh is not signed in (only needed for PRs). Run: gh auth login')
 
   return checks
 }

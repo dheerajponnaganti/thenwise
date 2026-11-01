@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Installing and updating the plugin works on a machine with no SSH key on GitHub. Before, it could fail with a permission error.
+
 ## 0.1.26
 
 A full rebuild now uses far less memory, and answers hold up in new evals.

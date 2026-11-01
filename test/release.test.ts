@@ -130,3 +130,11 @@ test('R-B4: the npm tarball and the release tree hold no owner data', () => {
     rmSync(tmp, { recursive: true, force: true })
   }
 })
+
+test('#42: the plugin installs over HTTPS, so a machine with no GitHub SSH key can install and update it', () => {
+  const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'))
+  const source = market.plugins[0].source
+  assert.equal(source.source, 'url')
+  assert.match(source.url, /^https:\/\//)
+  assert.equal(source.ref, 'release')
+})

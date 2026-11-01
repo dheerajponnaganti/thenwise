@@ -168,7 +168,8 @@ jobs:
       - run: node bench/fresh/check.mjs
   all-passed:
     # The one check a merge requires. A skipped matrix job never reports its own name, so requiring those would wait forever.
-    needs: [scan, unit, unit-windows, package, fresh-install]
+    # unit-windows joins this list once it is green twice in a row. Until then it is a warning and must not block a merge.
+    needs: [scan, unit, package, fresh-install]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

@@ -41,7 +41,9 @@ const thenwiseVersion = () => manifest().version ?? 'unknown'
 export const issueRepo = () => /github\.com[/:]([^/]+\/[^/.]+)/.exec(manifest().repository?.url ?? '')?.[1] ?? ''
 
 function claudeVersion(): string {
-  const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' })
+  // One command string on Windows: Node warns on stderr when a shell gets separate arguments.
+  const win = process.platform === 'win32'
+  const r = spawnSync(win ? 'claude --version' : 'claude', win ? [] : ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: win })
 
   return r.status === 0 ? r.stdout.trim().split('\n')[0]! : 'not found'
 }

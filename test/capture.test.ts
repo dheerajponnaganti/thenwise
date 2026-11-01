@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { gzipSync } from 'node:zlib'
 
 import { accept, readNotes, reject, saveNote } from '../src/capture/notes.ts'
-import { distill, parseItems } from '../src/capture/distill.ts'
+import { callModel, distill, parseItems } from '../src/capture/distill.ts'
 import { loadConfig } from '../src/ingest/config.ts'
 import { ingest } from '../src/ingest/ingest.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -34,14 +34,16 @@ function fixture() {
   const session = [u('u1', `we pick sqlite for storage, token ${KEY}`, '2026-10-01T10:00:00Z'), a('a1', 'Agreed, because it ships with node.', '2026-10-01T10:00:01Z'), u('u2', 'redis was too heavy', '2026-10-01T10:01:00Z'), a('a2', 'Dropped redis.', '2026-10-01T10:01:01Z')].join('\n')
   writeFileSync(join(home, '.memory/archive/sessions/-proj/s1.jsonl.gz'), gzipSync(session))
 
-  const bin = join(home, 'claude')
-  writeFileSync(bin, `#!/usr/bin/env node
-const fs = require('fs')
+  const script = join(home, 'claude.cjs')
+  writeFileSync(script, `const fs = require('fs')
 const input = fs.readFileSync(0, 'utf8')
 fs.appendFileSync(process.env.MOCK_LOG, input + '\\n=====\\n')
 const out = input.includes('Old fact:') ? process.env.MOCK_CONTRA : fs.readFileSync(process.env.MOCK_ITEMS, 'utf8')
 process.stdout.write(JSON.stringify({ result: out, usage: { output_tokens: 42 } }))
 `)
+  // A stand-in the way each system runs it: npm's claude on Windows is a .cmd.
+  const bin = join(home, process.platform === 'win32' ? 'claude.cmd' : 'claude')
+  writeFileSync(bin, process.platform === 'win32' ? `@"${process.execPath}" "${script}" %*\r\n` : `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
   chmodSync(bin, 0o755)
   process.env.MEMORY_CLAUDE_BIN = bin
   process.env.MOCK_LOG = join(home, 'mock.log')
@@ -54,6 +56,14 @@ process.stdout.write(JSON.stringify({ result: out, usage: { output_tokens: 42 } 
   return { home, cfg, items, run, db: join(home, 'g.db') }
 }
 
+test('#16: the model call starts claude through a .cmd on Windows and passes the prompt on stdin', () => {
+  const { items } = fixture()
+  items([])
+  const prompt = 'a prompt with "quotes" & an ampersand'
+  assert.match(callModel(prompt).text, /items/)
+  assert.ok(readFileSync(process.env.MOCK_LOG!, 'utf8').includes(prompt))
+})
+
 test('parsing drops sourceless items and holds the per-chunk caps', () => {
   const labels = new Set(['t1', 't2'])
   const d = (n: number) => ({ type: 'decision', title: `d${n}`, summary: 'x', sources: ['t1'] })
@@ -63,7 +73,7 @@ test('parsing drops sourceless items and holds the per-chunk caps', () => {
   assert.deepEqual(parseItems('not json', labels), { items: [], dropped: 0 })
 })
 
-test('inbox notes are not searchable until accepted; secrets never reach the model; reject works', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
+test('inbox notes are not searchable until accepted; secrets never reach the model; reject works', () => {
   const f = fixture()
   f.items([{ type: 'decision', title: 'Storage is sqlite', summary: 'We chose sqlite because it ships with node.', sources: ['t1'] }, { type: 'dead_end', title: 'Redis was too heavy', summary: 'Tried redis, dropped it as too heavy.', sources: ['t2'] }])
   const r = distill(f.cfg, { now: Date.parse('2026-10-02T00:00:00Z') })
@@ -90,7 +100,7 @@ test('inbox notes are not searchable until accepted; secrets never reach the mod
   assert.equal(readNotes(f.cfg.memDir).find((n) => n.id === dead.id)!.status, 'rejected')
 })
 
-test('duplicates are refused, the state file skips distilled turns, unreviewed inbox notes expire after 14 days', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
+test('duplicates are refused, the state file skips distilled turns, unreviewed inbox notes expire after 14 days', () => {
   const f = fixture()
   f.items([{ type: 'decision', title: 'Storage is sqlite', summary: 'We chose sqlite because it ships with node.', sources: ['t1'] }])
   assert.equal(distill(f.cfg, { now: Date.parse('2026-10-02T00:00:00Z') }).proposals, 1)
@@ -111,7 +121,7 @@ test('duplicates are refused, the state file skips distilled turns, unreviewed i
   assert.ok(![...new Graph(f.db).nodes.keys()].some((k) => k.startsWith('curated:n-')))
 })
 
-test('contradiction: yes supersedes on accept and closes the old note; no changes nothing', { skip: process.platform === 'win32' && 'the mock claude is a shebang script' }, () => {
+test('contradiction: yes supersedes on accept and closes the old note; no changes nothing', () => {
   for (const answer of ['yes', 'no']) {
     const f = fixture()
     const old = saveNote(f.cfg.memDir, { id: 'n-old', type: 'decision', title: 'Storage is redis', summary: 'We store memory in redis.', status: 'active', valid_from: '2026-09-01T00:00:00Z', valid_to: '', supersedes: '', sources: [], created: '2026-09-01T00:00:00Z', project: 'p', path: '' })

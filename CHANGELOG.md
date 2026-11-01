@@ -6,6 +6,7 @@
 - Windows: `thenwise uninstall` stops a running background sync.
 - Windows: `thenwise team share-chats` no longer hangs on a chat that started outside a repository.
 - `thenwise team join` works on a fresh install, before anything has made the data folder.
+- Windows: `thenwise distill` and automatic capture start Claude Code when npm installed it as `claude.cmd`.
 
 ## 0.1.24
 

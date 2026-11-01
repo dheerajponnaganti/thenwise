@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.26
 
 A full rebuild now uses far less memory, and answers hold up in new evals.
 

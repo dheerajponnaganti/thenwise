@@ -1,7 +1,7 @@
 // Teams preview client. Only notes the person marks shared are sent, never chats. The server url, the token and the
 // queue of unsent changes live in <data folder>/team.json (mode 0600), never in a vault.
 
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
@@ -58,6 +58,7 @@ export function load(dir: string): State {
 }
 
 export function save(dir: string, s: State) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 }) // a teammate may join before anything else has made the data folder
   const tmp = `${stateFile(dir)}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(s), { mode: 0o600 })
   chmodSync(tmp, 0o600)

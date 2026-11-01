@@ -206,7 +206,7 @@ On Claude Code 2.1.275 or later, one line does it:
 /plugin install thenwise --marketplace dheerajponnaganti/thenwise
 ```
 
-Ships as built JavaScript, so there is nothing to compile. Runs on macOS, Linux and Windows, and every push passes a fresh install on all three. Needs Node 22.16 or later. Want it in your terminal too? `npm install -g thenwise`.
+Ships as built JavaScript, so there is nothing to compile. Runs on macOS, Linux and Windows, and every push passes a fresh install on all three. Needs Node 22.16 or later, and git to read your commits on any host. Want it in your terminal too? `npm install -g thenwise`.
 
 ## First run
 

@@ -10,6 +10,7 @@
 - Security: `Decision:` and `Dead-end:` lines in commits and PRs now wait in the inbox. Anyone who lands a commit could write one, and it became a trusted note. Accept them with `thenwise accept --all-of decision`.
 - `thenwise decide` and `thenwise deadend` name a similar note you already have.
 - `thenwise doctor` says when `gh` is not installed, in place of asking you to sign in.
+- `thenwise doctor` checks for `git`, which reads your commits on any host. Having no `gh` only fails when GitHub PR reading is on.
 
 ## 0.1.24
 

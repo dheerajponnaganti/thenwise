@@ -217,13 +217,12 @@ test('S2-H9 S2-B9: doctor names every check, and gives one fix line per broken p
   mkdirSync(join(f.home, '.claude', 'plugins'), { recursive: true })
   writeFileSync(join(f.home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'thenwise@thenwise': [{}] } }))
   const good = await runDoctor(f.home, { gh: () => true })
-  assert.deepEqual(good.map((c) => c.name), ['node', 'data folder', 'config', 'archive', 'store', 'disk', 'plugin', 'mcp', 'gh'])
+  assert.deepEqual(good.map((c) => c.name), ['node', 'data folder', 'config', 'archive', 'store', 'disk', 'plugin', 'mcp', 'git', 'gh'])
   assert.ok(good.every((c) => c.ok), JSON.stringify(good.filter((c) => !c.ok)))
   assert.equal(f.cli(['doctor']).stdout.split('\n').filter((l) => l.startsWith('ok')).length >= 5, true)
 
   const bad = (cs: { name: string; ok: boolean; detail: string }[], name: string) => cs.find((c) => c.name === name)!
   assert.match(bad(await runDoctor(f.home, { nodeVersion: '22.12.0', gh: () => true }), 'node').detail, /needs Node 22.16/)
-  assert.match(bad(await runDoctor(f.home, { gh: () => false }), 'gh').detail, /gh auth login/)
   assert.match(bad(await runDoctor(f.home, { gh: () => true, mcp: () => false }), 'mcp').detail, /thenwise mcp/)
   writeFileSync(join(f.data, 'graph.db'), 'not a database at all')
   const hurt = bad(await runDoctor(f.home, { gh: () => true }), 'store')
@@ -303,9 +302,21 @@ test('decide names a similar note and still saves the new one', () => {
   assert.match(again.stdout, /saved as/)
   assert.match(again.stdout, /Similar note: n-\S+: Keep the price cache in eight shards/)
   assert.doesNotMatch(f.cli(['decide', 'Ship the billing export on Fridays only']).stdout, /Similar note/)
+})
 
-test('#22: doctor says gh is not installed when it is not there', async () => {
+const prsOn = (f: ReturnType<typeof f1>, on: boolean) => {
+  f.cli(['setup', '--yes'])
+  const file = join(f.data, 'config.json')
+  const c = JSON.parse(readFileSync(file, 'utf8'))
+  writeFileSync(file, JSON.stringify({ ...c, ingest: { ...c.ingest, prs: on } }))
+}
+
+test('#22: with PR reading on, doctor says whether gh is missing or signed out', async () => {
   const f = f1()
+  prsOn(f, true)
+  const signedOut = (await runDoctor(f.home, { gh: () => false, mcp: () => true })).find((c) => c.name === 'gh')!
+  assert.equal(signedOut.ok, false)
+  assert.match(signedOut.detail, /gh auth login/)
   const path = process.env.PATH
   process.env.PATH = join(f.home, 'no-such-bin')
   try {
@@ -316,4 +327,17 @@ test('#22: doctor says gh is not installed when it is not there', async () => {
   } finally {
     process.env.PATH = path
   }
+})
+
+test('doctor needs git, and does not fail a user on another host for having no gh', async () => {
+  const f = f1()
+  prsOn(f, false)
+  const off = await runDoctor(f.home, { gh: () => false, git: () => true, mcp: () => true })
+  const gh = off.find((c) => c.name === 'gh')!
+  assert.equal(gh.ok, true)
+  assert.match(gh.detail, /not needed/)
+  assert.equal(off.find((c) => c.name === 'git')!.ok, true)
+  const noGit = (await runDoctor(f.home, { gh: () => true, git: () => false, mcp: () => true })).find((c) => c.name === 'git')!
+  assert.equal(noGit.ok, false)
+  assert.match(noGit.detail, /git is not installed/)
 })

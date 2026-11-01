@@ -13,7 +13,7 @@ const flag = (name: string) => {
 
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -125,6 +125,20 @@ if (cmd === 'hook') {
   process.exit(0)
 }
 
+if (cmd === 'update-check') {
+  const { loadConfig, readConfigFile, saveConfig } = await import('./ingest/config.ts')
+  const { checkForUpdate, updateStatus } = await import('./setup/update.ts')
+  const cfg = loadConfig()
+  const set = process.argv[3]
+  if (set === 'off' || set === 'on') {
+    saveConfig(cfg.memDir, { ...readConfigFile(cfg.memDir).raw, update_check: set === 'on' })
+    console.log(set === 'on' ? 'Thenwise checks npm for a new version once a day.' : 'The daily version check is off. Thenwise makes no such request.')
+    process.exit(0)
+  }
+  await checkForUpdate(cfg, { daily: process.argv.includes('--daily') })
+  if (!process.argv.includes('--daily')) console.log(updateStatus(cfg).line)
+  process.exit(0)
+}
 if (cmd === 'status') {
   const { loadConfig } = await import('./ingest/config.ts')
   const { statusLines } = await import('./ingest/status.ts')

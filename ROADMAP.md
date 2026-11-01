@@ -8,7 +8,7 @@ Thenwise 1.0 works in every major coding tool the way it works in Claude Code to
 
 ## What guides the work
 
-- **Local first.** Your memory stays on your machine, and nothing leaves unless you turn it on.
+- **Local first.** Your memory stays on your machine, and none of your work leaves unless you turn it on.
 - **Every answer has a source.** A date and the record it came from.
 - **No model between a question and your records.** Search stays fast, free and repeatable.
 - **Never in the way.** Thenwise never blocks your tool or loses a chat.

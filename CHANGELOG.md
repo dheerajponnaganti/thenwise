@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Thenwise tells you when a new version is out, once per version at the start of a session, and says when it has been updated. Once a day the background sync asks npm for the newest version and sends nothing about you or your work. Turn it off with `thenwise update-check off`. Search, tools and foreground hooks stay offline.
 - One empty chat file no longer stops all memory updates. Before, every sync failed while that file existed.
 - The default vault folder is made on the first write. Before, a fresh setup recorded `~/Thenwise` but never made it, so no notes were written and every sync logged an error.
 - The sync log says why a step failed when the step reports it on standard output.

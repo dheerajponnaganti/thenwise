@@ -217,7 +217,7 @@ test('S2-H9 S2-B9: doctor names every check, and gives one fix line per broken p
   mkdirSync(join(f.home, '.claude', 'plugins'), { recursive: true })
   writeFileSync(join(f.home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'thenwise@thenwise': [{}] } }))
   const good = await runDoctor(f.home, { gh: () => true })
-  assert.deepEqual(good.map((c) => c.name), ['node', 'data folder', 'config', 'archive', 'store', 'disk', 'plugin', 'mcp', 'git', 'gh'])
+  assert.deepEqual(good.map((c) => c.name), ['node', 'data folder', 'config', 'archive', 'store', 'disk', 'plugin', 'mcp', 'git', 'gh', 'version'])
   assert.ok(good.every((c) => c.ok), JSON.stringify(good.filter((c) => !c.ok)))
   assert.equal(f.cli(['doctor']).stdout.split('\n').filter((l) => l.startsWith('ok')).length >= 5, true)
 

@@ -10,6 +10,7 @@ import { resolveDataDir } from '../core/home.ts'
 import { logger, recentErrors } from '../core/log.ts'
 import { readConfigFile } from '../ingest/config.ts'
 import { diskRoom } from '../ingest/ingest.ts'
+import { updateStatus } from './update.ts'
 
 export interface Check {
   name: string
@@ -117,6 +118,8 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
   const signedIn = (opts.gh ?? ghSignedIn)()
   if (signedIn || prsOn) add('gh', signedIn, 'signed in', noGh ? 'gh is not installed, and GitHub PR reading is on. Get it from https://cli.github.com' : 'gh is not signed in, and GitHub PR reading is on. Run: gh auth login')
   else checks.push({ name: 'gh', ok: true, detail: 'not needed: GitHub PR reading is off' })
+  const version = updateStatus({ memDir, off: cfg.raw?.off === true, updateCheck: cfg.raw?.update_check !== false })
+  checks.push({ name: 'version', ok: true, warn: version.newer, detail: version.line })
 
   return checks
 }

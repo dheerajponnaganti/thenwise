@@ -179,7 +179,7 @@ Start alone. Add your team when you want to.
 
 ## Questions people ask
 
-**Does it send my code anywhere?** No. Your code, your chats and your memory stay on your disk. The only things that ever leave are the ones you switch on: PR lookups through `gh`, `distill`, Teams, and an issue report you approve line by line.
+**Does it send my code anywhere?** No. Your code, your chats and your memory stay on your disk. The only things that ever leave are the ones you switch on: PR lookups through `gh`, `distill`, Teams, and an issue report you approve line by line. One small request runs by default: once a day the background sync asks npm for the newest Thenwise version. It sends nothing about you or your work, and `thenwise update-check off` stops it.
 
 **Does it need a model or an API key?** No. No model runs inside Thenwise, so there is no key to add and no extra bill.
 
@@ -275,7 +275,7 @@ Opt in to more: `"team": { "auto_share": ["decision", "dead_end"], "auto_share_p
 
 Claude Code's own chat files are only read, never changed.
 
-**What leaves the machine.** Nothing, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes and project chats you share), and an issue report you approve line by line.
+**What leaves the machine.** None of your work, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes and project chats you share), and an issue report you approve line by line. The one request on by default is the daily version check: the background sync makes one GET to npm for the newest Thenwise version, sending no version, id or project data, so npm sees only an IP address. Turn it off with `thenwise update-check off`, `"update_check": false` in config.json, or `THENWISE_NO_UPDATE_CHECK=1`.
 
 **Forget.**
 

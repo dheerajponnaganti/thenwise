@@ -21,7 +21,7 @@ Thenwise is a Claude Code plugin and an npm package that gives Claude a local me
 ## Rules that must hold
 
 - NEVER add a runtime dependency. The package ships with none.
-- NEVER make a network call in search or hooks. Anything that leaves the machine is something the user turned on.
+- NEVER make a network call in search, tools or foreground hooks. The only network call that is on by default is the daily version check in the background sync (`src/setup/update.ts`), and it sends no data. Anything else that leaves the machine is something the user turned on.
 - NEVER store text without masking it. Everything goes through `src/core/secrets.ts`.
 - NEVER let a hook fail or block the user's chat. Errors go to the log and the exit code stays 0.
 - NEVER change a user's own notes or Claude Code's chat files. Thenwise only reads them.

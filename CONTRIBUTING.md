@@ -61,7 +61,7 @@ The commit message ends with `Fixes #41`, and the changelog line ends with `(#41
 - `npm run gate` passes.
 - **How a pull request lands:** it is squashed into one commit on `main`, with its title and description as the message, and you stay the author. Write them for a public history.
 - Thenwise has no runtime dependencies. A pull request that adds one needs a strong reason.
-- Nothing leaves the machine unless the user turned it on. No telemetry, no network calls in search or hooks.
+- None of the user's work leaves the machine unless they turned it on. No telemetry, and no network calls in search, tools or foreground hooks. The one exception is the daily version check in the background sync, which sends no data.
 - A change users will notice adds a line under `## Unreleased` in `CHANGELOG.md`.
 - Write short, plain sentences in docs, messages and comments.
 

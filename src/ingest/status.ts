@@ -11,6 +11,7 @@ import { prStatus } from './prs.ts'
 import { skippedDocs } from './parts.ts'
 import { sharesStatus } from '../teams/chats.ts'
 import { teamStatus } from '../teams/client.ts'
+import { updateStatus } from '../setup/update.ts'
 
 export function statusLines(cfg: Config, dbPath: string): string[] {
   if (!existsSync(dbPath)) return [`no store at ${dbPath}: run \`thenwise ingest\``]
@@ -38,6 +39,7 @@ export function statusLines(cfg: Config, dbPath: string): string[] {
   }
   const repos: string[] = JSON.parse((all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value as string | undefined) ?? '[]')
   out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`)
+  out.push(`version: ${updateStatus(cfg).line}`)
   out.push(...prStatus(cfg, repos))
   out.push(...teamStatus(cfg.memDir))
   const sharing = sharesStatus(cfg).summary

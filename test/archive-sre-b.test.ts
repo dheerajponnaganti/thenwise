@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 
 import { readLog } from '../src/core/log.ts'
 import { archive, maskTranscript } from '../src/ingest/archive.ts'
 import { loadConfig } from '../src/ingest/config.ts'
 import { ingest } from '../src/ingest/ingest.ts'
+import { lastMemberSize } from '../src/ingest/transcript.ts'
 
 const row = (n: number, text: string) => JSON.stringify({ type: 'user', uuid: `u${n}`, timestamp: '2026-10-02T10:00:00Z', cwd: '/x', sessionId: 's', entrypoint: 'cli', message: { role: 'user', content: text } })
 // Most of a real chat is tool output and replies; one line in twenty is a prompt.
@@ -124,4 +125,23 @@ test('#30: an empty chat file does not stop ingest', () => {
   const r = ingest(w.cfg, { prs: join(w.home, 'none.json'), db: join(w.home, 'g.db') })
   assert.equal(r.sessionsIn, 1)
   archive(w.cfg) // an empty archived copy also reads when the archive checks it again
+})
+
+test('#9: a chat an older version zipped whole is rewritten as members once, with the same text', () => {
+  const w = world()
+  bigChat(join(w.dir, 's.jsonl'), 20)
+  archive(w.cfg)
+  const text = gunzipSync(readFileSync(dest(w.home)))
+  writeFileSync(dest(w.home), gzipSync(text))
+  const whole = readFileSync(dest(w.home)).length
+  assert.ok(lastMemberSize(dest(w.home)) > 16e6)
+  const again = archive(w.cfg)
+  assert.equal(again.archived, 0, 'the chat itself did not change')
+  assert.ok(lastMemberSize(dest(w.home)) < 8e6, 'now in members')
+  assert.ok(gunzipSync(readFileSync(dest(w.home))).equals(text), 'same text')
+  assert.ok(readFileSync(dest(w.home)).length >= whole)
+  if (process.platform !== 'win32') assert.equal(statSync(dest(w.home)).mode & 0o777, 0o600)
+  const bytes = readFileSync(dest(w.home))
+  archive(w.cfg)
+  assert.ok(readFileSync(dest(w.home)).equals(bytes), 'a later archive leaves it alone')
 })

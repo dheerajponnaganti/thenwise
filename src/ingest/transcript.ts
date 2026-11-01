@@ -2,7 +2,8 @@
 
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { crc32, gunzipSync, inflateRawSync } from 'node:zlib'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 
 import { normPath } from '../core/vault-index.ts'
 
@@ -106,18 +107,88 @@ function promptText(content: unknown): string | null {
   return !t || WRAPPER_OPEN.test(t) || t.startsWith('[Request interrupted') ? null : t
 }
 
-/** `until` (ISO) drops every entry stamped after it. */
-/** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
 /** The text of an archived chat. An empty file is a chat with nothing in it yet: a chat holds nothing for a moment when it starts. */
 export const chatText = (gz: Buffer): string => (gz.length ? gunzipSync(gz).toString('utf8') : '')
 
-export function parseSession(text: string, id: string, home: string, until = '', sub = false, fileMs = 0): Session {
+const WINDOW = 8 << 20 // compressed bytes read at once: more than one archive member
+/** The size of a gzip file's last member, from its trailer. */
+export function lastMemberSize(path: string): number {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const tail = Buffer.alloc(4)
+    readSync(fd, tail, 0, 4, Math.max(0, size - 4))
+
+    return tail.readUInt32LE(0)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
+ * The lines of a gzipped chat file, one gzip member at a time and with no string of the whole file: a long chat can be hundreds of MB,
+ * and as one string it costs several times that. Node has no sync gunzip in parts, but the archive writes members of about 4 MB.
+ */
+export function* chatLines(path: string): Generator<string> {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const last = size >= 4 ? lastMemberSize(path) : 0
+    // A large last member means a chat written whole by an older version: read it whole, once, in place of doubling up to it.
+    let buf = Buffer.allocUnsafe(Math.min(size, last > WINDOW ? size : WINDOW))
+    let carry: Buffer = Buffer.alloc(0)
+    for (let at = 0; at < size;) {
+      const got = readSync(fd, buf, 0, buf.length, at)
+      // Only the plain 10-byte header gzipSync writes is walked; anything else goes through gunzip whole.
+      if (buf[0] !== 0x1f || buf[1] !== 0x8b || buf[2] !== 8 || buf[3] !== 0) {
+        const rest = Buffer.allocUnsafe(size - at)
+        readSync(fd, rest, 0, rest.length, at)
+        carry = Buffer.concat([carry, gunzipSync(rest)])
+        break
+      }
+      let out: { buffer: Buffer; engine: { bytesWritten: number } }
+      try {
+        out = inflateRawSync(buf.subarray(10, got), { info: true, chunkSize: Math.max(1 << 16, Math.min(last + 1, 1 << 30)) }) as never
+      } catch (e) {
+        // The member runs past what was read: read more. Past the end of the file, it is broken.
+        if ((e as NodeJS.ErrnoException).code !== 'Z_BUF_ERROR' || at + got >= size) throw e
+        buf = Buffer.allocUnsafe(Math.min(size - at, buf.length * 2))
+        continue
+      }
+      const end = 10 + out.engine.bytesWritten
+      if (end + 8 > got) {
+        // The trailer is past what was read.
+        if (at + got >= size) throw new Error('unexpected end of file')
+        buf = Buffer.allocUnsafe(Math.min(size - at, buf.length * 2))
+        continue
+      }
+      if (crc32(out.buffer) !== buf.readUInt32LE(end)) throw new Error('incorrect data check')
+      at += end + 8
+      let from = 0
+      for (let nl = out.buffer.indexOf(10); nl !== -1; from = nl + 1, nl = out.buffer.indexOf(10, from)) {
+        // A line can cross members, and a character can too, so the bytes are joined before decoding.
+        yield carry.length ? Buffer.concat([carry, out.buffer.subarray(from, nl)]).toString('utf8') : out.buffer.toString('utf8', from, nl)
+        carry = Buffer.alloc(0)
+      }
+      carry = Buffer.concat([carry, out.buffer.subarray(from)])
+    }
+    let from = 0
+    for (let nl = carry.indexOf(10); nl !== -1; from = nl + 1, nl = carry.indexOf(10, from)) yield carry.toString('utf8', from, nl)
+    if (from < carry.length) yield carry.toString('utf8', from)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/** `until` (ISO) drops every entry stamped after it. */
+/** `sub`: a subagent file, whose lines are all sidechain and whose turns attach to the parent session `id`. */
+export function parseSession(text: string | Iterable<string>, id: string, home: string, until = '', sub = false, fileMs = 0): Session {
   const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity
   const cut = until ? Date.parse(until) : Infinity
   const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub }
   const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test'; at?: string }>()
   let turn: Turn | null = null
-  for (const line of text.split('\n')) {
+  for (const line of typeof text === 'string' ? text.split('\n') : text) {
     let d: any
     try {
       d = JSON.parse(line)

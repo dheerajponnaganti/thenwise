@@ -5,7 +5,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs'
+import { closeSync, openSync, readSync, chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -24,7 +24,7 @@ import type { Claim, GEdge, Look, PrInput, SessionPart, Status } from './parts.t
 import { plansPart } from './plans.ts'
 import { fetchPrs } from './prs.ts'
 import { discoverRepos, githubSlug } from './repos.ts'
-import { chatText, parseSession } from './transcript.ts'
+import { chatLines, parseSession } from './transcript.ts'
 import type { Session } from './transcript.ts'
 import { swapPending } from '../query/engine.ts'
 
@@ -112,11 +112,25 @@ export interface SessionFile {
   sfx: string // '' unless another project folder holds a chat with the same session id; then `@<folder>` on every id of this chat
 }
 export const sessionId = (name: string) => name.replace(/\.jsonl\.gz$/, '')
+/** The sha256 of a file, read in parts. */
+export function shaOfFile(path: string): string {
+  const h = createHash('sha256')
+  const buf = Buffer.allocUnsafe(1 << 20)
+  const fd = openSync(path, 'r')
+  try {
+    for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf)) h.update(buf.subarray(0, n))
+  } finally {
+    closeSync(fd)
+  }
+
+  return h.digest('hex')
+}
+
 /** Parses one archived chat file; a subagent file is read as turns of its parent session. */
-export function parseSf(sf: SessionFile, bytes: Buffer, home: string, until = ''): Session {
+export function parseSf(sf: SessionFile, home: string, until = ''): Session {
   const sub = sf.name.includes('/subagents/')
 
-  return parseSession(chatText(bytes), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
+  return parseSession(chatLines(sf.path), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
 }
 
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */
@@ -339,11 +353,10 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const sessions: { cwd: string; dirs: string[]; key: string; file: string; part: SessionPart }[] = []
   const fileRows: unknown[][] = []
   for (const sf of files) {
-    const bytes = readFileSync(sf.path)
-    const s = parseSf(sf, bytes, cfg.home, opts.until)
+    const s = parseSf(sf, cfg.home, opts.until)
     const status = classify(cfg, s)
     counts[status]++
-    fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, sha256(bytes), status])
+    fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, shaOfFile(sf.path), status])
     if (status === 'in') sessions.push({ cwd: s.cwd, dirs: editDirs(s), key: sf.key, file: sf.file, part: sessionPart(s, sf.key, sf.sfx) })
   }
 

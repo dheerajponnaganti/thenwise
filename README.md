@@ -63,7 +63,7 @@ Ask Claude to change a file with a dead end in its past, and it checks before it
 
 Sounds good. Does it hold up? We tested it the hard way.
 
-<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 1.8 times more questions answered right (83% with Thenwise, 47% for plain Claude Code reading git, about 13% with no git), 40% fewer tokens per answer, 2.2 times faster answers (23 seconds against 51). Teams, from a teammate's shared chats: 3.5 times more questions answered right (88% against 25%), 24% fewer tokens, 1.5 times faster (22 seconds against 33). And 2,500 chats remembered 84 seconds after install."></p>
+<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 1.8 times more questions answered right (83% with Thenwise, 47% for plain Claude Code reading git), 40% fewer tokens per answer, 2.2 times faster answers (23 seconds against 51). Teams, from a teammate's shared chats: 3.5 times more questions answered right (88% against 25%), 24% fewer tokens, 1.5 times faster (22 seconds against 33). And 2,500 chats remembered 84 seconds after install."></p>
 
 Individual: Claude answers about your own history. Teams: a teammate asks about a project they never worked on and answers from its shared chats. In both tests, plain Claude Code could read the repository and its git history. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them. [How we measured](docs/eval.md): the questions, the two arms and the blind grading.
 
@@ -76,7 +76,7 @@ A memory this deep has to be private. This one lives on your disk and nowhere el
 | **Local** | One folder on your disk, readable by you alone. |
 | **Masked** | Keys and tokens become `[secret masked]` before a single byte is written. |
 | **No middleman** | No model stands between your question and your memory. Search, hooks and tools make zero network calls. |
-| **Off the record** | Put `[no-memory]` in a prompt and that whole chat is never kept. |
+| **Off the record** | Start or end your first prompt with `[no-memory]`, or give it a line of its own in any prompt, and that whole chat is never kept. |
 | **Forgettable** | `thenwise forget` erases a chat or a whole project, and it stays gone. |
 | **Chats** | Chats stay home unless you share a project. Raw transcripts never travel. |
 | **No telemetry** | No account, no sign-up, no usage reports. Nothing phones home. |
@@ -205,6 +205,8 @@ On Claude Code 2.1.275 or later, one line does it:
 ```
 /plugin install thenwise --marketplace dheerajponnaganti/thenwise
 ```
+
+Turn on auto-update for this marketplace in `/plugin`, so fixes reach you on their own.
 
 Ships as built JavaScript, so there is nothing to compile. Runs on macOS, Linux and Windows, and every push passes a fresh install on all three. Needs Node 22.16 or later, and git to read your commits on any host. Want it in your terminal too? `npm install -g thenwise`.
 

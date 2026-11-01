@@ -18,6 +18,7 @@ Thenwise 1.0 works in every major coding tool the way it works in Claude Code to
 | Milestone | What it brings |
 | --- | --- |
 | **0.1.25** | Windows fixes, and packages that link to their source commit |
+| **0.1.26** | Far less memory for a full rebuild on long chats |
 | **0.2.0** | GitHub Copilot CLI |
 | **0.3.0** | OpenAI Codex |
 | **1.0** | Every listed tool working as well as Claude Code, one memory across them, and mixed-tool teams |

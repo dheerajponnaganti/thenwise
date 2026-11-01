@@ -193,7 +193,7 @@ test('ingest links sessions, commits, PRs, notes and rules; out-of-scope session
   assert.match(docs[0]!.text, /Never add a co-author line/)
   const c = JSON.parse(db.prepare('SELECT extra FROM nodes WHERE id = ?').get(`commit:proj:${git(f.proj, 'rev-parse', 'HEAD~1')}`)!.extra as string)
   assert.deepEqual(c.trailers, { decision: ['keep a tiny'], why: ['fewer moving parts'], 'dead-end': ['a big framework'] })
-  assert.equal(db.prepare("SELECT count(*) n FROM nodes_fts WHERE nodes_fts MATCH 'framework'").get()!.n, 2) // the commit and the active note made from its trailer
+  assert.equal(db.prepare("SELECT count(*) n FROM nodes_fts WHERE nodes_fts MATCH 'framework'").get()!.n, 1) // the commit; its trailer waits in the inbox
   const rep = report(join(f.home, 'g.db'))
   assert.match(rep, /sessions in scope: 4, out of scope: 1/)
   assert.match(rep, /continuation chains: 1/)

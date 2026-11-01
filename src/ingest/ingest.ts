@@ -8,7 +8,6 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { gunzipSync } from 'node:zlib'
 
 import { syncTrailers } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
@@ -25,7 +24,7 @@ import type { Claim, GEdge, Look, PrInput, SessionPart, Status } from './parts.t
 import { plansPart } from './plans.ts'
 import { fetchPrs } from './prs.ts'
 import { discoverRepos, githubSlug } from './repos.ts'
-import { parseSession } from './transcript.ts'
+import { chatText, parseSession } from './transcript.ts'
 import type { Session } from './transcript.ts'
 import { swapPending } from '../query/engine.ts'
 
@@ -117,7 +116,7 @@ export const sessionId = (name: string) => name.replace(/\.jsonl\.gz$/, '')
 export function parseSf(sf: SessionFile, bytes: Buffer, home: string, until = ''): Session {
   const sub = sf.name.includes('/subagents/')
 
-  return parseSession(gunzipSync(bytes).toString('utf8'), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
+  return parseSession(chatText(bytes), sub ? sf.name.split('/')[0]! : sessionId(sf.name), home, until, sub, sf.mtime)
 }
 
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */

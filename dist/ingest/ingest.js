@@ -4,7 +4,7 @@
 // Deterministic: inputs are sorted and no wall-clock time is used in the graph.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, readSync, chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { syncTrailers } from "../capture/notes.js";
@@ -19,7 +19,7 @@ import { LOG_FORMAT, Graph, editDirs, workDirs, aliasesOf, classify, commitEdges
 import { plansPart } from "./plans.js";
 import { fetchPrs } from "./prs.js";
 import { discoverRepos, githubSlug } from "./repos.js";
-import { chatText, parseSession } from "./transcript.js";
+import { chatLines, parseSession } from "./transcript.js";
 import { swapPending } from "../query/engine.js";
 export { GENERATED, datedSections } from "./parts.js";
 // 2 (0.1.6): every older store rebuilds once, so verdicts made by older classifiers go away.
@@ -67,10 +67,24 @@ export const DERIVED = new Set(['made', 'opened', 'mentions']);
 export const FILE_KINDS = ['changed', 'read', 'edited', 'ran_in', 'touches'];
 export const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 export const sessionId = (name) => name.replace(/\.jsonl\.gz$/, '');
+/** The sha256 of a file, read in parts. */
+export function shaOfFile(path) {
+    const h = createHash('sha256');
+    const buf = Buffer.allocUnsafe(1 << 20);
+    const fd = openSync(path, 'r');
+    try {
+        for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf))
+            h.update(buf.subarray(0, n));
+    }
+    finally {
+        closeSync(fd);
+    }
+    return h.digest('hex');
+}
 /** Parses one archived chat file; a subagent file is read as turns of its parent session. */
-export function parseSf(sf, bytes, home, until = '') {
+export function parseSf(sf, home, until = '') {
     const sub = sf.name.includes('/subagents/');
-    return parseSession(chatText(bytes), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub, sf.mtime);
+    return parseSession(chatLines(sf.path), sub ? sf.name.split('/')[0] : sessionId(sf.name), home, until, sub, sf.mtime);
 }
 /** The default branch: origin/HEAD if set, else main or master, else HEAD. */
 const defaultRef = (repo) => gitOut(repo, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])?.trim() || ['main', 'master'].map((b) => `refs/heads/${b}`).find((r) => gitOut(repo, ['rev-parse', '-q', '--verify', r]) !== null) || 'HEAD';
@@ -296,11 +310,10 @@ function fullBuild(cfg, opts, dbPath) {
     const sessions = [];
     const fileRows = [];
     for (const sf of files) {
-        const bytes = readFileSync(sf.path);
-        const s = parseSf(sf, bytes, cfg.home, opts.until);
+        const s = parseSf(sf, cfg.home, opts.until);
         const status = classify(cfg, s);
         counts[status]++;
-        fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, sha256(bytes), status]);
+        fileRows.push([sf.file, sf.size, sf.mtime, sf.ctime, sf.ino, shaOfFile(sf.path), status]);
         if (status === 'in')
             sessions.push({ cwd: s.cwd, dirs: editDirs(s), key: sf.key, file: sf.file, part: sessionPart(s, sf.key, sf.sfx) });
     }

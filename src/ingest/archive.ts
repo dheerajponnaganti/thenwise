@@ -13,7 +13,7 @@ import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
 import { withLock } from './lock.ts'
 import { isMarked } from './parts.ts'
-import { chatText, parseSession } from './transcript.ts'
+import { chatLines, chatText, lastMemberSize, parseSession } from './transcript.ts'
 
 interface Source {
   rel: string // <project-key>/<session>.jsonl or <project-key>/<session>/subagents/<x>.jsonl
@@ -63,6 +63,25 @@ const CHUNK = 1 << 20
 // A line longer than this is left out (counted as unparsed): one string that size can exhaust memory.
 const MAX_LINE = 128 << 20
 const MEMBER = 4 << 20 // masked text per gzip member; members concatenate into one valid .gz that gunzipSync reads whole
+
+/** Rewrites a chat an older version zipped whole as members, once, so reading it later takes little memory. The text stays the same. */
+function writeMembers(lines: Iterable<string>, dest: string, tmp: string) {
+  writeFileSync(tmp, '', { mode: 0o600 })
+  let batch: string[] = []
+  let len = 0
+  const flush = () => {
+    if (batch.length) appendFileSync(tmp, gzipSync(batch.join('')), { mode: 0o600 })
+    batch = []
+    len = 0
+  }
+  for (const line of lines) {
+    batch.push(`${line}\n`)
+    len += line.length + 1
+    if (len >= MEMBER) flush()
+  }
+  flush()
+  renameSync(tmp, dest)
+}
 
 /** Facts parseSession needs (cwd, prompts) from one line, without tool output or assistant text. Null when the line carries none. */
 function slim(line: string): string | null {
@@ -325,6 +344,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
           }
           res.remasked++
         }
+        if (lastMemberSize(dest) > 2 * MEMBER) writeMembers(chatLines(dest), dest, tmp)
         manifest[rel] = { ...manifest[rel]!, ctimeMs: src.ctimeMs }
         res.skipped++
         res.bytes += statSync(dest).size

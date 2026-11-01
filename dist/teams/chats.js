@@ -9,7 +9,7 @@ import { MASK_VERSION, maskSecrets } from "../core/secrets.js";
 import { editDirs, isMarked, workDirs, sessionPart, under } from "../ingest/parts.js";
 import { isOff } from "../ingest/config.js";
 import { githubSlug, real, repoRoot, sessionRepo } from "../ingest/repos.js";
-import { chatText, parseSession } from "../ingest/transcript.js";
+import { chatLines, parseSession } from "../ingest/transcript.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { splitPassages } from "../query/passages.js";
 import { call, errText, load, locked, save } from "./client.js";
@@ -104,7 +104,7 @@ const atBoundary = (dir) => new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /** What one archived chat gives as a unit, or why it stays home. `repo` is the shared project's checkout. */
 export function buildChat(cfg, repo, c, scrub, opts = {}) {
     const read = (path, sub = false) => {
-        const s = parseSession(chatText(readFileSync(path)), c.session, cfg.home, '', sub);
+        const s = parseSession(chatLines(path), c.session, cfg.home, '', sub);
         for (const t of s.turns)
             t.reply = t.reply.filter((r) => !t.agentReports.includes(r)); // tool output never travels
         return s;

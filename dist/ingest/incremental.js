@@ -10,11 +10,10 @@
 //  - File nodes exist while an edge points at them. Links the texts state (`mentions`, `made`, `opened`) are redone for
 //    the nodes that changed and for the nodes whose references now point at something else (a new commit, PR or file).
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
 import { parseTrailers, syncTrailers } from "../capture/notes.js";
 import { fillSynonyms, keepWord, toks } from "../query/language.js";
 import { noteKeys, passagesOf } from "../query/passages.js";
-import { DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from "./ingest.js";
+import { DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, shaOfFile, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, signatureOf } from "./ingest.js";
 import { plansPart } from "./plans.js";
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
 import { discoverRepos } from "./repos.js";
@@ -257,13 +256,12 @@ function update(db, cfg, opts, dbPath) {
         const recheck = rootsMoved && (old?.status === 'in' || old?.status === 'out');
         if (!recheck && old && old.size === sf.size && old.mtime === sf.mtime && old.ctime === sf.ctime && old.ino === sf.ino)
             continue;
-        const bytes = readFileSync(sf.path);
-        const sha = sha256(bytes);
+        const sha = shaOfFile(sf.path);
         if (!recheck && old && old.sha === sha) {
             S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file);
             continue;
         }
-        const s = parseSf(sf, bytes, cfg.home);
+        const s = parseSf(sf, cfg.home);
         const status = classify(cfg, s);
         if (recheck && old.sha === sha && status === old.status) {
             S.run('UPDATE ingest_files SET size=?, mtime=?, ctime=?, ino=? WHERE file=?', sf.size, sf.mtime, sf.ctime, sf.ino, sf.file);
@@ -442,7 +440,7 @@ function applySessions(S, cfg, fresh, gone, byFile) {
         let m = loaded.get(file);
         if (!m) {
             const sf = byFile.get(file);
-            const s = parseSf(sf, readFileSync(sf.path), cfg.home);
+            const s = parseSf(sf, cfg.home);
             m = new Map(sessionPart(s, sf.key, sf.sfx).nodes.map((n) => [n.id, n]));
             loaded.set(file, m);
         }

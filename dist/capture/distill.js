@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { logger } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
 import { globMatch } from "../ingest/config.js";
-import { chatText, parseSession } from "../ingest/transcript.js";
+import { chatLines, parseSession } from "../ingest/transcript.js";
 import { expireInbox, makeId, readNotes, saveNote } from "./notes.js";
 import { related } from "./similar.js";
 const MAX_ITEMS = 4;
@@ -105,7 +105,7 @@ export function distill(cfg, opts = {}) {
             const id = f.replace(/\.jsonl\.gz$/, '');
             if (opts.session && opts.session !== id)
                 continue;
-            const s = parseSession(chatText(readFileSync(join(root, key, f))), id, cfg.home);
+            const s = parseSession(chatLines(join(root, key, f)), id, cfg.home);
             if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r))))
                 continue;
             if (opts.since && Date.parse(s.end) < Date.parse(opts.since))

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
 
@@ -78,4 +79,10 @@ test('R10-H4 R10-H5: the startup brief names the last session when it ended with
   assert.equal(c.resumeShort(g, 7, Date.parse('2026-11-01T00:00:00Z')), '')
   // Outside a git repo there is no brief at all.
   assert.equal(runHook('session-start', { source: 'startup', cwd: '/x/p' }, store()), '')
+})
+
+test('the skill line sends why questions to memory before git: a tool that runs no hooks has only this line', () => {
+  const description = /^description: (.*)$/m.exec(readFileSync(resolve('skills/thenwise/SKILL.md'), 'utf8'))![1]!
+  assert.match(description, /before grep or git log/)
+  assert.match(description, /why something is the way it is/)
 })

@@ -838,7 +838,7 @@ test('F6 no network: with a team and shared chats, search, hooks and MCP tools m
     const env = { ...process.env, HOME: t.b.home, THENWISE_HOME: t.b.memDir, THENWISE_SYNC: 'off', NONET_LOG: log, NONET_ALL: '1', NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./no-net.mjs', import.meta.url).href}`.trim() }
     const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
     // A stuck child must fail this test, not block the whole file: this one held the Windows run for over half an hour.
-    const run = (args: string[], input = '') => (console.error(`F6: ${args[0]} ${args[1] ?? ''}`), spawnSync(process.execPath, [cli, ...args], { env, encoding: 'utf8', input, cwd: t.b.home, timeout: 60_000 }))
+    const run = (args: string[], input = '') => spawnSync(process.execPath, [cli, ...args], { env, encoding: 'utf8', input, cwd: t.b.home, timeout: 60_000 })
     assert.equal(run(['archive']).status, 0)
     assert.equal(run(['ingest']).status, 0)
     assert.match(run(['search', 'quokka exporter shards', '--all']).stdout, /quokka/)
@@ -861,15 +861,17 @@ test('F4 a sibling folder is not rewritten', () => {
   try {
     w.chat('c1', { turns: [{ prompt: 'Where?', reply: `Saw ${w.proj}-other/a.ts, ${w.home}2/x and ${w.proj}/src/a.ts and ${w.home}.` }] })
     w.archive()
-    const json = JSON.stringify(built(unit(w)).unit)
-    assert.ok(json.includes('~/proj-other/a.ts') && json.includes(`${w.home}2/x`))
+    // Forward slashes on every system: on Windows the JSON holds escaped backslashes.
+    const json = JSON.stringify(built(unit(w)).unit).replace(/\\\\/g, '/')
+    assert.ok(json.includes('~/proj-other/a.ts') && json.includes(`${w.home.replace(/\\/g, '/')}2/x`), json)
     assert.ok(json.includes('and src/a.ts and ~.'), json)
   } finally {
     w.destroy()
   }
 })
 
-test('F3: opening a store with many shared chats runs no git at all', () => {
+// The check replaces `git` on PATH with a shell script, which Windows cannot run.
+test('F3: opening a store with many shared chats runs no git at all', { skip: process.platform === 'win32' }, () => {
   const w = new World()
   const bin = tmp('gitshim')
   const log = join(bin, 'calls.log')

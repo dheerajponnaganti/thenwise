@@ -5,7 +5,7 @@
 
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
@@ -148,9 +148,12 @@ export function archived(cfg: Config): Candidate[] {
 }
 
 const worktreeTop = (cwd: string): string | undefined => {
-  for (let d = cwd; d && d !== '/'; d = resolve(d, '..')) if (existsSync(join(d, '.git'))) return d
-
-  return undefined
+  if (!cwd) return undefined
+  // Stops when the parent is itself: a filesystem root, which is not `/` on Windows.
+  for (let d = resolve(cwd); ; d = dirname(d)) {
+    if (existsSync(join(d, '.git'))) return d
+    if (dirname(d) === d) return undefined
+  }
 }
 
 export type Skip = 'no-memory' | 'paused' | 'forgotten' | 'entry' | 'empty' | 'other' | 'since'

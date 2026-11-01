@@ -22,7 +22,8 @@ cd thenwise
 npm ci
 npm test            # every test, in isolated temp homes
 npm run check       # type check
-npm run gate        # everything CI checks: types, build, tests, package, hooks, owner-data scan
+npm run gate        # everything CI checks: types, build, tests, versions, package, plugin build, hooks, owner-data scan
+git config core.hooksPath .githooks   # once per clone: checks your push for owner data and bad commit messages
 ```
 
 Run the CLI from source with `node src/cli.ts <command>`. The plugin runs the built copy in `dist/`, so run `npm run build` before you try a change inside Claude Code.
@@ -59,10 +60,9 @@ The commit message ends with `Fixes #41`, and the changelog line ends with `(#41
 - One change per pull request, with a test that fails without it.
 - `npm run gate` passes.
 - **How a pull request lands:** it is squashed into one commit on `main`, with its title and description as the message, and you stay the author. Write them for a public history.
-- Before your first push, run `git config core.hooksPath .githooks`. The hook refuses owner data and bad commit messages.
 - Thenwise has no runtime dependencies. A pull request that adds one needs a strong reason.
 - Nothing leaves the machine unless the user turned it on. No telemetry, no network calls in search or hooks.
-- Add a line to `CHANGELOG.md` under the next version.
+- A change users will notice adds a line under `## Unreleased` in `CHANGELOG.md`.
 - Write short, plain sentences in docs, messages and comments.
 
 By sending a pull request, you agree that your contribution is licensed under the Apache License 2.0, as section 5 of [LICENSE](LICENSE) describes.

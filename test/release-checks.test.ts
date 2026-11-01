@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
 // @ts-expect-error a plain script with no types
+import { section } from '../scripts/changelog-section.mjs'
+// @ts-expect-error a plain script with no types
 import { checkVersions } from '../scripts/check-versions.mjs'
 
 const ROOT = resolve('.')
@@ -23,6 +25,15 @@ function versioned(version = '1.2.3') {
 
   return { dir, write }
 }
+
+test('changelog-section: one version, stopping at the next, and null when it is missing or empty', () => {
+  const log = '# Changelog\n\n## Unreleased\n\n- New.\n\n## 1.2.0\n\nA line.\n\n- Done.\n\n## 1.1.0\n\n- Old.\n'
+  assert.equal(section(log, '1.2.0'), 'A line.\n\n- Done.')
+  assert.equal(section(log, '1.1.0'), '- Old.')
+  assert.equal(section(log, '9.9.9'), null)
+  assert.equal(section('## 1.0.0\n\n## 0.9.0\n- x\n', '1.0.0'), null)
+  assert.ok(section(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version))
+})
 
 test('check-versions: the real repo has one version everywhere', () => {
   assert.deepEqual(checkVersions(ROOT), [])

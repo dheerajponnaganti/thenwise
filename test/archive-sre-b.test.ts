@@ -9,6 +9,7 @@ import { gunzipSync } from 'node:zlib'
 import { readLog } from '../src/core/log.ts'
 import { archive, maskTranscript } from '../src/ingest/archive.ts'
 import { loadConfig } from '../src/ingest/config.ts'
+import { ingest } from '../src/ingest/ingest.ts'
 
 const row = (n: number, text: string) => JSON.stringify({ type: 'user', uuid: `u${n}`, timestamp: '2026-10-02T10:00:00Z', cwd: '/x', sessionId: 's', entrypoint: 'cli', message: { role: 'user', content: text } })
 // Most of a real chat is tool output and replies; one line in twenty is a prompt.
@@ -112,4 +113,15 @@ test('a [no-memory] marker added after a sync drops the archived copy', () => {
   assert.deepEqual(r.pruned, ['-x/s.jsonl'])
   assert.throws(() => readFileSync(dest(w.home)))
   assert.ok(!('-x/s.jsonl' in JSON.parse(readFileSync(join(w.home, '.memory/archive/manifest.json'), 'utf8'))))
+})
+
+test('#30: an empty chat file does not stop ingest', () => {
+  const w = world()
+  writeFileSync(join(w.dir, 's.jsonl'), `${row(1, 'the walrus question')}
+`)
+  writeFileSync(join(w.dir, 'empty.jsonl'), '')
+  archive(w.cfg)
+  const r = ingest(w.cfg, { prs: join(w.home, 'none.json'), db: join(w.home, 'g.db') })
+  assert.equal(r.sessionsIn, 1)
+  archive(w.cfg) // an empty archived copy also reads when the archive checks it again
 })

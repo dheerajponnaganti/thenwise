@@ -6,7 +6,13 @@ Thenwise holds your chats, so we treat security reports first.
 
 Report it privately through a [security advisory](https://github.com/dheerajponnaganti/thenwise/security/advisories/new). Please do not open a public issue.
 
-Include what you found, the steps to see it, and the versions `thenwise report` prints.
+Include what you found, the steps to see it, its impact, and the versions `thenwise report` prints.
+
+## What happens next
+
+- You get a reply within 7 days.
+- We confirm the vulnerability, fix it in a new release and publish an advisory that credits you, if you want credit.
+- Please keep the details private until the fix ships, or for 90 days, whichever comes first.
 
 ## What counts
 

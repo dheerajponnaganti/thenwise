@@ -25,7 +25,7 @@
 /plugin install thenwise@thenwise
 ```
 
-Graded blind on hidden answers: **83%** right against 47% for plain Claude Code on your own history, and **88%** against 25% from a teammate's shared chats. [How we measured](#measured-with-the-answers-hidden).
+Graded blind on hidden answers: **93%** right against 37% for plain Claude Code on your own history, and **88%** against 17% from a teammate's shared chats. [How we measured](#measured-with-the-answers-hidden).
 
 Your project lays down history every day. A chat settles a question. A commit lands. An idea fails on a Tuesday and nobody writes it down. Weeks later the reason is buried, and Claude starts from zero.
 
@@ -61,9 +61,9 @@ Ask Claude to change a file with a dead end in its past, and it checks before it
 
 ## Measured, with the answers hidden
 
-Sounds good. Does it hold up? We tested it the hard way.
+Make every token count. We tested it the hard way.
 
-<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 1.8 times more questions answered right (83% with Thenwise, 47% for plain Claude Code reading git), 40% fewer tokens per answer, 2.2 times faster answers (23 seconds against 51). Teams, from a teammate's shared chats: 3.5 times more questions answered right (88% against 25%), 24% fewer tokens, 1.5 times faster (22 seconds against 33). And 2,500 chats remembered 84 seconds after install."></p>
+<p align="center"><img src="assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 2.5 times more questions answered right (93% with Thenwise, 37% for plain Claude Code reading git), half the raw tokens, 1.9 times faster answers (14 seconds against 26). Teams, from a teammate's shared chats: 5.3 times more questions answered right (88% against 17%), 39% fewer raw tokens, 1.5 times faster (16 seconds against 24). And 2,500 chats remembered 84 seconds after install."></p>
 
 Individual: Claude answers about your own history. Teams: a teammate asks about a project they never worked on and answers from its shared chats. In both tests, plain Claude Code could read the repository and its git history. Thenwise runs on its own records: your chats are the core, and git is an add-on that adds commits and pull requests when you have them. [How we measured](docs/eval.md): the questions, the two arms and the blind grading.
 
@@ -102,7 +102,7 @@ Three sources settle into one SQLite store on your disk. Search runs on full tex
 
 ### Fast enough to forget
 
-Hooks answer in about 50 ms and a search takes milliseconds, so Claude never waits on its memory. On your own history, answers came 2.2 times faster and used 40% fewer tokens than plain Claude Code digging through it alone.
+Hooks answer in about 50 ms and a search takes milliseconds, so Claude never waits on its memory. On your own history, answers came 1.9 times faster and used half the raw tokens of plain Claude Code digging through it alone.
 
 ## The toolbelt
 
@@ -183,9 +183,9 @@ Start alone. Add your team when you want to.
 
 **Does it need a model or an API key?** No. No model runs inside Thenwise, so there is no key to add and no extra bill.
 
-**Does it slow Claude down?** No. Hooks take about 50 ms, search takes milliseconds, and in our tests answers arrived 1.5 to 2.2 times faster.
+**Does it slow Claude down?** No. Hooks take about 50 ms, search takes milliseconds, and in our tests answers arrived 1.5 to 1.9 times faster.
 
-**What does it cost in tokens?** Less than going without: 24% to 40% fewer tokens per answer about the past. In a chat that needs no memory, it adds about 1%.
+**What does it cost in tokens?** Less than going without: up to half the raw tokens on questions about the past. In a chat that needs no memory, it adds about 1%.
 
 **How does it fit with CLAUDE.md and Claude's own memory?** They hold your standing rules. Thenwise holds the history: what was decided, what was tried, and what was true on any day. It reads your CLAUDE.md files too.
 

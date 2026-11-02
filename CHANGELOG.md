@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A too old Node now shows a notice at session start with what to do. Before, the plugin stayed off with no clear message. If Node is missing or `/thenwise:status` cannot run it, Claude now says what to install.
+- Long prompts, such as a pasted log with a question at the end, get memory pointers again. Before, the search used the whole prompt, ran past the hook's time limit and gave nothing. It now searches only the sentences that ask about the past.
 - Installing and updating the plugin works on a machine with no SSH key on GitHub. Before, it could fail with a permission error.
 
 ## 0.1.26

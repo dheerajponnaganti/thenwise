@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
 
-import { asksAboutThePast, nothingToDo } from '../src/hooks/entry.ts'
+import { asksAboutThePast, nothingToDo, pointerQuery } from '../src/hooks/entry.ts'
 import { runHook } from '../src/hooks/hook.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -40,6 +40,18 @@ test('R10-B4: a 20,000 character prompt is answered within a second', () => {
   // Windows starts a process far more slowly, so only the code path is timed there.
   assert.ok(Date.now() - t < (process.platform === 'win32' ? 8000 : 1500), `${Date.now() - t} ms`)
   assert.equal(asksAboutThePast(prompt), true)
+})
+
+test('a long prompt searches only its question, so the pointer search stays inside the hook budget', () => {
+  assert.equal(pointerQuery('why is the cache sharded'), 'why is the cache sharded')
+  const log = Array.from({ length: 300 }, (_, i) => `line${i} failed`).join('\n')
+  const q = pointerQuery(`${log}\nWhy did we shard the cache? It fails on Fridays.`)
+  assert.equal(q, 'Why did we shard the cache?')
+  const loose = pointerQuery(`The job ran before the deploy and failed again on ${Array.from({ length: 80 }, (_, i) => `host${i}`).join(' ')}.\n${log}\nWhy did we shard the cache?`)
+  assert.equal(loose, 'Why did we shard the cache?')
+  const flat = pointerQuery(`${Array.from({ length: 200 }, (_, i) => `w${i}`).join(' ')} why did we shard the cache ${Array.from({ length: 200 }, (_, i) => `z${i}`).join(' ')}`)
+  assert.match(flat, /why did we shard the cache/)
+  assert.ok(flat.split(' ').length <= 60)
 })
 
 test('R10-H3: the server names five question shapes and the marker once; no tool says "Use FIRST"', () => {

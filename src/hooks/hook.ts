@@ -14,7 +14,7 @@ import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../inge
 import { repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
-import { asksAboutThePast, READERS } from './entry.ts'
+import { asksAboutThePast, pointerQuery, READERS } from './entry.ts'
 
 export const TRACE_TOKENS = 600
 export const RESUME_TOKENS = 1500
@@ -157,7 +157,7 @@ function promptMap(env: HookEnv, input: Record<string, any>, on: boolean): strin
   if (!existsSync(join(env.dir, 'graph.db'))) return ''
   const cwd = String(input.cwd ?? '')
   // The prompt is one argument; leading dashes would read as flags.
-  const lines = query(env, ['search', '--pointers', ...(cwd ? ['--project', cwd] : []), prompt.replace(/(^|\s)-+/g, '$1').trim()]).trim()
+  const lines = query(env, ['search', '--pointers', ...(cwd ? ['--project', cwd] : []), pointerQuery(prompt).replace(/(^|\s)-+/g, '$1').trim()]).trim()
   if (!lines) return ''
   let body = ''
   for (const l of lines.split('\n')) if (body.length + l.length + 1 <= POINTER_CHARS) body += `${l}\n`

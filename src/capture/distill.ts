@@ -58,7 +58,7 @@ Reply with JSON only: {"contradicts":"yes"} or {"contradicts":"no"}`
 export function callModel(prompt: string): { text: string; outTokens: number | null } {
   const bin = process.env.MEMORY_CLAUDE_BIN ?? 'claude'
   const args = ['-p', '--model', 'haiku', '--output-format', 'json', '--no-session-persistence', '--tools', '', '--disable-slash-commands']
-  const opts = { input: maskSecrets(prompt).text, encoding: 'utf8', cwd: tmpdir(), timeout: 240000, maxBuffer: 1 << 24 } as const
+  const opts = { input: maskSecrets(prompt).text, encoding: 'utf8', cwd: tmpdir(), timeout: 240000, maxBuffer: 1 << 24, windowsHide: true } as const
   // npm installs claude as a .cmd on Windows, and only a shell can start that. The arguments are fixed; the prompt goes in on stdin.
   const r = process.platform === 'win32' ? spawnSync(`"${bin}" ${args.map((a) => a || '""').join(' ')}`, { ...opts, shell: true }) : spawnSync(bin, args, opts)
   if (r.status !== 0) throw new Error(`model call failed: ${(r.stderr || r.error?.message || `exit ${r.status}`).toString().trim().split('\n')[0]}`)

@@ -23,7 +23,7 @@ export interface Check {
 
 export function ghSignedIn(): boolean {
   try {
-    return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 }).status === 0
+    return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0
   } catch {
     return false
   }
@@ -46,7 +46,7 @@ async function sqliteFts5(): Promise<boolean> {
 function mcpStarts(home: string): boolean {
   const cli = fileURLToPath(new URL(`../cli${extname(fileURLToPath(import.meta.url))}`, import.meta.url))
   const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'doctor', version: '1' } } }
-  const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, env: { ...process.env, HOME: home } })
+  const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, HOME: home } })
 
   return /"memory_search"/.test(r.stdout ?? '')
 }
@@ -111,10 +111,10 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
 
   add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
-  add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000 }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
+  add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
   // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.
   const prsOn = cfg.raw?.ingest?.prs === true
-  const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000 }).error !== undefined
+  const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).error !== undefined
   const signedIn = (opts.gh ?? ghSignedIn)()
   if (signedIn || prsOn) add('gh', signedIn, 'signed in', noGh ? 'gh is not installed, and GitHub PR reading is on. Get it from https://cli.github.com' : 'gh is not signed in, and GitHub PR reading is on. Run: gh auth login')
   else checks.push({ name: 'gh', ok: true, detail: 'not needed: GitHub PR reading is off' })

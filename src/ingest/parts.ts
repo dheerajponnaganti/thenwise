@@ -263,7 +263,7 @@ export function datedSections(body: string): { heading: string; date: string; bo
 function fileDated(f: string): { at: string; from: 'git' | 'mtime' } {
   if (repoRoot(dirname(f))) {
     try {
-      const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim()
+      const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim()
       if (out && !Number.isNaN(Date.parse(out))) return { at: iso(Date.parse(out)), from: 'git' }
     } catch {} // git missing or slow: the file's mtime below is the date
   }

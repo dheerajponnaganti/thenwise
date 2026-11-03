@@ -43,7 +43,7 @@ export const issueRepo = () => /github\.com[/:]([^/]+\/[^/.]+)/.exec(manifest().
 function claudeVersion(): string {
   // One command string on Windows: Node warns on stderr when a shell gets separate arguments.
   const win = process.platform === 'win32'
-  const r = spawnSync(win ? 'claude --version' : 'claude', win ? [] : ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: win })
+  const r = spawnSync(win ? 'claude --version' : 'claude', win ? [] : ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: win, windowsHide: true })
 
   return r.status === 0 ? r.stdout.trim().split('\n')[0]! : 'not found'
 }
@@ -139,7 +139,7 @@ export function saveReport(md: string, dir: string = resolveDataDir(), now = new
   return file
 }
 
-const run = (cmd: string, args: string[], input?: string) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 30_000, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+const run = (cmd: string, args: string[], input?: string) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 30_000, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true })
 
 /** Puts the text on the clipboard with the platform's own tool. */
 export function copy(text: string): boolean {

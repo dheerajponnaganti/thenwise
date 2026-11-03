@@ -1,6 +1,6 @@
 ---
 name: thenwise
-description: Use when the user asks about past work, earlier decisions, what was tried, or what was true on a date. Picks the right memory tool.
+description: Use before grep or git log when the user asks why something is the way it is, about past work, earlier decisions, what was tried, or what was true on a date. Past chats hold reasons that code and commits do not. Picks the right memory tool.
 ---
 
 Thenwise keeps a local memory of past Claude Code chats, commits, PRs and notes. Ask it about the past before guessing, and not for what the code on disk already answers.

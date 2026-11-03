@@ -767,6 +767,19 @@ test('F2 subagent reports stay home: an Agent tool result is not in the unit, an
   }
 })
 
+test('a path that holds a scheme or a home never leaves, whichever tool wrote it', () => {
+  const w = new World()
+  try {
+    w.chat('c1', { turns: [{ prompt: 'Read the notes', reply: 'Done.', reads: [`file:${w.proj}/notes.md`, `${w.proj}/~/x.md`, `${w.proj}/src/a.ts`] }] })
+    w.archive()
+    const u = built(unit(w)).unit
+    assert.deepEqual(u.turns[0]!.paths, ['src/a.ts'])
+    assert.ok(!JSON.stringify(u).includes(w.home))
+  } finally {
+    w.destroy()
+  }
+})
+
 test('F4 home and project paths in prose become ~ and repo-relative before a passage leaves', () => {
   const w = new World()
   try {

@@ -157,6 +157,7 @@ test('T17-B1: a unit with an absolute path, a cwd, 2001 passages or 3 MB is a 40
     const cases: [unknown, RegExp][] = [
       [unit(1, { turns: [{ id: 'a', at: 1, passages: ['x'], paths: ['/Users/me/a.ts'] }] }), /paths/],
       [unit(1, { turns: [{ id: 'a', at: 1, passages: ['x'], paths: ['../a.ts'] }] }), /paths/],
+      [unit(1, { turns: [{ id: 'a', at: 1, passages: ['x'], paths: ['file:/Users/me/a.ts'] }] }), /paths/],
       [{ ...unit(1), cwd: '/Users/me' }, /cwd/],
       [unit(1, { turns: Array.from({ length: 2001 }, (_, i) => ({ id: `t${i}`, at: 1, passages: ['x'] })) }), /passages/],
       [unit(1, { turns: [{ id: 'big', at: 1, passages: ['z'.repeat(1201)] }] }), /1200/],

@@ -14,6 +14,22 @@ const CUE = /\b(?:why (?:did|do|does|is|was) (?:we|i|you|it)|last time|before|ea
 /** A prompt that may want past work: a cue, and not a slash command. */
 export const asksAboutThePast = (prompt: string) => !!prompt.trim() && !prompt.trimStart().startsWith('/') && CUE.test(prompt.slice(0, 2000))
 
+// Search time grows with query words: 150 words took 1.3 s on a 62 MB store, past the hook's 900 ms, so long prompts lost their pointers.
+const FOCUS_WORDS = 60
+/** The words a pointer search uses: a short prompt whole; a long one only its sentences that ask about the past,
+ * at most FOCUS_WORDS of them, starting a little before the cue. */
+export function pointerQuery(prompt: string): string {
+  const words = (s: string) => s.split(/\s+/).filter(Boolean)
+  if (words(prompt).length <= FOCUS_WORDS) return prompt
+  const cued = prompt.split(/(?<=[.?!])\s+|\n+/).filter((s) => CUE.test(s))
+  // A pasted log can hold a loose cue word such as "before"; a sentence that ends in "?" is the question.
+  const asks = cued.filter((s) => s.trimEnd().endsWith('?'))
+  const text = (asks.length ? asks : cued).join(' ') || prompt
+  const start = Math.max(0, words(text.slice(0, CUE.exec(text)?.index ?? 0)).length - 15)
+
+  return words(text).slice(start, start + FOCUS_WORDS).join(' ')
+}
+
 export const hasPlanFiles = (cwd: string) => STEMS.some((s) => existsSync(join(cwd, `${s}.md`))) || existsSync(join(cwd, '.planning'))
 
 let input: Record<string, any> | undefined

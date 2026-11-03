@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.27
+
+Memory pointers now reach more past questions and long prompts, a too old Node says what to do, and team sync is steadier. In a new eval, answers held level with 0.1.26 on 6% fewer tokens.
 
 - A team sync no longer loses its fetch when the server resets a reused connection. A request that is safe to repeat is sent once more; before, the sync brought in nothing that time.
 - A too old Node now shows a notice at session start with what to do. Before, the plugin stayed off with no clear message. If Node is missing or `/thenwise:status` cannot run it, Claude now says what to install.

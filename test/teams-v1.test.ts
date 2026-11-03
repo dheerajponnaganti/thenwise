@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 
 import { readLog } from '../src/core/log.ts'
-import { flush, joinTeam, pull, resolveNote, share, sharedIds, teamStatus, unshare } from '../src/teams/client.ts'
+import { call, flush, joinTeam, pull, resolveNote, share, sharedIds, teamStatus, unshare } from '../src/teams/client.ts'
 import { migrateTeamDb, openTeamDb, SCHEMA_VERSION } from '../src/teams/schema.ts'
 import { createTeamServer, invite, LIMITS, listMembers, removeMember, rotate } from '../src/teams/server.ts'
 
@@ -377,4 +377,26 @@ test('a shared Markdown file keeps its kind from type or kind in the front matte
   assert.equal(note('type: decision'), 'decision')
   assert.equal(note('kind: dead_end'), 'dead_end')
   assert.equal(note('kind: poem'), undefined) // not a known kind: the server files it as a note
+})
+
+test('a connection the server resets is retried once for a request safe to repeat, never for PATCH', async () => {
+  let seen = 0
+  // The first request of each pair loses its connection mid-request, the way a closing keep-alive socket does.
+  const srv = createServer((req, res) => {
+    if (seen++ % 2 === 0) return void req.socket.destroy()
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ name: 'alice' }))
+  })
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  const s = { url: `http://127.0.0.1:${(srv.address() as any).port}`, token: 't', lastRev: 0, shared: {}, queue: [] } as any
+  try {
+    const r = await call(s, 'GET', '/me')
+    assert.equal(r.json.name, 'alice')
+    assert.equal(seen, 2, 'one reset, one retry')
+    seen = 0
+    await assert.rejects(call(s, 'PATCH', '/shared-projects/a/p', { state: 'on' }))
+    assert.equal(seen, 1, 'PATCH is never sent twice')
+  } finally {
+    srv.close()
+  }
 })

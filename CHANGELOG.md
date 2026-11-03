@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.27
+
+Memory pointers now reach more past questions and long prompts, a too old Node says what to do, and team sync is steadier. In a new eval, answers held level with 0.1.26 on 6% fewer tokens.
+
+- A team sync no longer loses its fetch when the server resets a reused connection. A request that is safe to repeat is sent once more; before, the sync brought in nothing that time.
+- A too old Node now shows a notice at session start with what to do. Before, the plugin stayed off with no clear message. If Node is missing or `/thenwise:status` cannot run it, Claude now says what to install.
+- Long prompts, such as a pasted log with a question at the end, get memory pointers again. Before, the search used the whole prompt, ran past the hook's time limit and gave nothing. It now searches only the sentences that ask about the past.
+- Memory pointers now also appear for past questions like "why was the cache split" and "what did we decide". Before, only a few phrasings such as "why did we" got them.
+- Asked why something is the way it is, Claude now checks memory before grep and git log. Past chats hold reasons that code and commits do not.
+- The team server refuses a shared file path that starts with a scheme such as `file:` or with a home folder, and the client never sends one. Before, such a path from a buggy or newer client was stored and shown to every teammate.
+- Installing and updating the plugin works on a machine with no SSH key on GitHub. Before, it could fail with a permission error.
+
 ## 0.1.26
 
 A full rebuild now uses far less memory, and answers hold up in new evals.

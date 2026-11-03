@@ -94,8 +94,8 @@ const wordList = (v, name, max, len) => {
         throw bad(`${name} must be a list of up to ${max} texts of up to ${len} characters`);
     return v;
 };
-// A path is relative to the repo: no drive, no leading slash or home, no climbing out.
-const relative = (p) => !/^([/\\~]|[A-Za-z]:)/.test(p) && !p.split(/[/\\]/).includes('..');
+// A path is relative to the repo: no drive or scheme, no leading slash or home, no climbing out.
+const relative = (p) => !/^([/\\~]|[A-Za-z][\w+.-]*:)/.test(p) && !p.split(/[/\\]/).includes('..');
 /** The unit of one shared chat: passages and their metadata only. Absolute paths, `cwd`, and anything past the limits are a 400 naming the field. */
 export function chatUnit(body) {
     for (const k of ['cwd', 'extra'])

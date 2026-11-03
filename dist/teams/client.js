@@ -39,8 +39,21 @@ export function checkUrl(url) {
         return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
     throw new Error(u.protocol === 'http:' ? `refused: plain http to ${u.hostname}. Use https, or a server on localhost.` : `refused: ${u.protocol} is not supported`);
 }
+// A server can reset a reused keep-alive connection just as it closes it. A request that is safe to repeat is sent once
+// more on such a reset; PATCH and anything else is never repeated.
+const REPEATABLE = new Set(['GET', 'HEAD', 'PUT', 'DELETE']);
+const wasReset = (e) => ['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET'].includes(e?.cause?.code);
 export async function call(s, method, path, body, headers = {}, ms) {
-    const res = await fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(ms ?? TIMEOUT_MS[method] ?? 5000) });
+    const send = () => fetch(`${checkUrl(s.url)}/v1${path}`, { method, headers: { authorization: `Bearer ${s.token}`, ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(ms ?? TIMEOUT_MS[method] ?? 5000) });
+    let res;
+    try {
+        res = await send();
+    }
+    catch (e) {
+        if (!REPEATABLE.has(method) || !wasReset(e))
+            throw e;
+        res = await send();
+    }
     return { status: res.status, json: await res.json().catch(() => ({})) };
 }
 export const errText = (json) => (typeof json?.error === 'string' ? json.error : json?.error?.message ?? '');

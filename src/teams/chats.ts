@@ -197,7 +197,10 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   const alias = (abs: string) => {
     const root = roots.find((r) => under(abs, r) && abs !== r)
 
-    return root ? abs.slice(root.length + 1) : undefined
+    const rel = root ? abs.slice(root.length + 1) : undefined
+
+    // A scheme or an absolute path inside means a reader joined something it should not have: it never leaves the machine.
+    return rel && !/^[A-Za-z][\w+.-]*:|^[/\\~]/.test(rel) ? rel : undefined
   }
   const paths = new Map<string, Set<string>>()
   const shas = new Map<string, Set<string>>()

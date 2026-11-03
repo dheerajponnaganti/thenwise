@@ -7,9 +7,25 @@ export const STEMS = ['task_plan', 'findings', 'progress'];
 /** Commands that print a file, so a plain `cat src/x.ts` gets the same history hint as Read. */
 export const READERS = /^(?:cat|head|tail|less|bat|sed)$/;
 // Words that ask about the past. A prompt without one gets no pointers: most prompts are about the work at hand.
-const CUE = /\b(?:why (?:did|do|does|is|was) (?:we|i|you|it)|last time|before|earlier|we decided|remember|again|what happened|used to|previously|history of)\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:PR|pull request)\s*#?\d+|(?:^|\s)#\d{1,5}\b|[\w.-]+\/[\w./-]*\.\w{1,6}\b/i;
+// "did you" stays out: it usually asks about this chat, and the chat already holds that answer.
+const CUE = /\b(?:why (?:did|do|does|is|was) (?:we|i|you|it)|why (?:was|were|did|has|have|had)|(?:what|how|when|where|who) did (?:we|i)|(?:did|have|had) (?:we|i)|we (?:chose|picked|tried|dropped|rejected|settled|agreed)|last time|before|earlier|we decided|remember|again|what happened|used to|previously|history of)\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:PR|pull request)\s*#?\d+|(?:^|\s)#\d{1,5}\b|[\w.-]+\/[\w./-]*\.\w{1,6}\b/i;
 /** A prompt that may want past work: a cue, and not a slash command. */
 export const asksAboutThePast = (prompt) => !!prompt.trim() && !prompt.trimStart().startsWith('/') && CUE.test(prompt.slice(0, 2000));
+// Search time grows with query words: 150 words took 1.3 s on a 62 MB store, past the hook's 900 ms, so long prompts lost their pointers.
+const FOCUS_WORDS = 60;
+/** The words a pointer search uses: a short prompt whole; a long one only its sentences that ask about the past,
+ * at most FOCUS_WORDS of them, starting a little before the cue. */
+export function pointerQuery(prompt) {
+    const words = (s) => s.split(/\s+/).filter(Boolean);
+    if (words(prompt).length <= FOCUS_WORDS)
+        return prompt;
+    const cued = prompt.split(/(?<=[.?!])\s+|\n+/).filter((s) => CUE.test(s));
+    // A pasted log can hold a loose cue word such as "before"; a sentence that ends in "?" is the question.
+    const asks = cued.filter((s) => s.trimEnd().endsWith('?'));
+    const text = (asks.length ? asks : cued).join(' ') || prompt;
+    const start = Math.max(0, words(text.slice(0, CUE.exec(text)?.index ?? 0)).length - 15);
+    return words(text).slice(start, start + FOCUS_WORDS).join(' ');
+}
 export const hasPlanFiles = (cwd) => STEMS.some((s) => existsSync(join(cwd, `${s}.md`))) || existsSync(join(cwd, '.planning'));
 let input;
 /** The hook's stdin as JSON, read once: the quick check and the hook itself share it. */

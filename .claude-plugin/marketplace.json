@@ -7,7 +7,7 @@
       "name": "thenwise",
       "description": "Memory of your past Claude Code work: search, history and a resume brief, all local.",
       "license": "Apache-2.0",
-      "source": { "source": "github", "repo": "dheerajponnaganti/thenwise", "ref": "release" }
+      "source": { "source": "url", "url": "https://github.com/dheerajponnaganti/thenwise.git", "ref": "release" }
     }
   ]
 }

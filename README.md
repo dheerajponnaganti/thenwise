@@ -25,6 +25,8 @@
 /plugin install thenwise@thenwise
 ```
 
+Needs Node 22.16 or later. Start a new session after installing.
+
 Graded blind on hidden answers: **93%** right against 37% for plain Claude Code on your own history, and **88%** against 17% from a teammate's shared chats. [How we measured](#measured-with-the-answers-hidden).
 
 Your project lays down history every day. A chat settles a question. A commit lands. An idea fails on a Tuesday and nobody writes it down. Weeks later the reason is buried, and Claude starts from zero.
@@ -206,7 +208,7 @@ On Claude Code 2.1.275 or later, one line does it:
 /plugin install thenwise --marketplace dheerajponnaganti/thenwise
 ```
 
-Turn on auto-update for this marketplace in `/plugin`, so fixes reach you on their own.
+Start a new session after installing. Turn on auto-update for this marketplace in `/plugin`, so fixes reach you on their own.
 
 Ships as built JavaScript, so there is nothing to compile. Runs on macOS, Linux and Windows, and every push passes a fresh install on all three. Needs Node 22.16 or later, and git to read your commits on any host. Want it in your terminal too? `npm install -g thenwise`.
 

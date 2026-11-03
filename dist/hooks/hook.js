@@ -12,7 +12,7 @@ import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from "../inge
 import { repoRoot } from "../ingest/repos.js";
 import { parseSession } from "../ingest/transcript.js";
 import { tighten } from "../privacy/perms.js";
-import { asksAboutThePast, READERS } from "./entry.js";
+import { asksAboutThePast, pointerQuery, READERS } from "./entry.js";
 export const TRACE_TOKENS = 600;
 export const RESUME_TOKENS = 1500;
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
@@ -144,7 +144,7 @@ function promptMap(env, input, on) {
         return '';
     const cwd = String(input.cwd ?? '');
     // The prompt is one argument; leading dashes would read as flags.
-    const lines = query(env, ['search', '--pointers', ...(cwd ? ['--project', cwd] : []), prompt.replace(/(^|\s)-+/g, '$1').trim()]).trim();
+    const lines = query(env, ['search', '--pointers', ...(cwd ? ['--project', cwd] : []), pointerQuery(prompt).replace(/(^|\s)-+/g, '$1').trim()]).trim();
     if (!lines)
         return '';
     let body = '';

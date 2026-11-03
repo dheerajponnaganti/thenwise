@@ -121,8 +121,8 @@ const wordList = (v: unknown, name: string, max: number, len: number): string[] 
 
   return v as string[]
 }
-// A path is relative to the repo: no drive, no leading slash or home, no climbing out.
-const relative = (p: string) => !/^([/\\~]|[A-Za-z]:)/.test(p) && !p.split(/[/\\]/).includes('..')
+// A path is relative to the repo: no drive or scheme, no leading slash or home, no climbing out.
+const relative = (p: string) => !/^([/\\~]|[A-Za-z][\w+.-]*:)/.test(p) && !p.split(/[/\\]/).includes('..')
 
 /** The unit of one shared chat: passages and their metadata only. Absolute paths, `cwd`, and anything past the limits are a 400 naming the field. */
 export function chatUnit(body: Record<string, unknown>): ChatUnit {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A too old Node now shows a notice at session start with what to do. Before, the plugin stayed off with no clear message. If Node is missing or `/thenwise:status` cannot run it, Claude now says what to install.
 - Installing and updating the plugin works on a machine with no SSH key on GitHub. Before, it could fail with a permission error.
 
 ## 0.1.26

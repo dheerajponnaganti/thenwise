@@ -201,6 +201,37 @@ test('B2-27/28: the file hint is spent only on an answer, per agent; a plain Bas
   if (process.platform !== 'win32') assert.equal(readTarget('cat -n a.ts', '/x'), '/x/a.ts')
 })
 
+test("B2-15c: resume in a repo shows only this project's to-dos, capped, and no home-folder chat as its session", () => {
+  const dir = tempDir()
+  const base = realpathSync(dir)
+  const mine = join(base, 'ledger')
+  mkdirSync(join(mine, '.git'), { recursive: true })
+  const vault = join(base, 'vault')
+  const todo = (n: number, what: string) => Array.from({ length: n }, (_, i) => `- [ ] ${what} ${i + 1}`).join('\n')
+  const nodes: N[] = [
+    ['ses:home', 'session', 'home', 'home', '2026-10-03T09:00:00Z', '', { cwd: base }, keyOf(base)],
+    ['turn:h1', 'turn', 'home', 'Home: sorting photos', '2026-10-03T10:00:00Z', 'ses:home'],
+    ['note:carapace/Pending Work.md', 'note', 'Pending Work', `- [ ] **First:** the status bar glyphs\n${todo(5, 'status bar check')}`, '2026-10-02T00:00:00Z', join(vault, 'Pending Work.md')],
+    ['note:ledger/Pending Ledger.md', 'note', 'Pending Ledger', `Work on ledger.\n${todo(5, 'ledger step')}`, '2026-10-02T00:00:00Z', join(vault, 'Pending Ledger.md')],
+  ]
+  const g = new Graph(build(join(dir, 'store'), nodes))
+  g.scopeTo(mine)
+  const out = resume(g, '')
+  assert.match(out, /^not recorded: no session of ledger/, 'a home-folder chat is not where this project stands')
+  ;(nodes.push(['ses:mine', 'session', 'ledger', 'ledger', '2026-10-01T09:00:00Z', '', { cwd: mine }, keyOf(mine)], ['turn:m1', 'turn', 'mine', 'Mine: the rounding fix', '2026-10-01T10:00:00Z', 'ses:mine']))
+  const g2 = new Graph(build(join(dir, 'store2'), nodes))
+  g2.scopeTo(mine)
+  const out2 = resume(g2, '')
+  assert.match(out2, /Mine: the rounding fix/)
+  assert.doesNotMatch(out2, /status bar/, "another project's checklist stays out")
+  const unchecked = out2.slice(out2.indexOf('## Unchecked items'), out2.indexOf('more: memory_read'))
+  assert.match(out2, /- \[ \] ledger step 3\n\(2 more: memory_read note:ledger\/Pending Ledger\.md\)/, 'at most 3 unchecked items, then a pointer')
+  assert.doesNotMatch(unchecked, /step 4/)
+  // Outside any repository everything stays in scope, as before.
+  const g3 = new Graph(build(join(dir, 'store3'), nodes))
+  assert.match(resume(g3, ''), /status bar/)
+})
+
 test('B2-28: the Bash hook on a non-read command is cheap and never opens the store', () => {
   const dir = tempDir()
   writeGraph(dir)

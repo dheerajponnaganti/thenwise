@@ -89,8 +89,16 @@ test('search shows the top 3 with the next turn of their chat, then one-liners, 
   const g = store(Array.from({ length: 20 }, (_, i): N => [`turn:q${String(i).padStart(2, '0')}`, `${i % 2 ? 'The quartz widget cache came up again in this step.' : 'Unrelated talk about lunch plans.'} ${Array.from({ length: 40 }, (_, k) => `w${i}x${k}`).join(' ')}`, `2026-10-0${1 + (i % 9)}T1${i % 10}:00:00Z`, `ses:${i % 3}`]))
   const out = search(g, 'quartz widget cache')
   assert.match(out, /same chat, next \(turn:q\d+\)/)
-  assert.match(out, /more matches \(get <id> prints one\):\n4\. turn:q\d+ \S+ project: p \| /)
+  assert.match(out, /more matches \(memory_read <id> prints one\):\n4\. turn:q\d+ \S+ project: p \| /)
+  assert.match(out, /memory_read <id>#<passage> prints one in full/)
+  assert.doesNotMatch(out, /\bget <id>/, 'an agent reads tool names, not CLI verbs')
   assert.ok(out.length <= 4000, String(out.length))
+  process.env.THENWISE_CLI_VERBS = '1'
+  try {
+    assert.match(search(g, 'quartz widget cache'), /more matches \(get <id> prints one\)/, 'the CLI names its own commands')
+  } finally {
+    delete process.env.THENWISE_CLI_VERBS
+  }
 })
 
 test('a search whose results hold markdown bold with quotes or dots does not break the excerpt', () => {

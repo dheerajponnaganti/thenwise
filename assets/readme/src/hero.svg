@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1280" viewBox="0 0 2560 1280">
+<!--#inline shared/defs.svg-->
+<!-- Plate I. One rig drills to one decision; its tag says why. The tools are named once, as type in the "works with"
+     line, so a new tool is one word here, never a new drawing. -->
+<rect width="2560" height="1280" rx="44" fill="#E6DCC5"/>
+<rect x="32" y="32" width="2496" height="1216" rx="30" fill="none" stroke="#241C15" stroke-width="4"/>
+<rect x="48" y="48" width="2464" height="1184" rx="20" fill="none" stroke="#241C15" stroke-width="1.6"/>
+<g class="sc" font-size="28" fill="#241C15">
+<text x="96" y="104">Plate I.</text>
+<text x="1280" y="104" text-anchor="middle">Section through a repository, looking back</text>
+<text x="2464" y="104" text-anchor="end">Scale: one band, one week</text>
+</g>
+
+<g transform="translate(140 170) scale(0.88)" color="#241C15"><!--#inline shared/wordmark.svg--></g>
+<path d="M150 404 H1090 M150 414 H1090" stroke="#241C15" stroke-width="3"/>
+<text x="150" y="540" class="it" font-size="80" fill="#241C15">Your code has a past.</text>
+<text x="150" y="632" class="it" font-size="80" fill="#B3361F">Now your agents remember it.</text>
+<g class="serif" font-size="40" fill="#241C15">
+<text x="150" y="742">Every chat, commit, pull request and note, laid</text>
+<text x="150" y="798">down in the order it happened and kept on your</text>
+<text x="150" y="854">machine. Ask about any day, and your agent drills</text>
+<text x="150" y="910">straight to it.</text>
+</g>
+<path d="M150 1052 H1090" stroke="#241C15" stroke-width="2"/>
+<text x="150" y="1104" class="sc" font-size="30" fill="#5E4E3E">Works with</text>
+<text x="150" y="1166" class="serif" font-size="50" fill="#241C15">Claude Code · Copilot CLI · Codex · Antigravity</text>
+
+<!-- the ground: six dated bands under the surface at y 312 -->
+<g>
+<path d="M1340 312 C1600 298 1850 322 2100 308 S2380 302 2470 312 V1196 H1340 Z" fill="#DCC795"/>
+<path d="M1340 312 C1600 298 1850 322 2100 308 S2380 302 2470 312 V1196 H1340 Z" fill="url(#stip)"/>
+<path d="M1340 424 C1620 412 1880 436 2120 422 S2380 416 2470 426 V1196 H1340 Z" fill="#C49A5C"/>
+<path d="M1340 424 C1620 412 1880 436 2120 422 S2380 416 2470 426 V1196 H1340 Z" fill="url(#dash)"/>
+<path d="M1340 552 C1600 564 1860 544 2120 556 S2380 562 2470 550 V1196 H1340 Z" fill="#93A07A"/>
+<path d="M1340 552 C1600 564 1860 544 2120 556 S2380 562 2470 550 V1196 H1340 Z" fill="url(#shale)"/>
+<path d="M1340 692 C1620 680 1880 702 2140 688 S2390 684 2470 694 V1196 H1340 Z" fill="#B06A45"/>
+<path d="M1340 692 C1620 680 1880 702 2140 688 S2390 684 2470 694 V1196 H1340 Z" fill="url(#brick)"/>
+<path d="M1340 940 C1600 952 1880 932 2140 944 S2390 948 2470 936 V1196 H1340 Z" fill="#6F8191"/>
+<path d="M1340 940 C1600 952 1880 932 2140 944 S2390 948 2470 936 V1196 H1340 Z" fill="url(#rings)"/>
+<path d="M1340 1070 C1620 1062 1880 1078 2140 1066 S2390 1064 2470 1072 V1196 H1340 Z" fill="#4A4550"/>
+<path d="M1340 1070 C1620 1062 1880 1078 2140 1066 S2390 1064 2470 1072 V1196 H1340 Z" fill="url(#base)"/>
+<g fill="none" stroke="#241C15" stroke-width="2.6">
+<path d="M1340 424 C1620 412 1880 436 2120 422 S2380 416 2470 426"/>
+<path d="M1340 552 C1600 564 1860 544 2120 556 S2380 562 2470 550"/>
+<path d="M1340 692 C1620 680 1880 702 2140 688 S2390 684 2470 694"/>
+<path d="M1340 940 C1600 952 1880 932 2140 944 S2390 948 2470 936"/>
+<path d="M1340 1070 C1620 1062 1880 1078 2140 1066 S2390 1064 2470 1072"/>
+</g>
+<path d="M1340 312 C1600 298 1850 322 2100 308 S2380 302 2470 312 V1196 H1340 Z" fill="none" stroke="#241C15" stroke-width="4"/>
+</g>
+<g class="mono" font-size="28" fill="#241C15" text-anchor="end">
+<text x="1308" y="322">27 Oct</text><text x="1308" y="434">21 Oct</text><text x="1308" y="562">14 Oct</text>
+<text x="1308" y="702">06 Oct</text><text x="1308" y="950">29 Sep</text><text x="1308" y="1080">12 Sep</text>
+</g>
+<path d="M1320 312 V1196 M1320 312 H1334 M1320 424 H1334 M1320 552 H1334 M1320 692 H1334 M1320 940 H1334 M1320 1070 H1334" stroke="#241C15" stroke-width="2.4"/>
+<g class="sc" font-size="26" fill="#241C15" text-anchor="end">
+<text x="2440" y="378">chat · “ship the hub”</text>
+<text x="2440" y="500">commit <tspan class="mono" letter-spacing="0">9d1125d</tspan></text>
+<text x="2440" y="632">dead end · retries without jitter</text>
+</g>
+<g class="sc" font-size="26">
+<text x="1372" y="736" fill="#241C15">decision</text>
+<text x="1372" y="1000" fill="#F1E9D6">pull request <tspan class="mono" letter-spacing="0">#112</tspan> merged</text>
+<text x="1372" y="1150" fill="#F1E9D6">first chat in this repository</text>
+</g>
+<rect x="1380" y="600" width="230" height="36" fill="#D8CDB5" stroke="#241C15" stroke-width="2.6"/>
+<rect x="1380" y="600" width="230" height="36" fill="url(#cross)"/>
+<path d="M1624 604 L1654 634 M1654 604 L1624 634" stroke="#B3361F" stroke-width="5"/>
+<g fill="none" stroke="#241C15" stroke-width="2.6"><circle cx="1500" cy="810" r="44"/><circle cx="1500" cy="810" r="27"/><circle cx="1500" cy="810" r="10"/></g>
+
+<!-- the rig, as on the site: one tower, the flag at today -->
+<g transform="translate(1697 161) scale(1.8)">
+<g stroke="#241C15" stroke-width="1.6" fill="none" stroke-linejoin="round"><path d="M22 84 L42 0 L62 84"/><path d="M27 64 H57 M31 44 H53 M35 24 H49"/><path d="M27 64 L53 44 M57 64 L31 44 M31 44 L49 24 M53 44 L35 24" stroke-width="0.9"/></g>
+<path d="M42 0 V-22" stroke="#241C15" stroke-width="1.4"/><path d="M42 -22 L70 -17 L42 -12 Z" fill="#B3361F"/>
+<text x="76" y="-14" class="sc" font-size="11" fill="#241C15">today</text>
+</g>
+<rect x="1757" y="312" width="32" height="480" fill="#EFE6D2" stroke="#241C15" stroke-width="3"/>
+<path d="M1766 380 H1780 M1766 440 H1780 M1766 500 H1780 M1766 560 H1780 M1766 620 H1780 M1766 680 H1780" stroke="#C4BAA6" stroke-width="2.4"/>
+<circle cx="1773" cy="798" r="30" fill="none" stroke="#B3361F" stroke-width="6"/>
+<circle cx="1773" cy="798" r="46" fill="none" stroke="#B3361F" stroke-width="2" stroke-dasharray="7 7"/>
+<path d="M1820 796 C1850 790 1870 792 1896 786" fill="none" stroke="#241C15" stroke-width="2.4" stroke-dasharray="9 7"/>
+
+<!-- the specimen tag: what the rig brought up -->
+<g transform="rotate(-2.5 1900 740)">
+<rect x="1900" y="716" width="560" height="320" rx="8" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/>
+<circle cx="1930" cy="766" r="10" fill="none" stroke="#241C15" stroke-width="2.4"/>
+<text x="1954" y="758" class="sc" font-size="21" fill="#B3361F">specimen t2 · decided 06 oct · claude code</text>
+<path d="M1954 770 H2440" stroke="#B3361F" stroke-width="2"/>
+<text x="1926" y="824" class="serif" font-size="44" fill="#241C15">Cache split into eight shards</text>
+<g class="it" font-size="31" fill="#241C15">
+<text x="1926" y="874">One prices.json had a single writer</text>
+<text x="1926" y="914">that locked up at the Friday peak.</text>
+<text x="1926" y="954">A mutex pool made it worse.</text>
+</g>
+<text x="1926" y="1004" class="mono" font-size="26" fill="#241C15">commit e0a23e3</text>
+</g>
+</svg>

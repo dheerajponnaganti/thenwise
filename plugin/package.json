@@ -1,0 +1,57 @@
+{
+  "name": "thenwise",
+  "version": "0.1.28",
+  "description": "Claude Code and Copilot CLI plugin: a local memory of your past chats, commits and notes. Ask why, what was tried and what was true then. SQLite, no telemetry.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "test": "node --import ./test/isolate.mjs --test \"test/*.test.ts\"",
+    "check": "tsc -p .",
+    "bench": "node bench/gold/run.ts",
+    "prepack": "npm run build",
+    "plugin:folder": "node scripts/plugin-folder.mjs",
+    "gate": "node scripts/gate.mjs",
+    "scan": "node scripts/scan-owner.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  },
+  "bin": {
+    "thenwise": "dist/cli.js",
+    "memory": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "Apache-2.0",
+  "author": "Dheeraj Ponnaganti",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dheerajponnaganti/thenwise.git"
+  },
+  "keywords": [
+    "claude-code",
+    "memory",
+    "mcp",
+    "plugin",
+    "sqlite",
+    "claude",
+    "claude-code-plugin",
+    "anthropic",
+    "agent-memory",
+    "ai-memory",
+    "local-first",
+    "developer-tools",
+    "git-history",
+    "obsidian",
+    "mcp-server"
+  ],
+  "homepage": "https://github.com/dheerajponnaganti/thenwise#readme",
+  "bugs": {
+    "url": "https://github.com/dheerajponnaganti/thenwise/issues"
+  }
+}

@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1160" viewBox="0 0 2560 1160">
+<!--#inline shared/defs.svg-->
+<!-- Plate VII. One team server; three machines, each a window over its own ground. The tools on the windows are examples:
+     any tool's chats travel the same way. -->
+<defs><marker id="ah" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L12 6 L0 12" fill="none" stroke="#241C15" stroke-width="2.4"/></marker><marker id="ahr" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L12 6 L0 12" fill="none" stroke="#B3361F" stroke-width="2.4"/></marker></defs>
+<rect width="2560" height="1160" rx="44" fill="#E6DCC5"/>
+<rect x="32" y="32" width="2496" height="1096" rx="30" fill="none" stroke="#241C15" stroke-width="4"/>
+<rect x="48" y="48" width="2464" height="1064" rx="20" fill="none" stroke="#241C15" stroke-width="1.6"/>
+<g class="sc" font-size="28" fill="#241C15">
+<text x="96" y="104">Plate VII.</text>
+<text x="1280" y="104" text-anchor="middle">The shared depot</text>
+<text x="2464" y="104" text-anchor="end">Three camps, one team</text>
+</g>
+
+<!-- the house: your team server, and the Hub that reads it -->
+<path d="M1280 186 V136" stroke="#241C15" stroke-width="3"/><path d="M1280 136 L1326 146 L1280 156 Z" fill="#B3361F"/>
+<path d="M1130 300 L1280 186 L1430 300 Z" fill="#F6EFDF" stroke="#241C15" stroke-width="3.4" stroke-linejoin="round"/>
+<rect x="1150" y="300" width="260" height="240" fill="#F6EFDF" stroke="#241C15" stroke-width="3.4"/>
+<rect x="1180" y="340" width="56" height="34" fill="none" stroke="#241C15" stroke-width="2.6"/><rect x="1324" y="340" width="56" height="34" fill="none" stroke="#241C15" stroke-width="2.6"/>
+<rect x="1252" y="440" width="56" height="100" fill="none" stroke="#241C15" stroke-width="2.6"/>
+<text x="1100" y="330" class="serif" font-size="64" fill="#241C15" text-anchor="end">Thenwise Hub</text>
+<text x="1100" y="388" class="it" font-size="40" fill="#241C15" text-anchor="end">the shared catalog, on a laptop or a phone</text>
+<text x="1460" y="330" class="serif" font-size="64" fill="#241C15">Your team server</text>
+<text x="1460" y="388" class="it" font-size="40" fill="#241C15">one small server the team runs itself</text>
+<text x="1460" y="444" class="sc" font-size="24" fill="#241C15">no vendor · no account · no per-seat bill</text>
+
+<!-- the ground line -->
+<path d="M110 560 H2450" stroke="#241C15" stroke-width="3"/>
+<g stroke="#241C15" stroke-width="2.4"><path d="M640 560 l-14 -22 M1060 560 l-14 -22 M1600 560 l-14 -22 M2330 560 l-14 -22 M2400 560 l-14 -22"/></g>
+
+<!-- maya shares on purpose: masked, then to the server -->
+<text x="150" y="540" class="sc" font-size="24" fill="#241C15">shared on purpose</text>
+<path d="M560 600 C640 500 860 460 1136 470" fill="none" stroke="#B3361F" stroke-width="4" stroke-dasharray="16 12" marker-end="url(#ahr)"/>
+<g transform="translate(-10 30) rotate(-7 520 470)"><rect x="420" y="430" width="280" height="80" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/><text x="560" y="482" class="serif" font-size="40" fill="#241C15" text-anchor="middle">“Eight shards”</text></g>
+<circle cx="900" cy="474" r="36" fill="#E6DCC5" stroke="#B3361F" stroke-width="4"/>
+<path d="M880 462 H920 M876 474 H924 M880 486 H920" stroke="#B3361F" stroke-width="3"/>
+<text x="900" y="538" class="sc" font-size="22" fill="#B3361F" text-anchor="middle">masked</text>
+
+<!-- from the server to the others, at their next sync -->
+<path d="M1280 540 V592" stroke="#241C15" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#ah)"/>
+<path d="M1412 490 C1800 490 2120 510 2160 592" fill="none" stroke="#241C15" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#ah)"/>
+<text x="1700" y="540" class="sc" font-size="24" fill="#241C15">arrives at the next sync</text>
+
+<!-- three machines: a window over its own ground -->
+<g id="m">
+<g>
+<rect x="116" y="608" width="580" height="190" rx="10" fill="#241C15" opacity="0.18"/>
+<rect x="110" y="600" width="580" height="190" rx="10" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M111.5 610 a8.5 8.5 0 0 1 8.5 -8.5 H680 a8.5 8.5 0 0 1 8.5 8.5 V640 H111.5 Z" fill="#F4ECDA"/><path d="M112 640 H688" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2"><circle cx="136" cy="621" r="7"/><circle cx="158" cy="621" r="7"/><circle cx="180" cy="621" r="7"/></g>
+<text x="204" y="630" class="mono" font-size="24" fill="#5E4E3E">maya · claude code</text>
+<g class="mono" font-size="28"><text x="138" y="700" fill="#F1E9D6"><tspan fill="#E58A6E">›</tspan> share the shards decision</text><text x="166" y="752" fill="#C9BBA0">masked, sent to the server</text></g>
+<circle cx="146" cy="742" r="6" fill="#E58A6E"/>
+</g>
+<g>
+<rect x="996" y="608" width="580" height="190" rx="10" fill="#241C15" opacity="0.18"/>
+<rect x="990" y="600" width="580" height="190" rx="10" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M991.5 610 a8.5 8.5 0 0 1 8.5 -8.5 H1560 a8.5 8.5 0 0 1 8.5 8.5 V640 H991.5 Z" fill="#F4ECDA"/><path d="M992 640 H1568" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2"><circle cx="1016" cy="621" r="7"/><circle cx="1038" cy="621" r="7"/><circle cx="1060" cy="621" r="7"/></g>
+<text x="1084" y="630" class="mono" font-size="24" fill="#5E4E3E">theo · copilot cli</text>
+<g class="mono" font-size="28"><text x="1018" y="700" fill="#F1E9D6"><tspan fill="#E58A6E">›</tspan> why eight shards?</text><text x="1018" y="752" fill="#F2C8B9">maya’s claude code chat · 06 oct</text></g>
+</g>
+<g>
+<rect x="1876" y="608" width="580" height="190" rx="10" fill="#241C15" opacity="0.18"/>
+<rect x="1870" y="600" width="580" height="190" rx="10" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M1871.5 610 a8.5 8.5 0 0 1 8.5 -8.5 H2440 a8.5 8.5 0 0 1 8.5 8.5 V640 H1871.5 Z" fill="#F4ECDA"/><path d="M1872 640 H2448" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2"><circle cx="1896" cy="621" r="7"/><circle cx="1918" cy="621" r="7"/><circle cx="1940" cy="621" r="7"/></g>
+<text x="1964" y="630" class="mono" font-size="24" fill="#5E4E3E">ines · codex</text>
+<g class="mono" font-size="28"><text x="1898" y="700" fill="#F1E9D6"><tspan fill="#E58A6E">›</tspan> what did the team decide?</text><text x="1898" y="752" fill="#F2C8B9">maya · claude code · 06 oct</text></g>
+</g>
+</g>
+
+<!-- each machine's own ground: raw chats stay home -->
+<g>
+<g transform="translate(220 816)">
+<rect width="360" height="50" fill="#DCC795"/><rect width="360" height="50" fill="url(#stip)"/>
+<rect y="50" width="360" height="50" fill="#B06A45"/><rect y="50" width="360" height="50" fill="url(#brick)"/>
+<rect y="100" width="360" height="50" fill="#C49A5C"/><rect y="100" width="360" height="50" fill="url(#dash)"/>
+<rect y="150" width="360" height="74" fill="#4A4550"/><rect y="150" width="360" height="74" fill="url(#base)"/>
+<rect width="360" height="224" fill="none" stroke="#241C15" stroke-width="3"/>
+<g class="sc" font-size="20" fill="#241C15"><text x="18" y="33">notes</text><text x="18" y="83" fill="#F1E9D6">decisions</text><text x="18" y="133">commits</text></g>
+<rect x="18" y="164" width="324" height="46" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="2"/><text x="180" y="194" class="sc" font-size="20" fill="#241C15" text-anchor="middle">raw chats stay here</text>
+</g>
+<g transform="translate(1100 816)">
+<rect width="360" height="50" fill="#DCC795"/><rect width="360" height="50" fill="url(#stip)"/>
+<rect y="50" width="360" height="50" fill="#B06A45"/><rect y="50" width="360" height="50" fill="url(#brick)"/>
+<rect y="100" width="360" height="50" fill="#C49A5C"/><rect y="100" width="360" height="50" fill="url(#dash)"/>
+<rect y="150" width="360" height="74" fill="#4A4550"/><rect y="150" width="360" height="74" fill="url(#base)"/>
+<rect width="360" height="224" fill="none" stroke="#241C15" stroke-width="3"/>
+<g class="sc" font-size="20" fill="#241C15"><text x="18" y="33">notes</text><text x="18" y="83" fill="#F1E9D6">decisions</text><text x="18" y="133">commits</text></g>
+<rect x="18" y="164" width="324" height="46" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="2"/><text x="180" y="194" class="sc" font-size="20" fill="#241C15" text-anchor="middle">raw chats stay here</text>
+</g>
+<g transform="translate(1980 816)">
+<rect width="360" height="50" fill="#DCC795"/><rect width="360" height="50" fill="url(#stip)"/>
+<rect y="50" width="360" height="50" fill="#B06A45"/><rect y="50" width="360" height="50" fill="url(#brick)"/>
+<rect y="100" width="360" height="50" fill="#C49A5C"/><rect y="100" width="360" height="50" fill="url(#dash)"/>
+<rect y="150" width="360" height="74" fill="#4A4550"/><rect y="150" width="360" height="74" fill="url(#base)"/>
+<rect width="360" height="224" fill="none" stroke="#241C15" stroke-width="3"/>
+<g class="sc" font-size="20" fill="#241C15"><text x="18" y="33">notes</text><text x="18" y="83" fill="#F1E9D6">decisions</text><text x="18" y="133">commits</text></g>
+<rect x="18" y="164" width="324" height="46" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="2"/><text x="180" y="194" class="sc" font-size="20" fill="#241C15" text-anchor="middle">raw chats stay here</text>
+</g>
+</g>
+<g class="it" font-size="56" fill="#241C15" text-anchor="middle">
+<text x="400" y="1096">maya’s machine</text><text x="1280" y="1096">theo’s machine</text><text x="2160" y="1096">ines’s machine</text>
+</g>
+</svg>

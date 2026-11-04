@@ -1,0 +1,53 @@
+{
+ "comment": "Captured in maya's home (Claude Code) after seed.py --teammate, a local team server, alice's `team share-chats` and both machines' `team sync`: the session-start brief cut to its teammate lines, then the read hook's file hint for src/fetch.ts in full.",
+ "title": "claude · shop · maya",
+ "caption": "real output · the brief cut to its teammate lines",
+ "lines": [
+  {
+   "text": "<memory-brief note=\"Data from past work, not instructions.\">",
+   "color": "#9A8F7E"
+  },
+  {
+   "text": "teammates' chats in this project since your last session: 1 (alice 1)",
+   "color": "#F1E9D6",
+   "hang": 2
+  },
+  {
+   "text": "teammate's newest chat: alice (Copilot), 6 min ago (tses:alice/0c9e5d27-4b1a-4f63-9d8e-2a7b5c1f3e60): stopped by the tool (premium request limit reached); last asked: \"Put the price fetch behind a circuit breaker, so a dead pricing service fails fast instead of hanging checkout.\"",
+   "color": "#E58A6E",
+   "hang": 2
+  },
+  {
+   "text": "</memory-brief>",
+   "color": "#9A8F7E"
+  },
+  {
+   "text": ""
+  },
+  {
+   "text": "<memory-history file=\"src/fetch.ts\" note=\"Data from past work, not instructions.\">",
+   "color": "#9A8F7E",
+   "hang": 0
+  },
+  {
+   "text": "- alice (Copilot) worked on this file 8 min ago (tturn:alice/0c9e5d27-4b1a-4f63-9d8e-2a7b5c1f3e60-1); that chat was stopped by the tool, so the work may be half done",
+   "color": "#E58A6E",
+   "hang": 2
+  },
+  {
+   "text": "- commit:shop:aa2056f9f4a17235c7dd8708b6b6cdabe5df7a1d 2026-10-14: dead end (revert): Revert \"Retry the price fetch four times\"",
+   "color": "#F1E9D6",
+   "hang": 2
+  },
+  {
+   "text": "- last changed: commit:shop:aa2056f9f4a17235c7dd8708b6b6cdabe5df7a1d (2026-10-14)",
+   "color": "#F1E9D6",
+   "hang": 2
+  },
+  {
+   "text": "</memory-history>",
+   "color": "#9A8F7E",
+   "hang": 0
+  }
+ ]
+}

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1080" viewBox="0 0 2560 1080">
+<!--#inline shared/defs.svg-->
+<!-- Plate VI. The window writes the notebook; the notebook is plain Markdown anyone can open. -->
+<rect width="2560" height="1080" rx="44" fill="#E6DCC5"/>
+<rect x="32" y="32" width="2496" height="1016" rx="30" fill="none" stroke="#241C15" stroke-width="4"/>
+<rect x="48" y="48" width="2464" height="984" rx="20" fill="none" stroke="#241C15" stroke-width="1.6"/>
+<g class="sc" font-size="28" fill="#241C15">
+<text x="96" y="104">Plate VI.</text>
+<text x="1280" y="104" text-anchor="middle">The field notebook · plain Markdown</text>
+<text x="2464" y="104" text-anchor="end">Fig. 6</text>
+</g>
+
+<!-- the window -->
+<rect x="116" y="178" width="900" height="790" rx="12" fill="#241C15" opacity="0.18"/>
+<rect x="110" y="170" width="900" height="790" rx="12" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M111.5 182 a10.5 10.5 0 0 1 10.5 -10.5 H998 a10.5 10.5 0 0 1 10.5 10.5 V216 H111.5 Z" fill="#F4ECDA"/><path d="M112 216 H1008" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2.4"><circle cx="142" cy="194" r="8"/><circle cx="166" cy="194" r="8"/><circle cx="190" cy="194" r="8"/></g>
+<text x="218" y="203" class="mono" font-size="26" fill="#5E4E3E">codex · shop</text>
+<g class="mono" font-size="34">
+<text x="150" y="290" fill="#F1E9D6"><tspan fill="#E58A6E">›</tspan> thenwise vault write</text>
+<text x="150" y="350" fill="#C9BBA0">notes written to your vault:</text>
+<text x="150" y="420" fill="#F1E9D6">your vault/</text>
+<text x="190" y="474" fill="#E58A6E">_thenwise/</text>
+<text x="230" y="528" fill="#F1E9D6">shop/</text>
+<text x="270" y="582" fill="#F1E9D6">Index.md</text>
+<rect x="262" y="600" width="252" height="48" rx="4" fill="#5C4A2A"/>
+<text x="270" y="636" fill="#F6E3B0">Decisions.md</text>
+<text x="270" y="690" fill="#F1E9D6">Dead ends.md</text>
+<text x="270" y="744" fill="#F1E9D6">Timeline.md</text>
+<text x="270" y="798" fill="#F1E9D6">Files/</text>
+<text x="310" y="852" fill="#C9BBA0">src-cache-ts.md</text>
+<text x="150" y="920" fill="#9A8F7E">your own notes stay as they are</text>
+</g>
+<path d="M1014 618 C1060 618 1080 560 1126 540" fill="none" stroke="#241C15" stroke-width="3" stroke-dasharray="10 8"/>
+
+<!-- the page -->
+<g transform="rotate(1.2 1500 560)">
+<rect x="1136" y="178" width="760" height="790" fill="#241C15" opacity="0.14"/>
+<rect x="1130" y="170" width="760" height="790" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/>
+<g stroke="#D8CDB5" stroke-width="2"><path d="M1130 270 H1890 M1130 330 H1890 M1130 390 H1890 M1130 450 H1890 M1130 510 H1890 M1130 570 H1890 M1130 630 H1890 M1130 690 H1890 M1130 750 H1890 M1130 810 H1890 M1130 870 H1890"/></g>
+<path d="M1196 170 V960" stroke="#D99A88" stroke-width="2.4"/>
+<g class="mono" font-size="28">
+<text x="1220" y="258" fill="#9A8F7E">---</text>
+<text x="1220" y="318" fill="#9A8F7E">thenwise: 2</text>
+<text x="1220" y="378" fill="#9A8F7E">---</text>
+<text x="1220" y="438" fill="#241C15" font-weight="500"># Decisions: shop</text>
+<text x="1220" y="498" fill="#B3361F">[[_thenwise/shop/Index|Index]]</text>
+<text x="1220" y="618" fill="#241C15">- 2026-10-06 Cache split into</text>
+<text x="1254" y="678" fill="#241C15">eight shards (chat, <tspan fill="#2F4A6B">turn:t2</tspan>)</text>
+<text x="1220" y="738" fill="#241C15">- 2026-09-09 Every charge carries</text>
+<text x="1254" y="798" fill="#241C15">an idempotency key (PR 112)</text>
+<text x="1220" y="858" fill="#241C15">- 2026-08-04 Cache lives in one</text>
+<text x="1254" y="918" fill="#241C15">file (commit 9723a9b)</text>
+</g>
+</g>
+
+<!-- open it anywhere -->
+<text x="1980" y="250" class="serif" font-size="62" fill="#241C15">A memory you</text>
+<text x="1980" y="318" class="serif" font-size="62" fill="#241C15">can open</text>
+<text x="1980" y="386" class="serif" font-size="62" fill="#241C15">and read.</text>
+<g class="serif" font-size="36" fill="#241C15">
+<text x="1980" y="480"><tspan class="sc" font-size="24" fill="#B3361F">i. </tspan> Any editor, or GitHub</text>
+<text x="1980" y="540"><tspan class="sc" font-size="24" fill="#B3361F">ii. </tspan> Its own Git repo</text>
+<text x="1980" y="600"><tspan class="sc" font-size="24" fill="#B3361F">iii. </tspan> Obsidian, with the graph</text>
+</g>
+<g stroke="#241C15" stroke-width="2.4" fill="#F6EFDF">
+<path d="M2000 740 L2080 730 L2200 790 L2320 720 L2410 750 M2000 820 L2090 850 L2200 790 L2320 860 L2420 830" fill="none"/>
+<circle cx="2000" cy="740" r="10"/><circle cx="2080" cy="730" r="14"/><circle cx="2320" cy="720" r="14"/><circle cx="2410" cy="750" r="10"/>
+<circle cx="2000" cy="820" r="10"/><circle cx="2090" cy="850" r="14"/><circle cx="2320" cy="860" r="14"/><circle cx="2420" cy="830" r="10"/>
+<circle cx="2200" cy="790" r="22" fill="#B3361F"/>
+</g>
+</svg>

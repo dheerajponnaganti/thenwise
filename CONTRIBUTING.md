@@ -26,7 +26,7 @@ npm run gate        # everything CI checks: types, build, tests, versions, packa
 git config core.hooksPath .githooks   # once per clone: checks your push for owner data and bad commit messages
 ```
 
-Run the CLI from source with `node src/cli.ts <command>`. The plugin runs the built copy in `dist/`, so run `npm run build` before you try a change inside Claude Code.
+Run the CLI from source with `node src/cli.ts <command>`. The plugin runs a built copy, so run `npm run build` and start Claude Code with `--plugin-dir` set to your clone before you try a change. Leave `plugin/` alone: it holds the last release, and only a release updates it.
 
 ## Where things live
 

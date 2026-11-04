@@ -1,0 +1,518 @@
+// The pieces of the graph build that the full rebuild and the incremental update share. Everything here is a pure
+// function of its inputs, so both paths produce the same nodes and edges.
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { basename, dirname, join, posix } from 'node:path';
+import { parseFrontMatter } from "../core/frontmatter.js";
+import { maskSecrets } from "../core/secrets.js";
+import { normPath } from "../core/vault-index.js";
+import { parseTrailers, readNotes } from "../capture/notes.js";
+import { globMatch } from "./config.js";
+import { COPILOT_ENTRYPOINT } from "./copilot.js";
+import { skipReason } from "../vault/user.js";
+import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from "./deadend.js";
+import { githubSlug, repoRoot } from "./repos.js";
+import { readChats } from "../teams/chatcache.js";
+import { normalizePath } from "./transcript.js";
+export const GENERATED = 'Memory v2/Generated/';
+export const under = (p, root) => ((p, root) => p === root || p.startsWith(`${root}/`))(normPath(p), normPath(root));
+export const cut = (at, until) => !!until && !!at && Date.parse(at) > Date.parse(until);
+export const iso = (ms) => new Date(ms).toISOString();
+export const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortKeys(x)])) : v;
+export const edgeKey = (e) => `${e.src}\0${e.dst}\0${e.kind}`;
+// The one choke point: every record's title and text are masked before it is stored (chat text is masked already, a no-op).
+export const fullNode = (n) => {
+    const o = { title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n };
+    o.title = maskSecrets(o.title).text;
+    o.text = maskSecrets(o.text).text;
+    if (Array.isArray(o.extra.passages))
+        o.extra = { ...o.extra, passages: o.extra.passages.map((p) => maskSecrets(String(p)).text) };
+    return o;
+};
+/** A chat is a test chat when its first prompt starts or ends with a marker, or any prompt holds one alone on a line. */
+export function isMarked(markers, prompts) {
+    const first = (prompts[0] ?? '').trim();
+    return markers.some((m) => first.startsWith(m) || first.endsWith(m) || prompts.some((p) => p.split('\n').some((l) => l.trim() === m)));
+}
+/** The same turn can appear in a resumed session; the fuller copy wins, and on a tie the first one, so order never matters. */
+export const mergeNode = (old, n) => (!old || n.text.length > old.text.length ? (old ? { ...n, extra: { ...old.extra, ...n.extra } } : n) : old);
+export class Graph {
+    nodes = new Map();
+    edges = new Map();
+    node(n) {
+        this.nodes.set(n.id, mergeNode(this.nodes.get(n.id), fullNode(n)));
+    }
+    edge(src, dst, kind, at = '', extra = {}) {
+        const k = `${src}\0${dst}\0${kind}`;
+        if (!this.edges.has(k))
+            this.edges.set(k, { src, dst, kind, at, extra });
+    }
+}
+/** Why a parsed chat is in or out of the memory. Test chats carry a marker in their prompts: their answers must never become memory. */
+export function classify(cfg, s) {
+    if (!cfg.includeEntrypoints.includes(s.entrypoint))
+        return 'entry';
+    if (isMarked(cfg.ingestExcludeMarkers, s.turns.map((t) => t.prompt)))
+        return 'marker';
+    if (!s.start)
+        return 'empty';
+    return [s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r))) ? 'in' : 'out';
+}
+/** Folders of the files a chat edited, for finding the repos it worked in. Bounded: 50 per chat. */
+export const editDirs = (s) => [...new Set([...s.turns].flatMap((t) => [...t.edits].map((f) => posix.dirname(f))))].sort().slice(0, 50);
+/** Those folders that lie under a root. */
+export const workDirs = (cfg, dirs) => dirs.filter((d) => cfg.roots.some((r) => under(d, r)));
+/** What one chat file gives: its nodes (merged by id), its own edges, and the commit and PR references of its turns. */
+export const chatSuffix = (folder) => `@${folder.replace(/[^\w.-]/g, '_')}`;
+export function sessionPart(s, key, sfx = '') {
+    const nodes = new Map();
+    const edges = new Map();
+    const claims = [];
+    const node = (n) => nodes.set(n.id, mergeNode(nodes.get(n.id), fullNode(n)));
+    const edge = (src, dst, kind, at, extra = {}) => edges.has(`${src}\0${dst}\0${kind}`) || edges.set(`${src}\0${dst}\0${kind}`, { src, dst, kind, at, extra });
+    const sid = `ses:${s.id}${sfx}`;
+    const first = s.turns[0]?.prompt ?? '';
+    // A subagent file adds turns to its parent, whose own file gives the session node.
+    const dirs = editDirs(s);
+    // A chat from another coding tool says so, so answers can name where they came from.
+    const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : {};
+    if (!s.sub)
+        node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } });
+    const done = structural(s.turns);
+    for (const t of s.turns) {
+        const tid = `turn:${t.id}${sfx}`;
+        // What happened beats what was said: an undone edit or a failed test, then the person's own [dead-end] line,
+        // then a phrase in the reply (the prompt is the user's question).
+        const marked = markedDeadEnd(t.prompt);
+        const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' } : undefined);
+        const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'));
+        const de = st ?? (phrase ? { text: phrase, kind: 'phrase' } : undefined);
+        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } });
+        edge(tid, sid, 'part_of', t.at);
+        if (st && 'file' in st && st.file)
+            edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at);
+        for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']])
+            for (const p of paths)
+                edge(tid, `file:${normPath(p)}`, kind, t.at);
+        for (const m of t.commitMsgs)
+            claims.push({ node: tid, kind: 'sub', val: m.subject, at: m.at, turnAt: t.at });
+        for (const short of t.commitShas)
+            claims.push({ node: tid, kind: 'sha', val: short, at: t.at, turnAt: t.at });
+        for (const u of t.prUrls)
+            claims.push({ node: tid, kind: 'url', val: u, at: t.at, turnAt: t.at });
+    }
+    for (const m of s.summaries) {
+        node({ id: `sum:${m.id}${sfx}`, kind: 'summary', title: `Compaction summary of ${s.id}`, text: m.text, at: m.at, project: key, source: sid, ...('tool' in tool ? { extra: tool } : {}) });
+        edge(`sum:${m.id}${sfx}`, sid, 'part_of', m.at);
+        if (m.continuedFrom && m.continuedFrom !== s.id)
+            edge(sid, `ses:${m.continuedFrom}`, 'continued_from', m.at, { summary: `sum:${m.id}${sfx}` });
+    }
+    return { nodes: [...nodes.values()], edges: [...edges.values()], claims };
+}
+// 2. Commits -------------------------------------------------------------------------------------------------------
+export const LOG_FORMAT = ['--name-only', '--format=%x1e%H%x1f%aI%x1f%s%x1f%b%x1d'];
+/** `main`: the shas on the default branch; each commit then says `onMain`. */
+export function parseLog(raw, repo, until, main) {
+    const name = basename(repo);
+    const out = [];
+    for (const rec of raw.split('\x1e').slice(1)) {
+        const [head, rest = ''] = rec.split('\x1d');
+        const [sha, date, subject, body = ''] = head.split('\x1f');
+        if (!sha || cut(date ?? '', until))
+            continue;
+        const files = rest.split('\n').map((l) => l.trim()).filter(Boolean).sort();
+        const trailers = {};
+        for (const m of body.matchAll(/^(Decision|Why|Dead-end):[ \t]*(.+)$/gim))
+            (trailers[m[1].toLowerCase()] ??= []).push(m[2].trim());
+        const id = `commit:${name}:${sha}`;
+        const de = commitDeadEnd(subject ?? '', body);
+        out.push({ node: fullNode({ id, kind: 'commit', title: subject ?? '', text: body.trim(), at: date ?? '', project: name, source: repo, extra: { files, sha, ...(de ? { deadEnd: de, deadEndKind: /^Revert\b/.test(subject ?? '') ? 'revert' : 'phrase' } : {}), ...(main ? { onMain: main.has(sha) } : {}), ...(Object.keys(trailers).length ? { trailers } : {}) } }), files, trailers: parseTrailers(maskSecrets(body).text, id, date ?? '', name) });
+    }
+    return out;
+}
+export const commitEdges = (c) => c.files.map((f) => ({ src: c.node.id, dst: `file:${posix.join(normPath(c.node.source), f)}`, kind: 'changed', at: c.node.at, extra: {} }));
+export function prPart(inputs, repos, commit, until) {
+    const out = { nodes: [], edges: [], trailers: [], numbers: new Map(), ambiguous: new Set(), urls: new Map() };
+    for (const { full, list, repo: known } of inputs) {
+        const name = full.split('/').pop();
+        const repo = known ?? repos.filter((r) => name.startsWith(basename(r))).sort((a, b) => basename(b).length - basename(a).length)[0];
+        for (const p of [...list].sort((a, b) => a.number - b.number)) {
+            if (cut(p.createdAt ?? '', until))
+                continue;
+            if (cut(p.mergedAt ?? '', until))
+                (p.mergedAt = null, p.mergeCommit = null, p.state = 'OPEN');
+            const id = `pr:${name}#${p.number}`;
+            const url = p.url ?? `https://github.com/${full}/pull/${p.number}`;
+            // Review summaries (approve, request changes, comment) read like comments; inline review comments need one call per PR and are not fetched.
+            const comments = [...(p.comments ?? []), ...(p.reviews ?? [])].map((c) => c.body ?? '').filter(Boolean);
+            const mc = p.mergeCommit?.oid;
+            // Masked like the stored text, so a full build and an update derive the same trailer notes.
+            out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name));
+            out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160), deadEndKind: 'closed-pr' } : {}) } }));
+            if (out.numbers.has(p.number))
+                out.ambiguous.add(p.number);
+            out.numbers.set(p.number, id);
+            out.urls.set(url, id);
+            const cid = mc ? commit.id(mc) : undefined;
+            if (mc && cid)
+                out.edges.push({ src: id, dst: cid, kind: 'merged_as', at: p.mergedAt ?? '', extra: {} });
+            for (const f of p.files ?? []) {
+                const repoPath = (mc && commit.repo(mc)) || repo;
+                if (!repoPath || !f.path)
+                    continue;
+                out.edges.push({ src: id, dst: `file:${posix.join(normPath(repoPath), f.path)}`, kind: 'touches', at: p.createdAt ?? '', extra: {} });
+            }
+        }
+    }
+    return out;
+}
+// 4. Notes, rules, memory files, curated notes ---------------------------------------------------------------------
+export function walk(dir, match, out, depth = 0, skip) {
+    if (depth > 7 || !existsSync(dir))
+        return;
+    let entries;
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return; // a folder this user cannot read is skipped, never fatal
+    }
+    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+        if (e.isDirectory()) {
+            if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || (e.name.startsWith('.') && e.name !== '.claude'))
+                continue;
+            if (!skip?.(join(dir, e.name)))
+                walk(join(dir, e.name), match, out, depth + 1, skip);
+        }
+        else if (e.isFile() && match(e.name))
+            out.push(join(dir, e.name));
+    }
+}
+const DATED_HEADING = /^#{2,4}\s+(.*?\b(\d{4}-\d{2}-\d{2})\b.*)$/gm;
+/** Splits Markdown at headings that carry a date. Returns [] (with the preamble) when fewer than two such headings exist. */
+export function datedSections(body) {
+    const marks = [...body.matchAll(DATED_HEADING)].map((m) => ({ at: m.index, end: m.index + m[0].length, heading: m[1].trim(), date: m[2] }));
+    const out = marks.map((m, i) => ({ heading: m.heading, date: m.date, body: body.slice(m.end, marks[i + 1]?.at ?? body.length).trim() }));
+    out.preamble = marks.length ? body.slice(0, marks[0].at) : body;
+    return out;
+}
+/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime, and which one it was. */
+function fileDated(f) {
+    if (repoRoot(dirname(f))) {
+        try {
+            const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
+            if (out && !Number.isNaN(Date.parse(out)))
+                return { at: iso(Date.parse(out)), from: 'git' };
+        }
+        catch { } // git missing or slow: the file's mtime below is the date
+    }
+    return { at: iso(statSync(f).mtimeMs), from: 'mtime' };
+}
+const fileDate = (f) => fileDated(f).at;
+export function notesPart(cfg, until) {
+    const nodes = [];
+    const edges = [];
+    const noteIds = [];
+    for (const vault of cfg.vaults) {
+        const files = [];
+        walk(vault, (n) => n.endsWith('.md'), files);
+        for (const f of files) {
+            const rel = normPath(f.slice(vault.length + 1));
+            if (rel.startsWith(GENERATED))
+                continue; // `memory views` output: the memory never reads its own output
+            const raw = readFileSync(f, 'utf8');
+            if (skipReason(f, rel, raw))
+                continue; // the vault writer's output, conflict copies, broken front matter
+            const fm = parseFrontMatter(raw);
+            const h1 = /^# (.+)$/m.exec(fm.body)?.[1];
+            const title = String(fm.data.title ?? h1 ?? basename(f, '.md'));
+            const date = fm.data.date ?? fm.data.created;
+            // Template placeholders such as {{date}} are not dates.
+            const edited = fileDate(f);
+            const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : edited;
+            if (cut(at, until))
+                continue;
+            const id = `note:${cfg.vaults.length > 1 ? `${basename(vault)}/` : ''}${rel}`;
+            const links = [...fm.body.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim());
+            // A note kept as a dated log (Build Log: "## 2026-10-13" sections) becomes one dated section node per heading, so
+            // asof can tell what each day's entry said. The note keeps only the text before its first dated heading.
+            const sections = datedSections(fm.body);
+            // Paraphrase keys: `answers:` (questions the note answers) and `aliases:` are indexed like the title.
+            const keys = Object.fromEntries(['answers', 'aliases'].map((k) => [k, [].concat(fm.data[k] ?? []).filter((v) => typeof v === 'string' && !!v)]).filter(([, v]) => v.length));
+            nodes.push(fullNode({ id, kind: 'note', title, text: (sections.length >= 2 ? sections.preamble : fm.body).trim(), at, until: typeof fm.data.valid_to === 'string' ? fm.data.valid_to : '', project: basename(vault), source: f, extra: { ...keys, edited } }));
+            if (sections.length >= 2) {
+                sections.forEach((sec, k) => {
+                    if (cut(sec.date, until))
+                        return;
+                    const sid = `${id}#${sec.date}-${k}`;
+                    nodes.push(fullNode({ id: sid, kind: 'section', title: `${title}: ${sec.heading}`, text: `${sec.heading}\n\n${sec.body}`.trim(), at: sec.date, project: basename(vault), source: f }));
+                    edges.push({ src: sid, dst: id, kind: 'part_of', at: sec.date, extra: {} });
+                });
+            }
+            noteIds.push({ id, rel: rel.replace(/\.md$/, '').toLowerCase(), lower: basename(f, '.md').toLowerCase(), title: title.toLowerCase(), links });
+        }
+    }
+    const byName = new Map();
+    const byTitle = new Map();
+    for (const n of noteIds) {
+        byName.set(n.lower, [...(byName.get(n.lower) ?? []), n.id]);
+        if (!byTitle.has(n.title))
+            byTitle.set(n.title, n.id);
+    }
+    const seen = new Set();
+    for (const n of noteIds) {
+        for (const l of n.links) {
+            const t = l.toLowerCase();
+            const hits = byName.get(posix.basename(t)) ?? [];
+            // Name first (shortest path wins, as in Obsidian), then a path ending, then the title.
+            const dst = (t.includes('/') ? noteIds.find((x) => x.rel === t || x.rel.endsWith(`/${t}`))?.id : [...hits].sort((a, b) => a.length - b.length || (a < b ? -1 : 1))[0]) ?? byTitle.get(t);
+            if (dst && dst !== n.id && !seen.has(`${n.id}\0${dst}`))
+                (seen.add(`${n.id}\0${dst}`), edges.push({ src: n.id, dst, kind: 'links_to', at: '', extra: { target: l } }));
+        }
+    }
+    return { nodes, edges };
+}
+/** Owner-written curated notes. Inbox, rejected and expired notes stay out; a superseded note stays in, closed by its valid_to. */
+export function curatedPart(cfg, until) {
+    const out = { nodes: [], edges: [] };
+    for (const n of readNotes(cfg.memDir)) {
+        if (n.status !== 'active' && n.status !== 'superseded')
+            continue;
+        const at = n.valid_from || n.created;
+        if (cut(at, until))
+            continue;
+        const cid = `curated:${n.id}`;
+        out.nodes.push(fullNode({ id: cid, kind: n.type, title: n.title, text: n.summary, at, until: n.valid_to, project: n.project, source: n.path, extra: { curated: true, status: n.status, supersedes: n.supersedes } }));
+        const seen = new Set();
+        for (const src of n.sources)
+            seen.has(src) || (seen.add(src), out.edges.push({ src: cid, dst: src, kind: 'derived_from', at, extra: {} }));
+        if (n.supersedes)
+            out.edges.push({ src: cid, dst: `curated:${n.supersedes}`, kind: 'supersedes', at, extra: {} });
+    }
+    return out;
+}
+const CLAUDE_FILES = (d) => [join(d, 'CLAUDE.md'), join(d, '.claude', 'CLAUDE.md')].filter((f) => existsSync(f));
+/** The CLAUDE.md files read: each root's and configured repo's own, those one folder below a root (not a clone of
+ * someone else's project), the ones listed in `ingest.docs`, and Claude Code's own. Deeper ones are third-party
+ * checkouts more often than not; `skippedDocs` lists them. */
+export function docFiles(cfg) {
+    const files = [];
+    const configured = (d) => [...cfg.repos, ...cfg.roots].some((x) => normPath(x) === normPath(d));
+    for (const r of [...cfg.roots, ...cfg.repos]) {
+        files.push(...CLAUDE_FILES(r));
+        // The home folder or the disk root as a root would take in every project: their own files only.
+        if (normPath(r) === normPath(cfg.home) || /^([a-z]:)?\/?$/i.test(normPath(r)))
+            continue;
+        let kids = [];
+        try {
+            kids = readdirSync(r, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => join(r, e.name));
+        }
+        catch { } // an unreadable root has no children to read
+        for (const k of kids)
+            if (!existsSync(join(k, '.git')) || configured(k))
+                files.push(...CLAUDE_FILES(k));
+    }
+    for (const d of cfg.docs)
+        files.push(...(d.endsWith('.md') ? [d].filter((f) => existsSync(f)) : CLAUDE_FILES(d)));
+    if (existsSync(join(cfg.claudeDir, 'CLAUDE.md')))
+        files.push(join(cfg.claudeDir, 'CLAUDE.md'));
+    return [...new Set(files)];
+}
+/** CLAUDE.md files under the roots that are not read, for `thenwise status`. */
+export function skippedDocs(cfg) {
+    const all = [];
+    for (const r of cfg.roots)
+        if (normPath(r) !== normPath(cfg.home))
+            walk(r, (n) => n === 'CLAUDE.md', all);
+    const read = new Set(docFiles(cfg).map(normPath));
+    return all.filter((f) => !read.has(normPath(f))).sort();
+}
+/** One node per heading section of each CLAUDE.md, dated by the file's last commit (else its mtime, and then it is
+ * left out of as-of). Worktrees and clones carry identical files: one per content, the shortest path (the main checkout). */
+export function docsPart(cfg) {
+    const out = { nodes: [], edges: [] };
+    const seenDocs = new Set();
+    for (const f of docFiles(cfg).sort((a, b) => a.length - b.length || (a < b ? -1 : 1))) {
+        const content = readFileSync(f, 'utf8');
+        if (seenDocs.has(content))
+            continue;
+        seenDocs.add(content);
+        const { at, from } = fileDated(f);
+        sections(content).forEach((s, n) => out.nodes.push(fullNode({ id: `doc:${f}#${n}`, kind: 'doc', title: s.title || basename(dirname(f)), text: s.text, at, source: f, extra: { dateFrom: from } })));
+    }
+    return out;
+}
+/** A Markdown file cut at its headings (outside code fences and front matter); sections with no text are left out. */
+export function sections(content) {
+    const out = [{ title: '', text: [] }];
+    let fence = false;
+    const lines = content.split('\n');
+    let fm = lines[0] === '---';
+    lines.forEach((raw, i) => {
+        if (fm) {
+            if (i > 0 && raw.trim() === '---')
+                fm = false;
+            return;
+        }
+        if (raw.trim().startsWith('```'))
+            fence = !fence;
+        const h = fence ? null : /^#{1,6}\s+(.+?)\s*#*$/.exec(raw);
+        if (h)
+            out.push({ title: h[1], text: [] });
+        else
+            out.at(-1).text.push(raw);
+    });
+    return out.map((s) => ({ title: s.title, text: s.text.join('\n').trim() })).filter((s) => s.text.length >= 8);
+}
+/** Claude Code's auto-memory files of the projects that have sessions in the memory. */
+export function memoryPart(cfg, keys, memoryFrom) {
+    const out = { nodes: [], edges: [] };
+    const base = memoryFrom ?? join(cfg.claudeDir, 'projects');
+    // Projects with no chat in the memory still have auto-memory; only excluded projects stay out.
+    const all = existsSync(base) ? readdirSync(base).filter((k) => !cfg.excludeProjects.concat(cfg.ingestExcludeProjects).some((g) => globMatch(g, k))) : [];
+    for (const key of [...new Set([...keys, ...all])].sort()) {
+        const dir = join(base, key, 'memory');
+        if (!existsSync(dir))
+            continue;
+        for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
+            const raw = readFileSync(join(dir, f), 'utf8');
+            const fm = parseFrontMatter(raw);
+            out.nodes.push(fullNode({ id: `mem:${key}/${f}`, kind: 'memory', title: String(fm.data.name ?? basename(f, '.md')), text: fm.body.trim(), at: iso(statSync(join(dir, f)).mtimeMs), project: key, source: join(dir, f) }));
+        }
+    }
+    return out;
+}
+// 5. Files and derived links ---------------------------------------------------------------------------------------
+/** A file node exists while an edge points at it. Its source is the first layer that named it: git, then chats. */
+export function fileNode(id, kinds, aliasRoots) {
+    const abs = id.slice(5);
+    const aliases = aliasRoots.filter((r) => under(abs, r) && abs !== r).map((r) => abs.slice(r.length + 1)).sort();
+    return fullNode({ id, kind: 'file', title: basename(abs), source: kinds.has('changed') || !['read', 'edited', 'ran_in'].some((k) => kinds.has(k)) ? 'git' : 'transcript', extra: aliases.length ? { aliases } : {} });
+}
+export const aliasesOf = (n) => n.extra.aliases ?? [];
+/** Commit and PR links the chats state: a matching subject within 15 minutes, a printed short sha, a printed PR url. */
+export function resolveClaims(claims, look) {
+    const out = new Map();
+    const add = (e) => out.has(edgeKey(e)) || out.set(edgeKey(e), e);
+    for (const c of claims.filter((x) => x.kind !== 'url')) {
+        if (c.kind === 'sub') {
+            const ms = Date.parse(c.at);
+            for (const m of look.bySubject(c.val))
+                if (m.ms >= ms && m.ms - ms <= 15 * 60000)
+                    add({ src: c.node, dst: m.id, kind: 'made', at: c.turnAt, extra: { why: 'subject match' } });
+        }
+        else {
+            const id = look.sha(c.val);
+            if (id)
+                add({ src: c.node, dst: id, kind: 'made', at: c.turnAt, extra: { sha: c.val } });
+        }
+    }
+    for (const c of claims.filter((x) => x.kind === 'url')) {
+        const id = look.prUrl(c.val);
+        if (id)
+            add({ src: c.node, dst: id, kind: 'opened', at: c.turnAt, extra: { url: c.val } });
+    }
+    return [...out.values()];
+}
+export const MENTION_KINDS = new Set(['turn', 'summary', 'note', 'commit', 'pr']);
+/** PR numbers, shas and file paths a text names, in the order they are tried. Whether they point at anything is decided later. */
+export function extractRefs(kind, title, text, home) {
+    if (!MENTION_KINDS.has(kind))
+        return [];
+    const all = `${title}\n${text}`;
+    const out = new Map();
+    const add = (r) => out.has(`${r.type}\0${r.val}`) || out.set(`${r.type}\0${r.val}`, r);
+    const prRe = kind === 'commit' || kind === 'pr' ? /(?<![\w/&])(?:(?:PR|pull request|pull)s?\s*)?#(\d{1,5})\b/gi : /\b(?:PR|pull request|pull)s?\s*#(\d{1,5})\b/gi;
+    for (const m of all.matchAll(prRe))
+        add({ type: 'pr', val: m[1], match: m[0] });
+    for (const m of all.matchAll(/\b[0-9a-f]{7,40}\b/g))
+        if (/\d/.test(m[0]) && /[a-f]/.test(m[0]))
+            add({ type: 'sha', val: m[0], match: m[0] });
+    for (const m of all.matchAll(/(?<![\w./~-])((?:~|\/Users)\/[^\s"'`),;:<>]+|(?:[\w@.-]+\/)+[\w@.-]+\.[A-Za-z0-9]{1,6})(?![\w/])/g)) {
+        const raw = m[1].replace(/[.,]+$/, '');
+        add(/^(~|\/)/.test(raw) ? { type: 'abs', val: normalizePath(raw, home), match: raw } : { type: 'rel', val: raw, match: raw });
+    }
+    return [...out.values()];
+}
+/** The mention edges of one node: each ref that points at exactly one thing, first reference wins per target. */
+export function resolveRefs(id, at, refs, look) {
+    const out = new Map();
+    for (const r of refs) {
+        const dst = r.type === 'pr' ? look.pr(Number(r.val)) : r.type === 'sha' ? look.sha(r.val) : r.type === 'abs' ? (look.file(`file:${r.val}`) ? `file:${r.val}` : undefined) : look.alias(r.val).length === 1 ? look.alias(r.val)[0] : undefined;
+        if (dst && dst !== id && !look.edge(id, dst, 'changed') && !out.has(dst))
+            out.set(dst, { src: id, dst, kind: 'mentions', at, extra: { why: r.type === 'pr' ? 'pr-ref' : r.type === 'sha' ? 'sha' : 'path', match: r.match } });
+    }
+    return [...out.values()];
+}
+/** Notes teammates shared, from team-cache.json (written by `team sync`). Global: a team note belongs to no folder here. */
+export function teamPart(cfg) {
+    const out = { nodes: [], edges: [] };
+    let notes = {};
+    try {
+        notes = JSON.parse(readFileSync(join(cfg.memDir, 'team-cache.json'), 'utf8')).notes ?? {};
+    }
+    catch { } // not on a team, or nothing fetched yet
+    for (const key of Object.keys(notes).sort()) {
+        const n = notes[key];
+        const at = iso(Number(n.updated_at) || 0);
+        out.nodes.push(fullNode({ id: `team:${key}`, kind: 'team', title: String(n.title ?? ''), text: String(n.text ?? ''), at, until: n.status === 'superseded' ? at : '', project: String(n.project ?? ''), source: `team:${n.owner}`, extra: { kind: n.kind, sharedBy: n.owner, status: n.status, ...(n.superseded_by ? { supersededBy: n.superseded_by } : {}) } }));
+    }
+    return out;
+}
+/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one whose folder is. */
+export function checkoutOf(project, repos) {
+    return repos.find((r) => githubSlug(r) === project) ?? repos.find((r) => basename(r) === project);
+}
+/** Session ids this machine holds itself (archived): a teammate's copy of the same chat is dropped, our own records win. */
+function ownSessions(cfg) {
+    try {
+        return new Set(Object.keys(JSON.parse(readFileSync(join(cfg.memDir, 'archive', 'manifest.json'), 'utf8'))).map((rel) => (rel.split('/')[1] ?? '').replace(/\.jsonl$/, '')));
+    }
+    catch {
+        return new Set(); // no archive yet
+    }
+}
+export const teamChats = (cfg) => {
+    const own = ownSessions(cfg);
+    return readChats(cfg.memDir).filter((c) => !own.has(c.session));
+};
+/** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,
+ * with `part_of` edges and links to this machine's checkout of the project's files. Commit and PR links come from teamClaims. */
+export function teamChatsPart(cfg, repos = cfg.repos, chats = teamChats(cfg)) {
+    const out = { nodes: [], edges: [] };
+    const checkouts = new Map();
+    for (const c of chats) {
+        if (!checkouts.has(c.project))
+            checkouts.set(c.project, checkoutOf(c.project, repos));
+        const repo = checkouts.get(c.project);
+        const sid = `tses:${c.owner}/${c.session}`;
+        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }));
+        for (const t of c.turns) {
+            const at = iso(t.at);
+            const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`;
+            const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {};
+            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead } }));
+            out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} });
+            if (repo)
+                for (const p of t.paths)
+                    out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} });
+        }
+    }
+    return out;
+}
+/** The commit shas and PR urls teammates' turns name, to resolve like a chat's own claims. */
+export function teamClaims(cfg, chats = teamChats(cfg)) {
+    const out = new Map();
+    const add = (c) => out.set(c.node, [...(out.get(c.node) ?? []), c]);
+    for (const c of chats) {
+        for (const t of c.turns) {
+            const node = `tturn:${c.owner}/${t.id}`;
+            const at = iso(t.at);
+            for (const v of t.shas)
+                add({ node, kind: 'sha', val: v, at, turnAt: at });
+            for (const v of t.prs)
+                add({ node, kind: 'url', val: v, at, turnAt: at });
+        }
+    }
+    return out;
+}

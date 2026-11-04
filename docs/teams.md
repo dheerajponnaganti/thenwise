@@ -1,5 +1,8 @@
 # Thenwise Teams
 
+<p align="center"><img src="../assets/readme/teams.png" width="100%" alt="The shared depot. Three teammates each keep a full memory on their own machine, each a window over its own ground: maya in Claude Code, theo in Copilot CLI, ines in Codex. Maya shares the shards decision on purpose: it passes the mask and reaches the team server the team runs itself, then arrives at the next sync on theo's and ines's machines, named as hers. Raw chats stay on every machine. Thenwise Hub reads the shared catalog on a laptop or a phone."></p>
+
+
 A team shares the notes its members choose (decisions, dead ends, findings) through one small server the team runs itself. Chats stay home unless a member shares a project. Raw transcripts never travel.
 
 ## Run the server
@@ -140,3 +143,26 @@ Teammates' Claude finds shared chats like its own memory and names whose chat it
 | Your notes | Until you share one | The notes you share, masked at send |
 | Teammates' notes | A copy, fetched at each sync | Already there |
 | Tokens | `team.json`, readable by you only | Only a hash of each token |
+
+## Solo or team?
+
+Start alone. Add your team when you want to.
+
+| | **Solo** | **Team** |
+| --- | --- | --- |
+| **What you run** | Nothing. Install the plugin and keep working. | One small server, hosted by one person on the team. |
+| **Setup** | Install the plugin, done. | Plus `team serve` once, then `invite` and `join`. |
+| **Server, account, open port** | None of them. | Only that one server, which you own. |
+| **Where your memory lives** | Your machine. | Still your machine. Chosen notes also live on the team server. |
+| **What leaves your machine** | Nothing. | Only the notes you choose to share, and the chats of projects you share, masked. |
+| **Your chats** | Stay home. | Still stay home, unless you share a project's chats. Then masked passages of that project's chats go to the team server. |
+| **What search covers** | Your whole history. | Your whole history, plus everything your team shared. |
+| **Cost** | Free. | Free, on hardware you already have. |
+
+## More options
+
+- Invite tokens last one year (`--days N` to change). `team invite --again <name>` brings a removed person back to their notes, and a removed name is never handed to someone else. `team members` lists everyone.
+- `team pull` restores what a machine shared. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
+- If the server is down, shares wait in a queue and retry at the next session start.
+- `"team": { "auto_share": ["decision", "dead_end"], "auto_share_projects": ["<project>"] }` in config.json shares the notes you accept in those projects, and `"capture": { "auto": true }` distills new chats into inbox proposals once a day (through `claude -p`). Both are off by default.
+- The API is versioned under `/v1` and described in `openapi.json`. Teammates on different tools read each other's shared chats, and every shared result names the person and the tool it came from.

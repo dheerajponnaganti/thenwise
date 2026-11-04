@@ -29,7 +29,8 @@ jobs:
           HEAD: ${{ github.sha }}
         run: |
           if files=$(git diff --name-only "$BASE" "$HEAD"); then
-            if printf '%s\n' "$files" | grep -vE '^(.*\.md|docs/.*|assets/.*|LICENSE|\.github/ISSUE_TEMPLATE/.*)$' | grep -q .; then
+            # plugin/ is what users install, Markdown commands and skills included, so it is never docs only.
+            if printf '%s\n' "$files" | grep -E '^plugin/' | grep -q . || printf '%s\n' "$files" | grep -vE '^(.*\.md|docs/.*|assets/.*|LICENSE|\.github/ISSUE_TEMPLATE/.*)$' | grep -q .; then
               echo code=true >> "$GITHUB_OUTPUT"
             else
               echo code=false >> "$GITHUB_OUTPUT"
@@ -129,6 +130,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -138,6 +140,12 @@ jobs:
       - run: npm run build
       - run: node scripts/pack-check.mjs
       - run: node scripts/hooks-check.mjs
+      # Every tool installs plugin/ from main, so a merge publishes it. Only a release may change it, built from its own source.
+      - name: plugin/ changes only in a release, as its source built
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-plugin-build.mjs --pr "$BASE"
   fresh-install:
     needs: changed
     if: needs.changed.outputs.code == 'true'

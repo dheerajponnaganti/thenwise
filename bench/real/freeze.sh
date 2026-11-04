@@ -1,12 +1,17 @@
 #!/bin/zsh
-# Builds one evaluation round: a clone of the release branch (plugin/) and frozen stores gate/ (the owner's history) and
+# Builds one evaluation round: the latest release's plugin (plugin/) and frozen stores gate/ (the owner's history) and
 # e3/ (a second project, its folders from the e3 set in ~/.memory/eval/records.json). Chats still running at the freeze (written in the last 15 minutes) are forgotten,
 # so the session that builds or runs the evaluation never answers its own questions.
 # Usage: bench/real/freeze.sh <round dir> [until ISO, default now]   Then: THENWISE_EVAL_ROOT=<round dir> node bench/real/run.ts ...
 set -e
 R=${1:?usage: freeze.sh <round dir> [until]}; UNTIL=${2:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 mkdir -p $R/gate/store $R/e3/store; echo $UNTIL > $R/frozen-at
-[ -d $R/plugin ] || git clone -q --single-branch --branch release ~/memory-v2 $R/plugin
+# The latest release's plugin/ folder; releases before plugin/ existed live on the release branch.
+SRC=${THENWISE_REPO:-$HOME/thenwise-public}; TAG=$(git -C $SRC describe --tags --abbrev=0 --match 'v*' origin/main)
+if [ ! -d $R/plugin ]; then
+  if git -C $SRC cat-file -e "$TAG:plugin" 2>/dev/null; then git -C $SRC archive "$TAG" plugin | tar -x -C $R
+  else mkdir -p $R/plugin && git -C $SRC archive origin/release | tar -x -C $R/plugin; fi  # GitHub's branch: a local release branch may be private history
+fi
 python3 - $R <<'EOF'
 import json, os, sys
 r = sys.argv[1]

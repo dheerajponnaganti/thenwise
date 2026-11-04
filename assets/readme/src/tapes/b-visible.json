@@ -1,0 +1,73 @@
+{
+ "comment": "Captured in the seeded shop after seed.py --stopped, run as Claude Code (CLAUDE_PLUGIN_ROOT set): the session-start systemMessage, `hook status` up to its Details, and `thenwise shown` with each block's heading line (bodies folded).",
+ "title": "claude · shop",
+ "caption": "real output · block bodies folded",
+ "lines": [
+  {
+   "text": "Thenwise added: where a Claude Code session stopped 20 min ago (ses:7f4e2b90), and this project's recent history. /thenwise:shown lists it.",
+   "color": "#E58A6E"
+  },
+  {
+   "text": ""
+  },
+  {
+   "text": "› /thenwise:status"
+  },
+  {
+   "text": "memory   3 chats remembered; last sync 0 min ago",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": "session  handoff, brief, pointers, file hint added, about 621 tokens; /thenwise:shown lists them",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": "hooks    last hook ran 0 min ago",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": "team     not in a team",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": "inbox    empty",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": "errors   no errors in the last 24 hours",
+   "color": "#F1E9D6",
+   "hang": 9
+  },
+  {
+   "text": ""
+  },
+  {
+   "text": "› /thenwise:shown"
+  },
+  {
+   "text": "What Thenwise added to the agent in session 8ca9bda6-afb9-44f6-b68d-5fc498eb603e: 4 blocks, about 621 tokens, oldest first.",
+   "color": "#F1E9D6"
+  },
+  {
+   "text": "== 2026-11-04 17:21:31 · session-start · handoff · about 258 tokens",
+   "color": "#9A8F7E"
+  },
+  {
+   "text": "== 2026-11-04 17:21:31 · session-start · brief · about 132 tokens",
+   "color": "#9A8F7E"
+  },
+  {
+   "text": "== 2026-11-04 17:21:31 · prompt · pointers · about 152 tokens",
+   "color": "#9A8F7E"
+  },
+  {
+   "text": "== 2026-11-04 17:21:31 · read · file hint · about 79 tokens",
+   "color": "#9A8F7E"
+  }
+ ]
+}

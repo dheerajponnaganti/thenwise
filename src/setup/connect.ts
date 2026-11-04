@@ -1,5 +1,6 @@
 // `thenwise connect <tool>`: adds the memory tools to another coding tool through its MCP config, so that tool can read
-// this memory and whatever a team shared into it. It reads only: chats from those tools are not captured.
+// this memory and whatever a team shared into it. Codex and Antigravity chats are read by their own readers; connect adds
+// only the memory tools.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'

@@ -10,7 +10,9 @@
       "env_vars": [
         "THENWISE_HOME",
         "THENWISE_SYNC",
-        "PWD"
+        "PWD",
+        "CODEX_HOME",
+        "COPILOT_HOME"
       ],
       "default_tools_approval_mode": "approve"
     }

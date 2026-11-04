@@ -539,7 +539,7 @@ export function openQuestions(g: Graph, since: number, now = Date.now(), max = 3
     for (const q of (n.extra.questions as Q[] | undefined) ?? []) if (!open.some((o) => o.q.id === q.id)) open.push({ q, n })
   }
 
-  return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool === 'Copilot' ? 'a Copilot chat' : 'a Claude Code chat'}, ${ago(n.at, now)} (${n.id}): ${cut(q.text, 200)}`)
+  return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool ? `a ${n.extra.tool} chat` : 'a Claude Code chat'}, ${ago(n.at, now)} (${n.id}): ${cut(q.text, 200)}`)
 }
 
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since

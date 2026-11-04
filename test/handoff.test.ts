@@ -51,6 +51,16 @@ test('a tool call with no result at the end is the step the chat stopped in; a c
   assert.equal(done.openCall, undefined)
 })
 
+test('a node test run with flags before --test is a test run too (live check, 2026-11-04)', () => {
+  const s = parseSession([
+    user('u1', '2026-11-04T10:00:00Z', 'Run the tests'),
+    assistant('a1', '2026-11-04T10:00:05Z', [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'node --experimental-strip-types --test test/migrate.test.ts 2>&1 | tail -60' } }]),
+    user('r1', '2026-11-04T10:00:09Z', [{ type: 'tool_result', tool_use_id: 't1', content: 'pass 9' }]),
+  ], 's1', '/home/u')
+  assert.equal(s.turns[0]!.tests.length, 1)
+  assert.equal(s.turns[0]!.tests[0]!.failed, false)
+})
+
 test('a test run keeps its command and its result', () => {
   const s = parseSession([
     user('u1', '2026-11-03T10:00:00Z', 'Run the tests'),
@@ -83,7 +93,7 @@ test('Copilot: an abort and a shutdown on an error stop the turn the same way', 
 // ---- the handoff block, read from live chat files in a temp home ----
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -372,7 +382,7 @@ test('two sessions at once: the asking session is found by its recorded agent, n
   assert.match(handoffBlock(cfg, w.proj, ownChat(cfg, w.proj, true)), /chat="ses:cc-busy"/)
 })
 
-test('a tool attached with thenwise connect matches no recorded agent and skips nothing', () => {
+test('a command run outside any agent skips nothing', () => {
   const w = world()
   claudeChat(w.home, w.proj, 'cc-1', new Date(Date.now() - 20_000))
   assert.deepEqual(ownChat(w.cfg(), w.proj, false), [])
@@ -422,5 +432,59 @@ test('Codex and Antigravity chats hand over too, named by their tool', () => {
     assert.match(agy, /task: "Shard the price cache"/)
   } finally {
     keep === undefined ? delete process.env.CODEX_HOME : (process.env.CODEX_HOME = keep)
+  }
+})
+
+test('review 0.2.0 F1: memory_resume in a tool whose hooks have not run (Codex before /hooks trust) still skips its own chat', () => {
+  const keep = { HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME }
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-other', new Date(Date.now() - 5 * 60_000))
+  const day = join(w.home, '.codex', 'sessions', '2026', '11', '04')
+  mkdirSync(day, { recursive: true })
+  const cx = (type: string, payload: object) => JSON.stringify({ timestamp: new Date().toISOString(), type, payload })
+  writeFileSync(join(day, 'rollout-me.jsonl'), `${[cx('session_meta', { id: 'cx-me', cwd: w.proj, source: 'cli', thread_source: 'user' }), cx('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'continue the work' }] })].join('\n')}\n`)
+  try {
+    process.env.HOME = w.home
+    delete process.env.CODEX_HOME
+    const s = createServer(() => join(w.home, '.thenwise/graph.db'), w.proj)
+    s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    const t = (s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'memory_resume', arguments: {} } }) as any).result.content[0].text
+    assert.match(t, /chat="ses:cc-other"/)
+  } finally {
+    for (const [k, v] of Object.entries(keep)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+  }
+})
+
+test('review 0.2.0 F3: after a Codex compaction the resume block reads the rollout through its converter', () => {
+  const keep = process.env.PLUGIN_ROOT
+  const w = world()
+  const file = join(w.home, 'rollout-c.jsonl')
+  const cx = (type: string, payload: object, s: number) => JSON.stringify({ timestamp: new Date(Date.now() - 60_000 + s * 1000).toISOString(), type, payload })
+  writeFileSync(file, `${[
+    cx('session_meta', { id: 'cx-c', cwd: w.proj, source: 'cli', thread_source: 'user' }, 0),
+    cx('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Shard the price cache' }] }, 1),
+    cx('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done with two shards so far.' }] }, 2),
+  ].join('\n')}\n`)
+  try {
+    process.env.PLUGIN_ROOT = '/plugin'
+    const out = runHook('session-start', { session_id: 'cx-c', source: 'compact', cwd: w.proj, transcript_path: file }, { dir: join(w.home, '.thenwise'), cli: 'none' })
+    assert.match(out, /prompt: Shard the price cache/)
+  } finally {
+    keep === undefined ? delete process.env.PLUGIN_ROOT : (process.env.PLUGIN_ROOT = keep)
+  }
+})
+
+test('review 0.2.0 F2: Antigravity takes no text after a read, so the read hook neither queries nor spends the hint', () => {
+  const keep = process.env.ANTIGRAVITY_CONVERSATION_ID
+  const w = world()
+  const dir = join(w.home, '.thenwise')
+  writeFileSync(join(dir, 'graph.db'), '')
+  try {
+    process.env.ANTIGRAVITY_CONVERSATION_ID = 'ag1'
+    const out = runHook('read', { session_id: 'ag1', cwd: w.proj, tool_name: 'Read', tool_input: { file_path: join(w.proj, 'src/cache.ts') } }, { dir, cli: 'none' })
+    assert.equal(out, '')
+    assert.equal(existsSync(join(dir, 'hook-state', 'ag1.lines')), false)
+  } finally {
+    keep === undefined ? delete process.env.ANTIGRAVITY_CONVERSATION_ID : (process.env.ANTIGRAVITY_CONVERSATION_ID = keep)
   }
 })

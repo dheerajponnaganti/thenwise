@@ -120,14 +120,23 @@ export function codexConverter(sessionId: string, cwd: string): (line: string) =
         const tools = commandTools(item)
         if (item.cwd && typeof item.cwd === 'string') cwd = localPath(item.cwd)
 
-        return [row('assistant', tools), row('user', [{ type: 'tool_result', tool_use_id: tools[0]!.id, content: String(item.aggregated_output ?? ''), is_error: typeof item.exit_code === 'number' && item.exit_code !== 0 }])]
+        // One command can read several files: each read gets a result, the first one carrying the output.
+        const failed = typeof item.exit_code === 'number' && item.exit_code !== 0
+
+        return [row('assistant', tools), row('user', tools.map((t, j) => ({ type: 'tool_result', tool_use_id: t.id, content: j ? '' : String(item.aggregated_output ?? ''), is_error: failed })))]
       }
+      // A completed item is a finished step: each call gets its result row, so none reads as a step the chat stopped in.
+      const done = (tools: { id: string }[]) => row('user', tools.map((t) => ({ type: 'tool_result', tool_use_id: t.id, content: '' })))
       if (item.type === 'FileChange') {
         const tools = fileTools(item)
 
-        return tools.length ? [row('assistant', tools)] : []
+        return tools.length ? [row('assistant', tools), done(tools)] : []
       }
-      if (item.type === 'McpToolCall') return [row('assistant', [{ type: 'tool_use', id: item.id, name: `mcp__${item.server}__${item.tool}`, input: item.arguments ?? {} }])]
+      if (item.type === 'McpToolCall') {
+        const tools = [{ type: 'tool_use', id: String(item.id), name: `mcp__${item.server}__${item.tool}`, input: item.arguments ?? {} }]
+
+        return [row('assistant', tools), done(tools)]
+      }
     }
 
     return []

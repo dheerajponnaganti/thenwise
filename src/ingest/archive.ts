@@ -26,6 +26,7 @@ interface Source {
   ctimeMs: number
   /** A Copilot, Codex or Antigravity chat: makes a fresh converter to Claude Code's line shape for each read. */
   convert?: () => (line: string) => string[]
+  tool?: string // copilot, codex or antigravity
 }
 export interface ManifestEntry {
   source: string
@@ -275,18 +276,16 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   const sources = new Map<string, Source>()
   collect(join(base, 'claude-projects'), sources, false)
   collect(join(cfg.claudeDir, 'projects'), sources, true)
-  for (const c of copilotSources(cfg.home)) {
-    const st = statSync(c.path)
-    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => copilotConverter(c.id, c.cwd) })
+  // A chat file can go between the listing and the stat (Copilot clears a session, Codex moves a rollout): skip it.
+  const other = (tool: string, found: { rel: string; path: string; id: string; cwd: string }[], conv: (id: string, cwd: string) => (line: string) => string[]) => {
+    for (const c of found) {
+      const st = statSync(c.path, { throwIfNoEntry: false })
+      if (st) sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, tool, convert: () => conv(c.id, c.cwd) })
+    }
   }
-  for (const c of codexSources(cfg.home)) {
-    const st = statSync(c.path)
-    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => codexConverter(c.id, c.cwd) })
-  }
-  for (const c of antigravitySources(cfg.home)) {
-    const st = statSync(c.path)
-    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => antigravityConverter(c.id, c.cwd) })
-  }
+  other('copilot', copilotSources(cfg.home), copilotConverter)
+  other('codex', codexSources(cfg.home), codexConverter)
+  other('antigravity', antigravitySources(cfg.home), antigravityConverter)
   const res: ArchiveResult = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 }
   if (cfg.off) return { ...res, off: sources.size }
   mkdirSync(out, { recursive: true, mode: 0o700 })
@@ -386,9 +385,9 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
       }
       // Copilot can replace its chat file. A /rewind withdraws turns on purpose; losing turns any other way must not lose them here too.
       // shortcut: the archived copy is kept only until the file outgrows it, merge by event id if this log line ever shows up.
-      if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !/"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8'))) {
+      if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !(src.tool === 'copilot' && /"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8')))) {
         rmSync(tmp, { force: true })
-        logger('archive', cfg.memDir).warn('copilot_chat_shrank', { rel, lines: masked.lines, kept: old.lines })
+        logger('archive', cfg.memDir).warn(`${src.tool ?? 'converted'}_chat_shrank`, { rel, lines: masked.lines, kept: old.lines })
         manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, pending: masked.pending }
         for (const line of old.unparsed) res.unparsed.push({ rel, line })
         res.skipped++

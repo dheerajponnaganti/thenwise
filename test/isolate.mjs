@@ -8,6 +8,7 @@ import { join } from 'node:path'
 // real ~/.thenwise. It once did: the R10-H4 test wrote the real update-check.json and failed whenever a real session had
 // stamped an older version there.
 process.env.HOME = mkdtempSync(join(tmpdir(), 'tw-home-'))
+process.env.USERPROFILE = process.env.HOME // Windows reads the home from USERPROFILE
 delete process.env.THENWISE_HOME
 delete process.env.MEMORY_HOME
 // Copilot chats are read from COPILOT_HOME when set: tests read only their temp home's .copilot.

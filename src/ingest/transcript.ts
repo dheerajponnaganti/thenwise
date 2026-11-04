@@ -22,8 +22,10 @@ export interface Turn {
   prUrls: Set<string> // urls printed by `gh pr create`
   /** Each file change as hashes of the text before and after (no text kept), in order: an undo shows as a hash coming back. */
   changes: { file: string; oldHash: string; newHash: string; at: string }[]
-  /** Each test run and whether it failed. */
-  tests: { at: string; failed: boolean }[]
+  /** Each test run, its command (cut to 200 characters) and whether it failed. */
+  tests: { at: string; failed: boolean; cmd?: string }[]
+  /** The tool stopped this turn: a usage or rate limit, or an API error. Its text is not part of the reply. */
+  cutOff?: { at: string; text: string }
 }
 export interface Summary {
   id: string
@@ -42,6 +44,8 @@ export interface Session {
   paths: Set<string> // every path any tool call touched
   capped: number // rows stamped later than the file's change time (plus a day) or now, moved back to the file time
   sub: boolean // a subagent file: its turns belong to session `id`, which is the parent
+  /** The last tool call of the last turn that never got a result: the chat stopped mid-step. */
+  openCall?: { name: string; detail: string; at: string }
 }
 
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users|\/home|\/root)\/[^\s"'`;|&)<>]+|[A-Za-z]:[\\/][^\s"'`;|&)<>]+)/g
@@ -186,7 +190,8 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
   const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity
   const cut = until ? Date.parse(until) : Infinity
   const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub }
-  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test'; at?: string }>()
+  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test'; at?: string; cmd?: string }>()
+  const open = new Map<string, { turn: Turn; name: string; detail: string; at: string }>() // tool calls with no result yet
   let turn: Turn | null = null
   for (const line of typeof text === 'string' ? text.split('\n') : text) {
     let d: any
@@ -216,11 +221,12 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
       }
       if (Array.isArray(content)) {
         for (const b of content) {
+          if (b?.type === 'tool_result') open.delete(b.tool_use_id)
           const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined
           if (!hit) continue
           const out = textOf(b.content)
           if (hit.kind === 'agent') out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))) // a subagent's report to the turn that asked
-          else if (hit.kind === 'test') hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true })
+          else if (hit.kind === 'test') hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, ...(hit.cmd ? { cmd: hit.cmd } : {}) })
           else if (hit.kind === 'commit') {
             for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {
               hit.turn.commitShas.add(m[1]!)
@@ -235,14 +241,19 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
         turn = { id: d.uuid, at: d.timestamp ?? '', prompt: p, reply: [], agentReports: [], reads: new Set(), edits: new Set(), ran: new Set(), commitMsgs: [], commitShas: new Set(), prUrls: new Set(), changes: [], tests: [] }
         s.turns.push(turn)
       }
+    } else if (d.isApiErrorMessage === true) {
+      // "You've hit your session limit · resets 10pm": the tool stopped the turn. Not a reply, and never searched as one.
+      if (turn) turn.cutOff = { at: d.timestamp ?? turn.at, text: textOf(content).replace(/\s+/g, ' ').trim().slice(0, 160) }
     } else if (typeof content === 'string') {
-      if (turn && content) turn.reply.push(content)
+      if (turn && content) (delete turn.cutOff, turn.reply.push(content)) // work after an error means the turn went on
     } else if (Array.isArray(content)) {
+      if (turn && content.length) delete turn.cutOff
       for (const b of content) {
         if (b?.type === 'text' && turn && typeof b.text === 'string') turn.reply.push(b.text)
         if (b?.type !== 'tool_use') continue
         const inp = b.input ?? {}
         const file = inp.file_path ?? inp.notebook_path
+        if (turn && typeof b.id === 'string') open.set(b.id, { turn, name: String(b.name), detail: String(typeof inp.command === 'string' ? inp.command : (file ?? '')).replace(/\s+/g, ' ').slice(0, 120), at: d.timestamp ?? turn.at })
         if (typeof file === 'string') {
           const p = normalizePath(file, home, s.cwd || '/')
           s.paths.add(p)
@@ -258,7 +269,7 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             s.paths.add(p)
             turn?.ran.add(p)
           }
-          if (turn && TEST_RUN.test(inp.command)) pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at })
+          if (turn && TEST_RUN.test(inp.command)) pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) })
           if (turn && GIT_COMMIT.test(inp.command)) {
             const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command)
             const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n')
@@ -273,6 +284,9 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
       }
     }
   }
+  const last = s.turns.at(-1)
+  const stuck = [...open.values()].filter((o) => o.turn === last).pop()
+  if (stuck) s.openCall = { name: stuck.name, detail: stuck.detail, at: stuck.at }
 
   return s
 }

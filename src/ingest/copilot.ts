@@ -85,7 +85,7 @@ export function copilotConverter(sessionId: string, cwd: string): (line: string)
     const x = d?.data ?? {}
     if (d?.type === 'session.start' && typeof x.context?.cwd === 'string') cwd = x.context.cwd
     // A subagent's events share the file; its report reaches the main chat through the task tool's result.
-    if (d?.agentId) return []
+    if (d?.agentId || x.parentToolCallId) return [] // older files mark it only with parentToolCallId
     const row = (type: string, content: unknown, more = {}) => JSON.stringify({ type, uuid: d.id, timestamp: d.timestamp, cwd, sessionId, entrypoint: COPILOT_ENTRYPOINT, ...more, message: { role: type, content } })
     // Messages a skill, an agent or autopilot added are not the person's prompts.
     if (d?.type === 'user.message' && typeof x.content === 'string') return x.source || x.isAutopilotContinuation ? [] : [row('user', x.content)]
@@ -99,6 +99,7 @@ export function copilotConverter(sessionId: string, cwd: string): (line: string)
 
       return blocks.length ? [row('assistant', blocks)] : []
     }
+    if (d?.type === 'session.task_complete' && typeof x.summary === 'string' && x.summary) return [row('assistant', [{ type: 'text', text: x.summary }])]
     if (d?.type === 'tool.execution_complete') {
       const out = typeof x.result?.content === 'string' ? x.result.content : ''
 
@@ -107,6 +108,11 @@ export function copilotConverter(sessionId: string, cwd: string): (line: string)
 
     return []
   }
+}
+
+/** The project of the running Copilot session. Its MCP servers start in the plugin folder and get no project variable, only this session id. */
+export function copilotSessionCwd(home: string, id = process.env.COPILOT_AGENT_SESSION_ID): string {
+  return id && !/[\\/]/.test(id) ? workspaceCwd(join(copilotDir(home), 'session-state', id, 'workspace.yaml')) : ''
 }
 
 /** The folder a Copilot chat ran in, from its workspace.yaml (a flat file: one `cwd:` line). */

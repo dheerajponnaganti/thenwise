@@ -13,7 +13,7 @@ const flag = (name: string) => {
 
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -122,6 +122,25 @@ if (cmd === 'hook') {
   const { hookInput } = await import('./hooks/entry.ts')
   const out = runHook(vaultArg ?? '', vaultArg === 'sync-run' || vaultArg === 'status' ? {} : await hookInput(), { dir: resolveDataDir(), cli: process.argv[1]! })
   if (out) process.stdout.write(`${out}\n`)
+  process.exit(0)
+}
+
+if (cmd === 'connect') {
+  const { apply, plan, TOOLS } = await import('./setup/connect.ts')
+  const tool = process.argv[3] as (typeof TOOLS)[number]
+  if (!TOOLS.includes(tool)) {
+    console.error(`usage: thenwise connect ${TOOLS.join('|')} [--dry-run] [--remove]`)
+    process.exit(2)
+  }
+  const p = plan(tool, { remove: process.argv.includes('--remove') })
+  if (process.argv.includes('--dry-run')) {
+    console.log(`${tool}: would be ${p.note} in ${p.file}\n${p.snippet}`)
+    process.exit(0)
+  }
+  apply(p)
+  console.log(`${tool}: ${p.note} in ${p.file}`)
+  if (p.next === null && /left alone/.test(p.note)) console.log(p.snippet)
+  else if (p.note === 'connected') console.log(`Restart ${tool} to load the memory tools. It can read this memory and what your team shared; its own chats are not remembered yet.`)
   process.exit(0)
 }
 

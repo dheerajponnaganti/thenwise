@@ -2,12 +2,14 @@
 // One store connection per server, reopened when the graph file is replaced on disk (ingest renames a new file in).
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
+import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { Graph, swapPending } from '../query/engine.ts'
 import * as c from '../query/commands.ts'
 
@@ -70,7 +72,9 @@ function version(): string {
   }
 }
 
-export function createServer(dbPath: () => string, project = process.env.CLAUDE_PROJECT_DIR ?? process.cwd()) {
+export function createServer(dbPath: () => string, fixedProject?: string) {
+  // Read at each open: Copilot may start this server before it writes the session's workspace file.
+  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (copilotSessionCwd(homedir()) || process.cwd())
   let graph: Graph | undefined
   let sig = ''
   let ready = false
@@ -92,6 +96,7 @@ export function createServer(dbPath: () => string, project = process.env.CLAUDE_
       const g = new Graph(p, { lazy: true })
       const cfg = loadConfigSafe().config
       // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
+      const project = here()
       if (cfg && isOff(cfg, project)) g.scope = OFF
       else if (project && cfg?.scope !== 'all') g.scopeTo(project)
       try {
@@ -149,7 +154,9 @@ export function createServer(dbPath: () => string, project = process.env.CLAUDE_
       const nudge = nudged ? '' : ' To tell us, run /thenwise:report.'
       nudged = true
 
-      return text(`The memory could not answer this call (error ${code}). If an ingest is running, try again in a moment; if it keeps failing, run \`thenwise ingest\`. Details: \`thenwise logs --errors\`.${nudge}`, true)
+      // Copilot's sandbox blocks the shared data folder, and the error alone does not say so.
+      const sandbox = process.env.COPILOT_PLUGIN_ROOT ? ` If Copilot's sandbox is on, allow ${dirname(dbPath())} in sandbox.userPolicy, or run with --no-sandbox.` : ''
+      return text(`The memory could not answer this call (error ${code}).${sandbox} If an ingest is running, try again in a moment; if it keeps failing, run \`thenwise ingest\`. Details: \`thenwise logs --errors\`.${nudge}`, true)
     }
   }
 

@@ -142,11 +142,14 @@ test('a Codex hook payload reads like the others: a patch names its file', () =>
   assert.equal(b.tool_input.command, 'ls')
 })
 
-test('Codex plugin files: one version, no pre-edit hook, the server starts in the plugin folder', () => {
+test('Codex plugin files: one version, a pre-edit hint on apply_patch only, the server starts in the plugin folder', () => {
   const read = (f: string) => JSON.parse(readFileSync(resolve(f), 'utf8'))
   assert.equal(read('.codex-plugin/plugin.json').version, read('package.json').version)
   assert.equal(read('.codex-plugin/plugin.json').hooks, './hooks/codex.json')
-  assert.ok(!('PreToolUse' in read('hooks/codex.json').hooks))
+  // Checked live on Codex 0.164 (2026-11-04): a PreToolUse hook that is missing or times out never blocks apply_patch.
+  const pre = read('hooks/codex.json').hooks.PreToolUse
+  assert.deepEqual(pre.map((m: any) => m.matcher), ['^apply_patch$'])
+  assert.match(pre[0].hooks[0].command, /hook plan$/)
   const server = read('.mcp.codex.json').mcpServers.thenwise
   assert.equal(server.cwd, '.')
   assert.ok(server.env_vars.includes('PWD') && server.env_vars.includes('THENWISE_HOME'))

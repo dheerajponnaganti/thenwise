@@ -91,7 +91,7 @@ test('PL4: after ingest, search finds an old plan version as a dated plan record
   assert.equal(rows.length, 2)
   const out = search(new Graph(w.path('inc.db')), 'rotate zanzibar keys')
   assert.match(out, /plan:/)
-  assert.match(out, /date: \d{4}-\d\d-\d\d/)
+  assert.match(out, /\n   \d{4}-\d\d-\d\d \d\d:\d\d · /)
   assert.match(rows[0]!.id, /^plan:.+\/root\/task_plan@\d{4}-\d\d-\d\dT/)
   assert.match(rows[0]!.title, /^task_plan \(\d{4}-\d\d-\d\d \d\d:\d\d\) Zanzibar migration/)
   w.destroy()

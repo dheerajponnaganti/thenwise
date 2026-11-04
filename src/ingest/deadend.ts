@@ -30,8 +30,13 @@ export function deadEnd(text: string): string | undefined {
   return undefined
 }
 
-/** A commit: `Revert "..."` in the subject, else a phrase in the body. */
-export const commitDeadEnd = (subject: string, body: string): string | undefined => (/^Revert\b/.test(subject) ? subject : deadEnd(body))
+/** A commit: `Revert "..."` in the subject, else a phrase in the body. A sentence that is itself about dead ends (release
+ * notes of a tool that records them) describes the feature, not an approach that failed. */
+export const commitDeadEnd = (subject: string, body: string): string | undefined => {
+  if (/^Revert\b/.test(subject)) return subject
+  const d = deadEnd(body)
+  return d && !/\bdead[- ]?ends?\b/i.test(d) ? d : undefined
+}
 
 export type DeadEndKind = 'undone' | 'failed-test' | 'marked' | 'phrase'
 export interface Structural {

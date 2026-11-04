@@ -150,7 +150,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
     const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), ...questionFields([t.prompt, ...t.reply].join('\n')) } })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')) } })
     edge(tid, sid, 'part_of', t.at)
     if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)

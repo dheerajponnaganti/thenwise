@@ -101,15 +101,15 @@ test('R7-H4 R7-B3: one NEWER line per answer, with its reason; later records tha
     { id: 'turn:b1', text: filler('Quokka cache exporter now uses sixteen shards instead of eight.'), at: '2026-10-09T10:00:00Z', source: 'ses:b' },
     { id: 'turn:a2', text: filler('Quokka cache warmup reads the manifest first.'), at: '2026-10-02T10:00:00Z', source: 'ses:c' },
     { id: 'turn:b2', text: filler('Quokka cache warmup now skips the manifest when it is fresh.'), at: '2026-10-10T10:00:00Z', source: 'ses:d' },
-  ])
+  ], [['turn:b1', 'turn:a1', 'supersedes'], ['turn:b2', 'turn:a2', 'supersedes']])
   const out = c.search(g, 'quokka cache shards')
-  assert.equal((out.match(/NEWER on this topic/g) ?? []).length, 1)
-  assert.match(out, /NEWER on this topic \(shares the words [^)]+\)/)
+  assert.equal((out.match(/NEWER: /g) ?? []).length, 1)
+  assert.match(out, /NEWER: turn:b\d \([\d-]+\), supersedes it\./)
   const g2 = graph([
     { id: 'note:gw', kind: 'note', title: 'Gateway', text: 'Zebra cache plan for the API gateway: a small in-memory map, cleared on deploy, owned by the platform team.', at: '2026-10-01T10:00:00Z', source: '/v/gw.md' },
     { id: 'note:img', kind: 'note', title: 'Images', text: 'Zebra cache plan for mobile thumbnails: a disk LRU on the phone, sized by free storage, owned by the apps team.', at: '2026-10-09T10:00:00Z', source: '/v/img.md' },
   ])
-  assert.doesNotMatch(c.search(g2, 'zebra cache plan'), /NEWER on this topic/)
+  assert.doesNotMatch(c.search(g2, 'zebra cache plan'), /NEWER/)
 })
 
 test('R7-H5 R7-H6: asof lists the best match first, names the newest, and follows a turn to its commit', () => {

@@ -40,7 +40,7 @@ test('T14-H1 T14-H2: a note Bob shares reaches Alice\'s memory, named as his; hi
     assert.ok(g.nodes.has('team:bob/n1'))
     const out = c.search(g, 'quokka exporter shards')
     assert.match(out, /\[team\] team:bob\/n1/)
-    assert.match(out, /source: shared by bob \(team\)/)
+    assert.match(out, / · shared by bob \(team\)/)
     await unshare(t.bob, 'n1')
     g = await sync(t.w)
     assert.ok(!g.nodes.has('team:bob/n1'))

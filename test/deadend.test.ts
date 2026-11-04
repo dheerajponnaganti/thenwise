@@ -32,12 +32,14 @@ test('hint lists phrase dead ends newest first, at most 3, one line each, when n
   assert.deepEqual([...h.matchAll(/^- (turn:\w) 2026-10-0\d: dead end \(phrase\): gave up on/gm)].map((m) => m[1]), ['turn:a', 'turn:b', 'turn:c'])
 })
 
-test('hint is silent with no history worth a line; a commit gives one last-changed line (0.1.11)', () => {
+test('hint is silent with no history worth a line, and a last change alone is not worth one (agent feedback, 2026-11-04)', () => {
   const chat = entry('turn', 'turn:x', '2026-10-05', 'first, because the cache failed')
   assert.equal(trimTrace(chat, 'f.ts'), '')
   const out = [chat, entry('commit', 'commit:p:abc', '2026-10-04', 'second')].join('\n\n')
-  assert.match(trimTrace(out, 'f.ts'), /^- last changed: commit:p:abc \(2026-10-04\)$/m)
-  assert.match(trimTrace(`${out}\n\n${entry('decision', 'decision:d1', '2026-10-03', 'use shards')}`, 'f.ts'), /decision:d1/)
+  assert.equal(trimTrace(out, 'f.ts'), '')
+  const withDecision = trimTrace(`${out}\n\n${entry('decision', 'decision:d1', '2026-10-03', 'use shards')}`, 'f.ts')
+  assert.match(withDecision, /decision:d1/)
+  assert.match(withDecision, /^- last changed: commit:p:abc \(2026-10-04\)$/m)
   assert.equal(trimTrace('', 'f.ts'), '')
 })
 
@@ -53,6 +55,20 @@ test('PreToolUse hint comes before the first edit and is shared with Read', () =
   assert.equal(runHook('read', { ...edit, tool_name: 'Read' }, env), '')
 })
 
+test('Codex: the files of an apply_patch get their hint before the edit, once each (agent feedback, 2026-11-04)', async () => {
+  const { patchFiles } = await import('../src/hooks/hook.ts')
+  const patch = '*** Begin Patch\n*** Update File: src/cache.ts\n@@\n-a\n+b\n*** Add File: src/new.ts\n+x\n*** End Patch'
+  assert.deepEqual(patchFiles(patch), ['src/cache.ts', 'src/new.ts'])
+  const dir = tempDir()
+  writeGraph(dir)
+  const env = { dir, cli: resolve('src/cli.ts') }
+  const edit = { tool_name: 'apply_patch', tool_input: { command: patch }, session_id: 's2', cwd: resolve('/x/p') }
+  const first = JSON.parse(runHook('plan', edit, env))
+  assert.equal(first.hookSpecificOutput.hookEventName, 'PreToolUse')
+  assert.match(first.hookSpecificOutput.additionalContext, /memory-history file="src\/cache.ts"/)
+  assert.equal(runHook('plan', edit, env), '')
+})
+
 test('ingest marks reverts and dead-end replies, and not the user prompt', async () => {
   const { parseLog, sessionPart } = await import('../src/ingest/parts.ts')
   const log = `\x1eabc123\x1f2026-10-01T10:00:00Z\x1fRevert "add cache"\x1f\x1dsrc/a.ts\n\x1edef456\x1f2026-10-02T10:00:00Z\x1fAdd cache\x1f\x1dsrc/a.ts\n`
@@ -64,4 +80,16 @@ test('ingest marks reverts and dead-end replies, and not the user prompt', async
   const n = new Map(sessionPart(s, 'p').nodes.map((x) => [x.id, x]))
   assert.equal(n.get('turn:t1')!.extra.deadEnd, undefined)
   assert.match(String(n.get('turn:t2')!.extra.deadEnd), /polling approach did not work/)
+})
+
+test('the same commit message on two branches gives one decision line', () => {
+  const out = ['c1', 'c2'].map((x) => entry('commit', `commit:p:${x}`, '2026-10-04', 'Decision: one writer per shard')).join('\n\n')
+  assert.equal([...trimTrace(out, 'f.ts').matchAll(/decision: one writer per shard/g)].length, 1)
+})
+
+test('a commit that describes the dead-end feature records none; a commit about a failed approach still does', async () => {
+  const { commitDeadEnd } = await import('../src/ingest/deadend.ts')
+  assert.equal(commitDeadEnd('Thenwise 0.1.4', 'Dead ends: chat replies, Revert commits and PRs closed unmerged that record an abandoned approach are flagged at ingest.'), undefined)
+  assert.ok(commitDeadEnd('Do not fade in anything above the fold', 'Preloading fewer fonts made it worse.'))
+  assert.equal(commitDeadEnd('Revert "Use one cache file"', ''), 'Revert "Use one cache file"')
 })

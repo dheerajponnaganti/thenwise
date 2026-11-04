@@ -177,3 +177,15 @@ test('a /thenwise: command is named the way each tool runs it: Codex and Antigra
     assert.equal(forHost(line), line)
   })
 })
+
+test('Codex gets one line on memory_search to call memory before its shell; other clients get the plain tools (agent feedback, 2026-11-04)', () => {
+  const tools = (client: string) => {
+    const s = createServer(() => writeGraph(tempDir()), '/x/p')
+    s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: client } } })
+    return (s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) as any).result.tools as { name: string; description: string }[]
+  }
+  const codex = tools('codex-mcp-client')
+  assert.deepEqual(codex.filter((t) => /before any shell command/.test(t.description)).map((t) => t.name), ['memory_search'])
+  assert.ok(tools('claude-code').every((t) => !/shell command/.test(t.description)))
+  setClient('')
+})

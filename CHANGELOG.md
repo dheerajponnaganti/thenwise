@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A Copilot chat stopped by a credit limit or an error reads "stopped by the tool: premium request limit reached", without a second "stopped".
+- A handoff now opens with one line that names the earlier chat's tool and keeps its work apart from the agent's: when the agent continues that work, it says first what that chat had done and anything it tried that failed, then what it did itself, and it claims only its own edits and test runs.
+- Memory answers are shorter. A result reads date, project and source on one line, with the passage in its id; one-line results of the same PR or commit series fold into one; a chat's next turn shows only when it has a reply. With the shorter NEWER line below, answers to a set of real questions are about 18% shorter, with the same top results.
+- When no shown passage holds all of a question's rare words, the answer says so in one line (`no shown passage has all of: distribution, linux`), so a partial match is not read as the answer. A record read in full after that search says which of those words it lacks.
+- A passage that holds only what the person typed is labelled `[prompt]`, and weighs half in `why`, `tried` and `current`, which look for answers. The first sync after updating rebuilds the store.
+- A hit on a title or heading alone shows the start of the text under it.
+- A second clone of the same GitHub repo counts as the same project, so its chats and commits answer without the all-projects fallback.
+- The skill tells every tool to ask the memory before searching files or git about past work, and to read the files directly for what they show now. Codex, which shows the model no server instructions, gets the same rule for its shell on the `memory_search` tool.
+- File history hints no longer repeat the line about citing memory ids, which the server instructions and the skill already say.
+- File history hints stay silent when all they could say is when the file last changed, and the same commit on two branches gives one line.
+- Codex gets a file's dead ends and decisions before it edits the file, as Claude Code does: the hint reads the files from the patch.
+- `memory_resume` names a handoff the session start already gave the agent instead of printing it again, until a compaction takes it away.
+- A commit whose message describes dead ends (a release note of a tool that records them) is no longer recorded as a dead end itself.
+- A NEWER warning needs evidence that the later record replaces the earlier one: it supersedes it, carries its title, touches the same PR, or is a later commit to the same file. Records that only share words get none. The warning is one line: `NEWER: <id> (<date>), <reason>. Read it before saying what holds now.`
 - Codex and Antigravity load no plugin commands, so there a `/thenwise:` command is shown as the line that runs it.
 - A handoff starts the other chat's last reply at a whole word, and names files that chat wrote outside the repo, next to what git shows uncommitted.
 - Codex: the note about untrusted hooks says what still works (memory tools, the live handoff) and shows once, on the first memory answer, `memory_resume` included.

@@ -3,7 +3,7 @@ name: thenwise
 description: Use before grep or git log when the user asks why something is the way it is, about past work, earlier decisions, what was tried, what was true on a date, or asks to continue work another session started. Past chats hold reasons that code and commits do not. Picks the right memory tool.
 ---
 
-Thenwise keeps a local memory of past Claude Code, Copilot CLI, Codex and Antigravity chats, commits, PRs and notes. Ask it about the past before guessing, and not for what the code on disk already answers.
+Thenwise keeps a local memory of past Claude Code, Copilot CLI, Codex and Antigravity chats, commits, PRs and notes. For questions about past work, call the matching memory_* tool before searching files or git. For what the files or git show now, read them directly.
 
 - `memory_why`: why something is the way it is. "why are passages 600 characters"
 - `memory_tried`: what was tried, failed or dropped. "single-file cache"

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
-import { mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
 
@@ -46,7 +47,7 @@ test('S5-H2: tools/list has eight tools, each naming its question shape; NEWER a
 test('S5-H3: every tool answers against the fixture, and read prints a full passage', () => {
   const { textOf } = ready(writeGraph(tempDir()))
   assert.match(textOf('memory_search', { query: 'cache shards' }), /turn:t2/)
-  assert.match(textOf('memory_current', { query: 'cache shards' }), /current:/)
+  assert.match(textOf('memory_current', { query: 'cache shards' }), /^current "cache shards"/)
   assert.match(textOf('memory_why', { query: 'eight shards' }), /because/)
   assert.match(textOf('memory_tried', { query: 'single cache file' }), /turn:t1/)
   assert.match(textOf('memory_asof', { date: '2026-10-06', query: 'cache' }), /asof 2026-10-06/)
@@ -184,16 +185,16 @@ test('S6-B10 and S3-H5: tools answer for the session repo, fall back to all proj
   const home = process.env.THENWISE_HOME
   process.env.THENWISE_HOME = dir
   try {
-    assert.match(ready(db, a).textOf('memory_why', { query: 'cache shards' }), /^why: [\s\S]*turn:t2/)
+    assert.match(ready(db, a).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
     const other = ready(db, b).textOf('memory_why', { query: 'cache shards' })
     assert.match(other, /^Nothing in this project; from all projects:[\s\S]*turn:t2/)
     writeFileSync(join(dir, 'config.json'), JSON.stringify({ off_projects: [a] }))
     assert.doesNotMatch(ready(db, a).textOf('memory_why', { query: 'cache shards' }), /turn:t2/)
     writeFileSync(join(dir, 'config.json'), JSON.stringify({ scope: 'all' }))
-    assert.match(ready(db, b).textOf('memory_why', { query: 'cache shards' }), /^why: [\s\S]*turn:t2/, 'scope all: no fallback needed')
+    assert.match(ready(db, b).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/, 'scope all: no fallback needed')
     // A chat run outside any repository (a home folder) is global: every project sees it.
     const home2 = tempDir()
-    assert.match(ready(writeGraph(home2, '', '/x/p'), b).textOf('memory_why', { query: 'cache shards' }), /^why: [\s\S]*turn:t2/)
+    assert.match(ready(writeGraph(home2, '', '/x/p'), b).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
   } finally {
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home
@@ -206,4 +207,81 @@ test('SRE-13: a bad asof date over MCP is an error result', () => {
   assert.equal(r.isError, true)
   assert.match(r.content[0].text, /asof needs an ISO date/)
   assert.equal(call('memory_asof', { date: '2026-10-06', query: 'cache' }).result.isError, undefined)
+})
+
+test('another clone of the same GitHub repo is this project, with no fallback to all projects', () => {
+  const repo = (name: string, url: string) => {
+    const d = join(tempDir(), name)
+    mkdirSync(d)
+    execFileSync('git', ['init', '-q', d])
+    execFileSync('git', ['-C', d, 'remote', 'add', 'origin', url])
+    return realpathSync(d)
+  }
+  const a = repo('a', 'git@github.com:o/r.git')
+  const clone = repo('r-copy', 'https://github.com/o/r')
+  const other = repo('z', 'git@github.com:o/z.git')
+  const dir = tempDir()
+  const file = writeGraph(dir, '', a)
+  const db = new DatabaseSync(file)
+  db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT); INSERT INTO meta VALUES ('slugs', '${JSON.stringify({ [a]: 'o/r' })}')`)
+  db.close()
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    assert.match(ready(file, clone).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
+    assert.match(ready(file, other).textOf('memory_why', { query: 'cache shards' }), /^Nothing in this project; from all projects:/)
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+})
+
+test('a slug the store keyed by a path in another form (a symlink, or backslashes on Windows) still finds its clone', () => {
+  const repo = (name: string, url: string) => {
+    const d = join(tempDir(), name)
+    mkdirSync(d)
+    execFileSync('git', ['init', '-q', d])
+    execFileSync('git', ['-C', d, 'remote', 'add', 'origin', url])
+    return realpathSync(d)
+  }
+  const a = repo('a', 'git@github.com:o/r.git')
+  const clone = repo('r-copy', 'https://github.com/o/r')
+  const link = join(tempDir(), 'via-link')
+  symlinkSync(a, link, 'junction') // a junction needs no special rights on Windows; elsewhere the type is ignored
+  const dir = tempDir()
+  const file = writeGraph(dir, '', a)
+  const db = new DatabaseSync(file)
+  // Ingest records the repo as it found it: here through the symlink, not as the real path the engine compares.
+  db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT); INSERT INTO meta VALUES ('slugs', '${JSON.stringify({ [link]: 'o/r' })}')`)
+  db.close()
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    assert.match(ready(file, clone).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+})
+
+test('memory_read of a result repeats the words its search found in no shown passage together (agent feedback, 2026-11-04)', async () => {
+  const { buildPassageIndex } = await import('../src/query/passages.ts')
+  const dir = tempDir()
+  const file = join(dir, 'graph.db')
+  const db = new DatabaseSync(file)
+  db.exec(`CREATE TABLE nodes(id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT, text TEXT, at TEXT, until TEXT, project TEXT, source TEXT, extra TEXT);
+CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at TEXT, extra TEXT, PRIMARY KEY(src, dst, kind));`)
+  const add = (id: string, text: string, src: string) => db.prepare('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)').run(id, 'turn', 'chat', text, '2026-10-02T10:00:00Z', '', 'p', src, '{}')
+  for (let i = 0; i < 80; i++) add(`turn:f${i}`, `Plain notes about the cache and its settings, round ${i}, with words of their own: f${i}a f${i}b.`, `ses:f${i % 5}`)
+  add('turn:z', 'The zephyr cache notes were written down.', 'ses:z')
+  add('turn:m', 'The marmot cache notes were written down.', 'ses:m')
+  buildPassageIndex(db)
+  db.close()
+  const { textOf } = ready(file)
+  assert.match(textOf('memory_search', { query: 'zephyr marmot cache notes' }), /^no shown passage has all of:/m)
+  assert.match(textOf('memory_read', { id: 'turn:z' }), /This record has no "marmot"\. The last search \("zephyr marmot cache notes"\) found no passage with all of: (zephyr, marmot|marmot, zephyr)\.$/)
+  // A record reached another way (a trace, a guess) gets the same line: the gap is about the question, not the list.
+  assert.match(textOf('memory_read', { id: 'turn:f3' }), /This record has no "(zephyr|marmot)", "(zephyr|marmot)"\./)
+  textOf('memory_search', { query: 'cache settings round' })
+  assert.doesNotMatch(textOf('memory_read', { id: 'turn:z' }), /This record has no/, 'a later search without a gap clears it')
 })

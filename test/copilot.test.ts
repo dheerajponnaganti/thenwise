@@ -191,7 +191,7 @@ test('answers from a Copilot chat say so', () => {
     w.archive()
     w.ingest('inc.db')
     const r = spawnSync(process.execPath, ['--experimental-strip-types', resolve('src/cli.ts'), 'search', 'split the cache shards', '--db', w.path('inc.db'), '--all'], { encoding: 'utf8', env: { ...process.env, HOME: w.home, THENWISE_HOME: w.memDir } })
-    assert.match(r.stdout, /source: Copilot chat, session/)
+    assert.match(r.stdout, / · Copilot chat /)
   } finally {
     w.destroy()
   }

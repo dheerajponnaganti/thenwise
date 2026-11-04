@@ -24,7 +24,7 @@ test('R6-H1: rank gives the records in the order the text commands show them', (
     const ids = c.rank(g, cmd, 'cache').items.map((x) => x.h.node.id)
     const text = cmd === 'search' ? c.search(g, 'cache') : cmd === 'why' ? c.why(g, 'cache') : cmd === 'tried' ? c.tried(g, 'cache') : c.current(g, 'cache')
     // Full results read "1. [kind] id", one-liners "4. id date ...".
-    const shown = [...text.matchAll(/^\d+\. (?:\[\w+\] )?(\S+)/gm)].map((m) => m[1]!)
+    const shown = [...text.matchAll(/^\d+\. (?:\[\w+\] )?(\S+)/gm)].map((m) => m[1]!.replace(/#p\d+$/, ''))
     assert.ok(shown.length > 0, cmd)
     assert.deepEqual(shown, ids.slice(0, shown.length), cmd)
   }

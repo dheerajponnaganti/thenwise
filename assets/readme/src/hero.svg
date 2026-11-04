@@ -11,7 +11,8 @@
 <text x="2464" y="104" text-anchor="end">Scale: one band, one week</text>
 </g>
 
-<g transform="translate(140 170) scale(0.88)" color="#241C15"><!--#inline shared/wordmark.svg--></g>
+<g transform="translate(150 176) scale(2.75)"><!--#inline shared/mark.svg--></g>
+<g transform="translate(350 182) scale(0.73)" color="#241C15"><!--#inline shared/wordmark.svg--></g>
 <path d="M150 404 H1090 M150 414 H1090" stroke="#241C15" stroke-width="3"/>
 <text x="150" y="540" class="it" font-size="80" fill="#241C15">Your code has a past.</text>
 <text x="150" y="632" class="it" font-size="80" fill="#B3361F">Now your agents remember it.</text>

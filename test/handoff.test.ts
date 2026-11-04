@@ -326,6 +326,27 @@ test('after a compaction, the session gets back what it did: edited files, the l
   assert.match(out, /uncommitted now \(git status --short, 1 file\): M src\/cache\.ts/)
 })
 
+test('the handoff cuts the last reply at a word, and names a file written outside the repo next to a clean tree (agent feedback, 2026-11-04)', () => {
+  const w = world()
+  const at = new Date(Date.now() - 5 * 60_000)
+  const t = (s: number) => new Date(at.getTime() + s * 1000).toISOString()
+  const r = (o: Record<string, unknown>) => JSON.stringify({ cwd: w.proj, sessionId: 'cc-o', entrypoint: 'cli', ...o })
+  const report = join(w.home, 'notes/review.md')
+  const reply = `${'Reviewed the cache module and wrote up the findings carefully. '.repeat(12)}The ten ranked blind spots are in the report.`
+  const dir = join(w.home, '.claude/projects', key(w.proj))
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'cc-o.jsonl'), `${[
+    r({ type: 'user', uuid: 'o-u1', timestamp: t(0), message: { role: 'user', content: 'Review the cache module and write the report' } }),
+    r({ type: 'assistant', uuid: 'o-a1', timestamp: t(5), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'o-w1', name: 'Write', input: { file_path: report, content: 'findings' } }] } }),
+    r({ type: 'user', uuid: 'o-r1', timestamp: t(6), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'o-w1', content: 'ok' }] } }),
+    r({ type: 'assistant', uuid: 'o-a2', timestamp: t(8), message: { role: 'assistant', content: [{ type: 'text', text: reply }] } }),
+  ].join('\n')}\n`)
+  const b = handoffBlock(w.cfg(), w.proj, ['own'])
+  const last = /last reply: "\.\.\.(\S+)/.exec(b)?.[1] ?? ''
+  assert.ok(reply.split(/\s+/).includes(last), `the reply starts at a whole word, got "${last}"`)
+  assert.match(b, /uncommitted now: nothing in the repo; written outside the repo: .*notes\/review\.md/)
+})
+
 test('review F1: when git status gives no answer, the block says unknown and never claims a clean tree', () => {
   const w = world()
   claudeChat(w.home, w.proj, 'cc-1')
@@ -487,4 +508,22 @@ test('review 0.2.0 F2: Antigravity takes no text after a read, so the read hook 
   } finally {
     keep === undefined ? delete process.env.ANTIGRAVITY_CONVERSATION_ID : (process.env.ANTIGRAVITY_CONVERSATION_ID = keep)
   }
+})
+
+test('a write the chat stopped in is not listed as an edit (r032 world check, 2026-11-04)', () => {
+  const w = world()
+  const id = 'cc-open'
+  const t = (n: number) => new Date(Date.now() - 10 * 60_000 + n * 1000).toISOString()
+  const r = (o: Record<string, unknown>) => JSON.stringify({ cwd: w.proj, sessionId: id, entrypoint: 'cli', ...o })
+  const dir = join(w.home, '.claude/projects', key(w.proj))
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${id}.jsonl`), `${[
+    r({ type: 'user', uuid: 'u1', timestamp: t(0), message: { role: 'user', content: 'Add a CSV export and its test' } }),
+    r({ type: 'assistant', uuid: 'a1', timestamp: t(1), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: join(w.proj, 'src/export.ts'), content: 'x' } }] } }),
+    r({ type: 'user', uuid: 'r1', timestamp: t(2), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'w1', content: 'ok' }] } }),
+    r({ type: 'assistant', uuid: 'a2', timestamp: t(3), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'w2', name: 'Write', input: { file_path: join(w.proj, 'test/export.test.ts'), content: 'y' } }] } }),
+  ].join('\n')}\n`)
+  const b = handoffBlock(w.cfg(), w.proj)
+  assert.match(b, /stopped mid-step .*Write test\/export\.test\.ts, no result recorded/)
+  assert.match(b, /edited in that chat \(newest first\): src\/export\.ts \(1 edit\)\n/)
 })

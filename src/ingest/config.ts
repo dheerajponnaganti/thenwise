@@ -40,6 +40,8 @@ export interface Config {
   promptMap: boolean
   /** A short brief at startup in a repo with a session in the last 7 days. */
   startupBrief: boolean
+  /** Lines Thenwise shows the person: all (default), important (first run, failures, chats leaving the machine) or off. */
+  notices: string
   /** The output budget of one memory answer in characters; 0 means the default. */
   outputChars: number
   /** Distill new chats into inbox proposals once a day from the sync (it calls `claude -p`, so it costs; off by default). */
@@ -73,6 +75,7 @@ const SCHEMA: Record<string, any> = {
   exclude_projects: 'string[]',
   off: 'boolean',
   update_check: 'boolean',
+  notices: 'string',
   off_projects: 'string[]',
   ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', docs: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean', git_all: 'boolean' },
   vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
@@ -192,6 +195,7 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     plans: ing.plans ?? true,
     promptMap: user.hooks?.prompt_map ?? true,
     startupBrief: user.hooks?.startup_brief ?? true,
+    notices: user.notices ?? 'all',
     outputChars: user.tools?.output_chars ?? 0,
     captureAuto: user.capture?.auto ?? false,
     autoShare: user.team?.auto_share ?? [],

@@ -4,7 +4,7 @@
 //   node scripts/check-versions.mjs [--tag v0.1.25]
 // Exits 1 and lists each problem.
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,9 +22,20 @@ export function checkVersions(root, tag) {
   // Copilot CLI reads .plugin/plugin.json first, so it must say the same version.
   const copilot = json('.plugin/plugin.json')
   if (copilot.version !== version) problems.push(`.plugin/plugin.json version ${copilot.version} differs from package.json ${version}`)
+  const codex = json('.codex-plugin/plugin.json')
+  if (codex.version !== version) problems.push(`.codex-plugin/plugin.json version ${codex.version} differs from package.json ${version}`)
   // A marketplace entry that carried a version would silently lose to plugin.json.
   for (const entry of json('.claude-plugin/marketplace.json').plugins ?? []) {
     if ('version' in entry) problems.push('marketplace.json carries a version; plugin.json is the single source')
+  }
+  // plugin/ is what users install: a release that bumps the version must rebuild it (npm run plugin:folder).
+  if (existsSync(join(root, 'plugin'))) {
+    // A tool's manifest joins plugin/ only at the release that ships it, so check the manifests it holds.
+    for (const f of ['package.json', '.claude-plugin/plugin.json', '.plugin/plugin.json', '.codex-plugin/plugin.json']) {
+      if (f !== 'package.json' && !existsSync(join(root, 'plugin', f))) continue
+      const v = existsSync(join(root, 'plugin', f)) ? json(join('plugin', f)).version : undefined
+      if (v !== version) problems.push(`plugin/${f} version ${v} differs from package.json ${version}: run npm run plugin:folder`)
+    }
   }
   if (!readFileSync(join(root, 'CHANGELOG.md'), 'utf8').includes(`\n## ${version}\n`)) problems.push(`CHANGELOG.md has no "## ${version}" section`)
   if (tag !== undefined && tag !== `v${version}`) problems.push(`tag ${tag} does not match version ${version}`)

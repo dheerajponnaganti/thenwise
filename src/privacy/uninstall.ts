@@ -28,12 +28,12 @@ export function uninstall(home: string = homedir(), print: (l: string) => void =
   else print('  2. The folder _thenwise/ inside your vault, if you set one up.')
   const where = cfg?.backup.kind === 'folders' ? cfg.backup.folders.map((f) => `copies in ${f}`).join(', ') : cfg?.backup.kind === 'git' ? `the git repo in your vault (${cfg.vault?.path ?? 'vault folder'}/.git) and any remote it was pushed to` : 'none are set up'
   print(`  3. Backups: ${where}`)
-  print('  4. The plugin itself: remove it in Claude Code with /plugin, or in Copilot CLI with: copilot plugin uninstall thenwise. If you installed the command line, also run: npm uninstall -g thenwise')
+  print('  4. The plugin itself: remove it in Claude Code with /plugin, in Copilot CLI with: copilot plugin uninstall thenwise, or in Codex with: codex plugin remove thenwise@thenwise. If you installed the command line, also run: npm uninstall -g thenwise')
   const old = legacyDir(memDir)
   if (old) print(`  5. An older data folder that still holds Thenwise data: ${old}`)
   if (existsSync(join(memDir, 'team.json'))) print('  6. Team: notes you shared stay on the team server. Run `thenwise unshare <note>` for each one first, or ask the server owner to delete them.')
   print("  7. Lines setup added to .gitignore files, if a git repo contained your data folder or vault: look for the data folder name and _thenwise/.")
-  print('Not deleted and out of reach: Claude Code\'s and Copilot CLI\'s own chat files (Copilot also keeps copies on GitHub), git history of a backed-up vault, iCloud or Time Machine versions, and copies your teammates pulled.')
+  print('Not deleted and out of reach: Claude Code\'s, Copilot CLI\'s and Codex\'s own chat files (Copilot also keeps copies on GitHub), git history of a backed-up vault, iCloud or Time Machine versions, and copies your teammates pulled.')
 
   return 0
 }

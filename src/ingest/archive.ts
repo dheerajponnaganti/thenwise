@@ -11,6 +11,7 @@ import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
+import { codexConverter, codexSources } from './codex.ts'
 import { copilotConverter, copilotSources } from './copilot.ts'
 import { withLock } from './lock.ts'
 import { isMarked } from './parts.ts'
@@ -22,7 +23,7 @@ interface Source {
   size: number
   mtimeMs: number
   ctimeMs: number
-  /** A Copilot chat: makes a fresh converter to Claude Code's line shape for each read. */
+  /** A Copilot or Codex chat: makes a fresh converter to Claude Code's line shape for each read. */
   convert?: () => (line: string) => string[]
 }
 export interface ManifestEntry {
@@ -276,6 +277,10 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   for (const c of copilotSources(cfg.home)) {
     const st = statSync(c.path)
     sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => copilotConverter(c.id, c.cwd) })
+  }
+  for (const c of codexSources(cfg.home)) {
+    const st = statSync(c.path)
+    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => codexConverter(c.id, c.cwd) })
   }
   const res: ArchiveResult = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 }
   if (cfg.off) return { ...res, off: sources.size }

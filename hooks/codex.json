@@ -1,0 +1,54 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|fork|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/dist/cli.js\" hook session-start",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\dist\\cli.js\" hook session-start",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/dist/cli.js\" hook prompt",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\dist\\cli.js\" hook prompt",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/dist/cli.js\" hook post",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\dist\\cli.js\" hook post",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/dist/cli.js\" hook session-end",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\dist\\cli.js\" hook session-end",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

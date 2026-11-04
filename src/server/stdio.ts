@@ -1,7 +1,7 @@
 // `thenwise mcp`: the memory tools over stdio. MCP is newline-delimited JSON-RPC 2.0; stdout carries nothing else.
 // One store connection per server, reopened when the graph file is replaced on disk (ingest renames a new file in).
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -61,7 +61,7 @@ const toolList = Object.entries(TOOLS).map(([name, t]) => {
   const required = name === 'memory_resume' ? [] : Object.keys(props)
   if (name === 'memory_trace') props.offset = { type: 'integer', description: 'Items to skip from the newest, to page to older ones' }
 
-  return { name, description: t.text, inputSchema: { type: 'object', properties: props, required } }
+  return { name, description: t.text, inputSchema: { type: 'object', properties: props, required }, annotations: { readOnlyHint: true } }
 })
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).replace(/\n[^\n]*$/, '')}\n(cut)` : s)
@@ -77,9 +77,18 @@ function version(): string {
   }
 }
 
+/** Codex starts a plugin's server in the plugin folder and passes on PWD, the folder the session began in.
+ * shortcut: Windows sets no PWD, so answers there fall back to all projects and say so; fix it if Codex ever passes the folder. */
+function launchFolder(): string {
+  const here = process.cwd()
+  const script = process.argv[1]
+
+  return script && process.env.PWD && dirname(dirname(realpathSync(script))) === realpathSync(here) ? process.env.PWD : here
+}
+
 export function createServer(dbPath: () => string, fixedProject?: string) {
   // Read at each open: Copilot may start this server before it writes the session's workspace file.
-  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (copilotSessionCwd(homedir()) || process.cwd())
+  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (copilotSessionCwd(homedir()) || launchFolder())
   let graph: Graph | undefined
   let sig = ''
   let ready = false

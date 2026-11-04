@@ -60,6 +60,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/privacy/uninstall.ts` | `uninstall` | Stops the sync and lists what to delete. It deletes nothing |
 | `src/setup/setup.ts` | `setup` | First-run setup |
 | `src/setup/projects.ts` | `discoverProjects` | Finds projects from the chat folders |
+| `src/ingest/codex.ts` | `codexConverter`, `codexSources` | Reads Codex rollout files as Claude Code transcripts |
 | `src/setup/connect.ts` | `plan`, `apply` | Adds the memory tools to another coding tool's MCP config |
 | `src/setup/update.ts` | `checkForUpdate`, `updateNotice`, `updateStatus` | The daily version check from the background sync, and the notice read from its saved answer |
 | `src/setup/doctor.ts` | `runDoctor` | Checks the install, with one fix line per problem |
@@ -103,7 +104,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `Stop`, `StopFailure` | For a team member: starts a sync after a reply (at most every 10 minutes) and at once after a usage limit or an error |
 | `SessionEnd` | Starts a sync |
 
-Each tool has its own thin entry and all share one code base and one data folder. Claude Code reads `.claude-plugin/plugin.json` and `hooks/hooks.json`. Copilot CLI reads `.plugin/plugin.json` first, which points it at `hooks/copilot.json`: the same hooks in Copilot's own form (`exec` plus `args`, no shell), with no pre-edit hook, because Copilot denies the edit when such a hook fails. `src/ingest/copilot.ts` turns Copilot's hook payloads and chat files into Claude Code's shapes at the door, so everything after that is shared. `.mcp.json`, `commands/` and `skills/` serve both.
+Each tool has its own thin entry and all share one code base and one data folder. Claude Code reads `.claude-plugin/plugin.json` and `hooks/hooks.json`. Copilot CLI reads `.plugin/plugin.json` first, which points it at `hooks/copilot.json`: the same hooks in Copilot's own form (`exec` plus `args`, no shell), with no pre-edit hook, because Copilot denies the edit when such a hook fails. `src/ingest/copilot.ts` turns Copilot's hook payloads and chat files into Claude Code's shapes at the door, so everything after that is shared. `.mcp.json`, `commands/` and `skills/` serve Claude Code and Copilot CLI. Codex reads `.codex-plugin/plugin.json`, which names `hooks/codex.json` (shell commands that use `$PLUGIN_ROOT`, with a Windows form) and `.mcp.codex.json` (a relative command run from the plugin folder, with `PWD` passed through so the server knows the project).
 
 ## The rules that hold it together
 

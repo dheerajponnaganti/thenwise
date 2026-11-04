@@ -1121,3 +1121,36 @@ test('mixed tools: a Copilot CLI member and a Claude Code member read each other
     await t.stop()
   }
 })
+
+test('mixed tools: a Codex member shares a chat, and the answer names Codex', needs, async () => {
+  const t = await team()
+  const saved = process.env.CODEX_HOME
+  process.env.CODEX_HOME = join(t.b.home, '.codex')
+  try {
+    const day = join(t.b.home, '.codex/sessions/2026/10/29')
+    mkdirSync(day, { recursive: true })
+    const row = (type: string, payload: object) => JSON.stringify({ timestamp: '2026-10-29T12:54:40.000Z', type, payload })
+    const say = (role: string, kind: string, text: string) => row('response_item', { type: 'message', role, content: [{ type: kind, text }] })
+    writeFileSync(join(day, 'rollout-2026-10-29T12-54-40-cx-1.jsonl'), `${[
+      row('session_meta', { id: 'cx-1', cwd: t.b.proj, source: 'cli', thread_source: 'user' }),
+      say('user', 'input_text', '<environment_context>never shared</environment_context>'),
+      say('user', 'input_text', 'why did the quokka importer stop retrying'),
+      say('assistant', 'output_text', 'Retries hid the quokka outage, so the importer fails fast now.'),
+    ].join('\n')}\n`)
+    t.b.archive()
+    t.share(t.b)
+    assert.match(await pushShared(t.b.cfg), /^1 chat pushed/)
+    assert.match(await fetchShared(t.a.memDir), /1 team chats? fetched/)
+    assert.equal(readChats(t.a.memDir)[0]!.tool, 'Codex')
+    t.a.ingest('g.db')
+    const answer = c.search(new Graph(t.a.path('g.db')), 'quokka importer retrying')
+    assert.match(answer, /Codex chat of bob/)
+    assert.doesNotMatch(answer, /never shared/)
+    const { a, b } = t.b.both()
+    assert.equal(a, b, 'update equals rebuild with an own Codex chat')
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME
+    else process.env.CODEX_HOME = saved
+    await t.stop()
+  }
+})

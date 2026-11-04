@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1120" viewBox="0 0 2560 1120">
+<!--#inline shared/defs.svg-->
+<!-- Plate III. Drawn for 0.1.28 (shared/three-questions-base.png, no vector source); the third column's text is set
+     here in type so it names the agent, never one tool. -->
+<image href="shared/three-questions-base.png" width="2560" height="1120"/>
+<rect x="1750" y="806" width="700" height="112" fill="#E6DCC5"/>
+<g class="serif" font-size="38" fill="#241C15" text-anchor="middle">
+<text x="2099" y="844">Pick any moment. Your agent answers from</text>
+<text x="2099" y="896">what was known then, with that day’s commit.</text>
+</g>
+</svg>

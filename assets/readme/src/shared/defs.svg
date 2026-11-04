@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<!-- Shared by every plate: font classes, the strata fills, and the hatch for an empty gauge. -->
+<style>
+.sc { font-family: 'IM FELL English SC'; letter-spacing: 0.14em; }
+.serif { font-family: 'EB Garamond'; }
+.it { font-family: 'EB Garamond'; font-style: italic; }
+.mono { font-family: 'IBM Plex Mono'; }
+</style>
+<defs>
+<pattern id="stip" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="6" cy="6" r="2.4" fill="#8A7552" opacity="0.5"/><circle cx="18" cy="18" r="1.8" fill="#8A7552" opacity="0.4"/></pattern>
+<pattern id="dash" width="60" height="30" patternUnits="userSpaceOnUse"><line x1="6" y1="15" x2="34" y2="15" stroke="#7D5730" stroke-width="2.4"/></pattern>
+<pattern id="shale" width="16" height="12" patternUnits="userSpaceOnUse"><line x1="0" y1="6" x2="16" y2="6" stroke="#6F7C5E" stroke-width="1.6"/></pattern>
+<pattern id="brick" width="64" height="32" patternUnits="userSpaceOnUse"><path d="M0 0 H64 M0 16 H64 M16 0 V16 M48 16 V32" fill="none" stroke="#8E4A2F" stroke-width="2"/></pattern>
+<pattern id="rings" width="44" height="44" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="5" fill="none" stroke="#A9B6C4" stroke-width="1.6"/><circle cx="34" cy="34" r="5" fill="none" stroke="#A9B6C4" stroke-width="1.6"/></pattern>
+<pattern id="base" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M0 20 L20 0" stroke="#5A5566" stroke-width="2"/></pattern>
+<pattern id="cross" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M0 0 L16 16 M16 0 L0 16" stroke="#6F6656" stroke-width="1.6"/></pattern>
+<pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#D8CDB5"/><path d="M0 14 L14 0" stroke="#A89A80" stroke-width="2"/></pattern>
+<pattern id="strata" width="200" height="40" patternUnits="userSpaceOnUse"><rect width="34" height="40" fill="#DCC795"/><rect x="34" width="34" height="40" fill="#C49A5C"/><rect x="68" width="30" height="40" fill="#93A07A"/><rect x="98" width="34" height="40" fill="#B06A45"/><rect x="132" width="34" height="40" fill="#DCC795"/><rect x="166" width="34" height="40" fill="#C49A5C"/></pattern>
+</defs>
+</svg>

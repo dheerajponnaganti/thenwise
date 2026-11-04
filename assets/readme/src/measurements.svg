@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1480" viewBox="0 0 2560 1480">
+<!--#inline shared/defs.svg-->
+<!-- Plate IV. The readings, in one window. Rows I and II are the blind-graded rounds; the stopwatch is a fresh install.
+     Every number here has a source in docs/eval.md, which also holds the per-tool runs. -->
+<rect width="2560" height="1480" rx="44" fill="#E6DCC5"/>
+<rect x="32" y="32" width="2496" height="1416" rx="30" fill="none" stroke="#241C15" stroke-width="4"/>
+<rect x="48" y="48" width="2464" height="1384" rx="20" fill="none" stroke="#241C15" stroke-width="1.6"/>
+<g class="sc" font-size="28" fill="#241C15">
+<text x="96" y="104">Plate IV.</text>
+<text x="1280" y="104" text-anchor="middle">Field measurements · hidden answers · graded blind</text>
+<text x="2464" y="104" text-anchor="end">Readings</text>
+</g>
+
+<!-- the window -->
+<rect x="104" y="148" width="2360" height="1260" rx="14" fill="#241C15" opacity="0.18"/>
+<rect x="96" y="140" width="2360" height="1260" rx="14" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M97.5 154 a12.5 12.5 0 0 1 12.5 -12.5 H2442 a12.5 12.5 0 0 1 12.5 12.5 V196 H97.5 Z" fill="#F4ECDA"/>
+<path d="M98 196 H2454" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2.4"><circle cx="134" cy="169" r="9"/><circle cx="162" cy="169" r="9"/><circle cx="190" cy="169" r="9"/></g>
+<text x="222" y="179" class="mono" font-size="28" fill="#5E4E3E">thenwise · readings</text>
+
+<!-- I. Individual -->
+<text x="150" y="280" class="sc" font-size="32" fill="#E58A6E">I. Individual · your own history</text>
+<g class="serif" fill="#F1E9D6">
+<text x="150" y="430" font-size="150" font-weight="500">2.5<tspan font-size="90">×</tspan></text>
+<text x="760" y="430" font-size="150" font-weight="500">60<tspan font-size="90">%</tspan></text>
+<text x="1370" y="430" font-size="150" font-weight="500">1.9<tspan font-size="90">×</tspan></text>
+<text x="150" y="500" font-size="46">more questions answered right</text>
+<text x="760" y="500" font-size="46">fewer raw tokens</text>
+<text x="1370" y="500" font-size="46">faster answers</text>
+</g>
+<g class="mono" font-size="32">
+<rect x="150" y="548" width="279" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="447" y="580" fill="#F1E9D6">93% Thenwise</text>
+<rect x="150" y="608" width="111" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="279" y="640" fill="#C9BBA0">37% plain, git</text>
+<rect x="760" y="548" width="120" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="898" y="580" fill="#F1E9D6">with</text>
+<rect x="760" y="608" width="300" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="1078" y="640" fill="#C9BBA0">without</text>
+<rect x="1370" y="548" width="162" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="1550" y="580" fill="#F1E9D6">14 s with</text>
+<rect x="1370" y="608" width="300" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="1688" y="640" fill="#C9BBA0">26 s</text>
+<text x="150" y="712" fill="#9A8F7E" font-size="30">scored against hidden answers</text>
+<text x="760" y="712" fill="#9A8F7E" font-size="30">make every token count</text>
+<text x="1370" y="712" fill="#9A8F7E" font-size="30">from question to cited answer</text>
+</g>
+<path d="M150 776 H1900" stroke="#4A4036" stroke-width="2" stroke-dasharray="10 8"/>
+
+<!-- II. Teams -->
+<text x="150" y="856" class="sc" font-size="32" fill="#E58A6E">II. Teams · a teammate’s shared chats</text>
+<g class="serif" fill="#F1E9D6">
+<text x="150" y="1006" font-size="150" font-weight="500">5.3<tspan font-size="90">×</tspan></text>
+<text x="760" y="1006" font-size="150" font-weight="500">39<tspan font-size="90">%</tspan></text>
+<text x="1370" y="1006" font-size="150" font-weight="500">1.5<tspan font-size="90">×</tspan></text>
+<text x="150" y="1076" font-size="46">more questions answered right</text>
+<text x="760" y="1076" font-size="46">fewer raw tokens</text>
+<text x="1370" y="1076" font-size="46">faster answers</text>
+</g>
+<g class="mono" font-size="32">
+<rect x="150" y="1124" width="264" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="432" y="1156" fill="#F1E9D6">88% Thenwise</text>
+<rect x="150" y="1184" width="51" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="219" y="1216" fill="#C9BBA0">17% plain, git</text>
+<rect x="760" y="1124" width="183" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="961" y="1156" fill="#F1E9D6">with</text>
+<rect x="760" y="1184" width="300" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="1078" y="1216" fill="#C9BBA0">without</text>
+<rect x="1370" y="1124" width="200" height="40" rx="20" fill="url(#strata)" stroke="#F1E9D6" stroke-width="3"/><text x="1588" y="1156" fill="#F1E9D6">16 s with</text>
+<rect x="1370" y="1184" width="300" height="40" rx="20" fill="url(#hatch)" stroke="#F1E9D6" stroke-width="3"/><text x="1688" y="1216" fill="#C9BBA0">24 s</text>
+<text x="150" y="1288" fill="#9A8F7E" font-size="30">scored against hidden answers</text>
+<text x="760" y="1288" fill="#9A8F7E" font-size="30">the teammate’s chats first</text>
+<text x="1370" y="1288" fill="#9A8F7E" font-size="30">from question to cited answer</text>
+</g>
+
+<!-- the stopwatch: a fresh install on one real machine -->
+<path d="M1960 240 V1300" stroke="#4A4036" stroke-width="2" stroke-dasharray="10 8"/>
+<g class="serif" fill="#F1E9D6">
+<text x="2010" y="700" font-size="150" font-weight="500">164<tspan font-size="90" dx="22">s</tspan></text>
+<text x="2010" y="770" font-size="44">to remember 2,771 chats</text>
+</g>
+<path d="M2010 860 H2400" stroke="#C9BBA0" stroke-width="3"/>
+<path d="M2010 860 H2365" stroke="#E58A6E" stroke-width="10"/>
+<path d="M2010 846 V874 M2400 846 V874 M2088 852 V868 M2166 852 V868 M2244 852 V868 M2322 852 V868" stroke="#C9BBA0" stroke-width="3"/>
+<circle cx="2365" cy="860" r="16" fill="#1E1A16" stroke="#E58A6E" stroke-width="6"/>
+<text x="2400" y="820" class="mono" font-size="30" fill="#E58A6E" text-anchor="end">first answer</text>
+<g class="mono" font-size="28" fill="#9A8F7E">
+<text x="2010" y="914">install</text><text x="2400" y="914" text-anchor="end">3 min</text>
+<text x="2010" y="964">archived, masked</text><text x="2010" y="1002">and indexed</text>
+</g>
+
+</svg>

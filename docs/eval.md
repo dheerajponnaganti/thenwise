@@ -1,5 +1,8 @@
 # How we measured Thenwise
 
+<p align="center"><img src="../assets/readme/measurements.png" width="100%" alt="Field measurements with hidden answers, graded blind. Individual, on your own history: 2.5 times more questions answered right (93% against 37%), 60% fewer raw tokens, 1.9 times faster. Teams, from a teammate's shared chats: 5.3 times more questions answered right (88% against 17%), 39% fewer raw tokens, 1.5 times faster. A fresh install remembered 2,771 chats in 164 seconds. Every tool on the same questions: Claude Code 31 of 36 right with 0 of 8 decoys invented, Copilot CLI 79% of real questions right, Codex 71% of real questions right."></p>
+
+
 Every number in the README comes from questions about real project history, answered by Claude Code in fresh sessions and graded blind against answers it never saw.
 
 ## The questions
@@ -59,7 +62,15 @@ One run per arm with Thenwise 0.1.25 plus the memory fix in 0.1.26. Raw tokens c
 
 One run per arm, with the same frozen copies and sandbox. The teammate's store holds only the 19 chats another member shared through a local team server. An earlier round scored 88% against 25%.
 
-**Install:** 2,500 chats archived, masked and searchable 84 seconds after install.
+**Every tool, the same questions** (18 real-history questions, graded blind by the same judge)
+
+| Tool | Result |
+| --- | --- |
+| Claude Code, Thenwise 0.2.0 | 31 of 36 answers right over two runs, 0 of 8 decoys invented |
+| Copilot CLI | 79% of real questions right, a memory tool first on 18 of 18 |
+| Codex | 71% of real questions right |
+
+**Install:** on one real machine, a fresh store archived and masked 5,834 chats, and 2,771 of them were searchable 164 seconds after install, with the first answer at once.
 
 ## Run it yourself
 

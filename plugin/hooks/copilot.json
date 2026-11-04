@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-start"], "timeoutSec": 3 }
+    ],
+    "userPromptSubmitted": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "prompt"], "timeoutSec": 3 }
+    ],
+    "postToolUse": [
+      { "matcher": "view|str_replace_editor", "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "read"], "timeoutSec": 3 },
+      { "matcher": "apply_patch|edit|create|str_replace_editor|bash|powershell", "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeoutSec": 3 }
+    ],
+    "preCompact": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "compact"], "timeoutSec": 3 }
+    ],
+    "agentStop": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop"], "timeoutSec": 3 }
+    ],
+    "errorOccurred": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop-failure"], "timeoutSec": 3 }
+    ],
+    "sessionEnd": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-end"], "timeoutSec": 3 }
+    ]
+  }
+}

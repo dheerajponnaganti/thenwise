@@ -118,4 +118,4 @@ Each tool has its own thin entry and all share one code base and one data folder
 
 ## Build and distribution
 
-`npm run build` compiles `src/` to `dist/` with TypeScript alone, and the build is byte-for-byte reproducible. Two routes reach users: the npm package, which holds `dist/`, and the `release` branch, which plugin users install from. [RELEASING.md](RELEASING.md) explains how CI proves both come from the public source.
+`npm run build` compiles `src/` to `dist/` with TypeScript alone, and the build is byte-for-byte reproducible. Two routes reach users: the npm package, which holds `dist/`, and the `plugin/` folder on `main`, which every tool installs from. Only a release changes `plugin/`. [RELEASING.md](RELEASING.md) explains how CI proves both come from the public source.

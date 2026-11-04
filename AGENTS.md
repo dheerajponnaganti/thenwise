@@ -14,7 +14,8 @@ Thenwise is a Claude Code plugin and an npm package that gives Claude a local me
 - `npm test`: all tests. Each test runs in its own temp home.
 - `node --import ./test/isolate.mjs --test test/<file>.test.ts`: one test file. Prefer this while working.
 - `npm run check`: type check.
-- `npm run build`: build `dist/`, which is what the plugin runs.
+- `npm run build`: build `dist/`.
+- `npm run plugin:folder`: build and fill `plugin/`, the folder every tool installs from. Only a release pull request commits it.
 - `node src/cli.ts <command>`: run the CLI from source.
 - `git config core.hooksPath .githooks`: turn on the pre-push check, once per clone.
 

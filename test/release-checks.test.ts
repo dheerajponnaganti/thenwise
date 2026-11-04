@@ -9,6 +9,8 @@ import { test } from 'node:test'
 import { section } from '../scripts/changelog-section.mjs'
 // @ts-expect-error a plain script with no types
 import { checkVersions } from '../scripts/check-versions.mjs'
+// @ts-expect-error a plain script with no types
+import { assemble, PLUGIN_FILES } from '../scripts/plugin-folder.mjs'
 
 const ROOT = resolve('.')
 const SCRIPT = resolve('scripts/check-plugin-build.mjs')
@@ -63,13 +65,16 @@ test('check-versions: every drift is named, and a matching tag passes', () => {
   const market = versioned()
   market.write('.claude-plugin/marketplace.json', { plugins: [{ name: 'x', version: '1.2.3' }] })
   assert.match(checkVersions(market.dir).join(), /marketplace/)
+  const folder = versioned()
+  mkdirSync(join(folder.dir, 'plugin'))
+  assert.match(checkVersions(folder.dir).join(), /plugin\/package\.json version undefined.*plugin:folder/)
   const log = versioned()
   writeFileSync(join(log.dir, 'CHANGELOG.md'), '# Changelog\n\n## 1.2.2\n')
   assert.match(checkVersions(log.dir).join(), /CHANGELOG/)
   assert.ok(checkVersions(versioned('1.2').dir).length > 0)
 })
 
-// A tiny project with a tag on main and a release branch that holds the built dist/.
+// A tiny project whose tags carry a plugin/ folder: the runtime files plus a dist/ that may or may not be a true build.
 function project() {
   const dir = mkdtempSync(join(tmpdir(), 'thenwise-build-t-'))
   const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, encoding: 'utf8' }).trim()
@@ -79,25 +84,32 @@ function project() {
   writeFileSync(join(dir, 'src/a.ts'), 'export const a: number = 1\n')
   writeFileSync(join(dir, 'tsconfig.json'), readFileSync(join(ROOT, 'tsconfig.json')))
   writeFileSync(join(dir, 'tsconfig.build.json'), readFileSync(join(ROOT, 'tsconfig.build.json')))
-  writeFileSync(join(dir, 'package.json'), '{"type":"module"}\n')
-  git('add', '.')
-  git('commit', '-q', '-m', 'First')
-  git('tag', 'v1.0.0')
+  for (const f of PLUGIN_FILES as string[]) {
+    // JSON files and LICENSE are files; the rest are folders, given one file each.
+    const file = /\.json$|^LICENSE$/.test(f) ? f : join(f, 'x.md')
+    mkdirSync(join(dir, file, '..'), { recursive: true })
+    writeFileSync(join(dir, file), f === 'package.json' ? '{"type":"module"}\n' : `${f}\n`)
+  }
   const run = (...args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8' })
-  const release = (js: string) => {
-    git('checkout', '-q', '-B', 'release', 'v1.0.0')
-    mkdirSync(join(dir, 'dist'), { recursive: true })
-    writeFileSync(join(dir, 'dist/a.js'), js)
-    git('add', '-f', 'dist')
-    git('commit', '-q', '-m', 'Release')
+  // Commits plugin/ as assembled from this source, with js as its dist/a.js, and tags it.
+  const release = (tag: string, js: string) => {
+    const dist = mkdtempSync(join(tmpdir(), 'thenwise-build-d-'))
+    writeFileSync(join(dist, 'a.js'), js)
+    assemble(dir, dist, join(dir, 'plugin'))
+    git('add', '-A')
+    git('commit', '-q', '-m', tag)
+    git('tag', tag)
   }
 
   return { dir, git, run, release }
 }
 
-test('check-plugin-build: a true build passes, and a changed dist or source is refused', () => {
+test('check-plugin-build: a true plugin/ passes; a changed dist, a stale file or no folder is refused', () => {
   const p = project()
+  p.git('add', '-A')
+  p.git('commit', '-q', '-m', 'First')
   assert.equal(p.run('--self').status, 0)
+  assert.match(p.run('--folder', '--tag', 'HEAD').stderr, /no plugin\/ folder/)
   // What TypeScript really prints for this source, taken from a real build.
   const out = mkdtempSync(join(tmpdir(), 'thenwise-build-o-'))
   for (const f of ['src', 'tsconfig.json', 'tsconfig.build.json', 'package.json']) cpSync(join(p.dir, f), join(out, f), { recursive: true })
@@ -105,22 +117,58 @@ test('check-plugin-build: a true build passes, and a changed dist or source is r
   execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(out, 'tsconfig.build.json')])
   const built = readFileSync(join(out, 'dist/a.js'), 'utf8')
 
-  p.release(built)
-  const good = p.run('--release', 'release', '--tag', 'v1.0.0')
+  p.release('v1.0.0', built)
+  const good = p.run('--folder', '--tag', 'v1.0.0')
   assert.equal(good.status, 0, good.stderr + good.stdout)
 
-  p.release(`${built}// planted\n`)
-  const planted = p.run('--release', 'release', '--tag', 'v1.0.0')
+  p.release('v1.0.1', `${built}// planted\n`)
+  const planted = p.run('--folder', '--tag', 'v1.0.1')
   assert.equal(planted.status, 1)
-  assert.match(planted.stderr, /a\.js differs/)
+  assert.match(planted.stderr, /dist\/a\.js differs/)
 
-  p.release(built)
-  writeFileSync(join(p.dir, 'src/a.ts'), 'export const a: number = 2\n')
-  p.git('add', '.')
-  p.git('commit', '-q', '-m', 'Changed source')
-  const source = p.run('--release', 'release', '--tag', 'v1.0.0')
-  assert.equal(source.status, 1)
-  assert.match(source.stderr, /src\/a\.ts differs/)
+  p.release('v1.0.2', built)
+  writeFileSync(join(p.dir, 'hooks/x.md'), 'changed\n')
+  p.git('add', '-A')
+  p.git('commit', '-q', '-m', 'Hooks changed, plugin/ not rebuilt')
+  p.git('tag', 'v1.0.3')
+  const stale = p.run('--folder', '--tag', 'v1.0.3')
+  assert.equal(stale.status, 1)
+  assert.match(stale.stderr, /hooks\/x\.md differs/)
+})
+
+test('check-plugin-build --pr: plugin/ may change only with a version bump, and only as its source built', () => {
+  const p = project()
+  p.git('add', '-A')
+  p.git('commit', '-q', '-m', 'First')
+  const out = mkdtempSync(join(tmpdir(), 'thenwise-build-o-'))
+  for (const f of ['src', 'tsconfig.json', 'tsconfig.build.json', 'package.json']) cpSync(join(p.dir, f), join(out, f), { recursive: true })
+  symlinkSync(resolve('node_modules'), join(out, 'node_modules'), 'junction')
+  execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(out, 'tsconfig.build.json')])
+  const built = readFileSync(join(out, 'dist/a.js'), 'utf8')
+  p.release('v1.0.0', built)
+  const base = p.git('rev-parse', 'HEAD')
+
+  writeFileSync(join(p.dir, 'notes.txt'), 'a normal change\n')
+  p.git('add', '-A')
+  p.git('commit', '-q', '-m', 'Normal change')
+  const normal = p.run('--pr', base)
+  assert.equal(normal.status, 0, normal.stderr)
+  assert.match(normal.stdout, /unchanged/)
+
+  p.release('v1.0.1', `${built}// unreleased\n`)
+  const noBump = p.run('--pr', base)
+  assert.equal(noBump.status, 1)
+  assert.match(noBump.stderr, /only a release pull request may change plugin\//)
+
+  writeFileSync(join(p.dir, 'package.json'), '{"type":"module","version":"2.0.0"}\n')
+  p.release('v2.0.0', built)
+  const release = p.run('--pr', base)
+  assert.equal(release.status, 0, release.stderr + release.stdout)
+
+  p.release('v2.0.1', `${built}// planted\n`)
+  const planted = p.run('--pr', base)
+  assert.equal(planted.status, 1)
+  assert.match(planted.stderr, /dist\/a\.js differs/)
 })
 
 test('check-plugin-build: no arguments prints usage', () => {

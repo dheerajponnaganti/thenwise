@@ -35,7 +35,7 @@ const plugin = json('.claude-plugin/plugin.json')
 const market = json('.claude-plugin/marketplace.json')
 const entry = market.plugins?.find((p) => p.name === plugin.name)
 if (!entry) problems.push(`marketplace.json has no entry named ${plugin.name}`)
-else if (entry.source?.ref !== 'release') problems.push(`marketplace.json source ref is ${entry.source?.ref}, expected release`)
+else if (entry.source !== './plugin') problems.push(`marketplace.json source is ${JSON.stringify(entry.source)}, expected "./plugin"`)
 
 if (problems.length) {
   console.error(`pack check: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n${problems.map((p) => `  ${p}`).join('\n')}`)

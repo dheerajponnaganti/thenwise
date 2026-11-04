@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - A Copilot chat stopped by a credit limit or an error reads "stopped by the tool: premium request limit reached", without a second "stopped".
 - A handoff now opens with one line that names the earlier chat's tool and keeps its work apart from the agent's: when the agent continues that work, it says first what that chat had done and anything it tried that failed, then what it did itself, and it claims only its own edits and test runs.

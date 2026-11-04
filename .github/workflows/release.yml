@@ -14,6 +14,7 @@ on:
       - scripts/npm-readme.mjs
       - scripts/check-versions.mjs
       - scripts/check-plugin-build.mjs
+      - scripts/plugin-folder.mjs
       - scripts/changelog-section.mjs
 concurrency:
   group: release-${{ github.event.pull_request.number || github.ref }}
@@ -44,7 +45,7 @@ jobs:
         run: |
           node scripts/check-versions.mjs --tag "$TAG"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          node scripts/check-plugin-build.mjs --release origin/release --tag "$TAG"
+          node scripts/check-plugin-build.mjs --folder --tag "$TAG"
   build:
     needs: verify
     runs-on: ubuntu-latest

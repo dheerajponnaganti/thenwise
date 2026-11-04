@@ -2,7 +2,7 @@
 import { checkVersions } from '../scripts/check-versions.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -102,7 +102,7 @@ test('R-B3: a newer store or config is refused with a message and nothing is cha
 // R-B4: nothing in what ships may carry the owner's data. The patterns live in scripts/scan-owner.mjs, which CI also runs over the repo.
 const scanDir = (dir: string) => spawnSync(process.execPath, [join(ROOT, 'scripts/scan-owner.mjs'), '--dir', dir], { encoding: 'utf8' })
 
-test('R-B4: the npm tarball and the release tree hold no owner data', () => {
+test('R-B4: the npm tarball and plugin/ hold no owner data', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'tw-scan-'))
   try {
     // Tarball: prepack deletes and rebuilds dist, which breaks test files running at the same time, so it runs only when dist is missing.
@@ -114,27 +114,32 @@ test('R-B4: the npm tarball and the release tree hold no owner data', () => {
     const t = scanDir(out)
     assert.equal(t.status, 0, `tarball: ${t.stderr}`)
 
-    // Release tree: tracked files that scripts/release-branch.mjs keeps, plus dist.
-    const skip = ['test', 'bench', 'fixtures', 'docs', 'scripts', '.github']
-    const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((f) => f && !skip.includes(f.split('/')[0]!))
-    const tree = join(tmp, 'tree')
-    for (const f of tracked) {
-      mkdirSync(join(tree, f, '..'), { recursive: true })
-      writeFileSync(join(tree, f), readFileSync(join(ROOT, f)))
-    }
-    mkdirSync(join(tree, 'dist'))
-    execFileSync(process.execPath, ['-e', `require('fs').cpSync(${JSON.stringify(join(out, 'package/dist'))}, ${JSON.stringify(join(tree, 'dist'))}, {recursive:true})`])
-    const r = scanDir(tree)
-    assert.equal(r.status, 0, `release tree: ${r.stderr}`)
+    // plugin/: the committed folder every tool installs.
+    const r = scanDir(join(ROOT, 'plugin'))
+    assert.equal(r.status, 0, `plugin/: ${r.stderr}`)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
 })
 
-test('#42: the plugin installs over HTTPS, so a machine with no GitHub SSH key can install and update it', () => {
+test('#42: every tool installs from plugin/ in the one clone, and each path its manifest names is there', () => {
+  // A plugin source inside the marketplace clone means no second clone, so no SSH to fail on a machine with no GitHub key.
   const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'))
-  const source = market.plugins[0].source
-  assert.equal(source.source, 'url')
-  assert.match(source.url, /^https:\/\//)
-  assert.equal(source.ref, 'release')
+  assert.equal(market.plugins[0].source, './plugin')
+  const plugin = join(ROOT, 'plugin')
+  // Whatever tools plugin/ ships today: each manifest's named files, and every dist/ file a hook or server runs.
+  const json = readdirSync(plugin, { recursive: true }).map(String).filter((f) => f.endsWith('.json') && !f.startsWith('dist'))
+  assert.ok(json.includes(join('.claude-plugin', 'plugin.json')) && json.includes(join('hooks', 'hooks.json')))
+  for (const f of json.filter((f) => f.endsWith('plugin.json'))) {
+    const m = JSON.parse(readFileSync(join(plugin, f), 'utf8'))
+    for (const k of ['hooks', 'commands', 'skills', 'mcpServers']) if (typeof m[k] === 'string') assert.ok(existsSync(join(plugin, m[k])), `${f} ${k}: ${m[k]}`)
+  }
+  let runs = 0
+  for (const f of json) {
+    for (const [, cli] of readFileSync(join(plugin, f), 'utf8').matchAll(/(dist\/[\w/.-]+?\.js)/g)) {
+      runs++
+      assert.ok(existsSync(join(plugin, cli!)), `${f} runs ${cli}`)
+    }
+  }
+  assert.ok(runs >= 13, `only ${runs} commands run dist/`)
 })

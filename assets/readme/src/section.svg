@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1280" viewBox="0 0 2560 1280">
+<!--#inline shared/defs.svg-->
+<!-- Plate V. Three sources settle into one store; one window drills into it with the memory tools and the hooks. -->
+<rect width="2560" height="1280" rx="44" fill="#E6DCC5"/>
+<rect x="32" y="32" width="2496" height="1216" rx="30" fill="none" stroke="#241C15" stroke-width="4"/>
+<rect x="48" y="48" width="2464" height="1184" rx="20" fill="none" stroke="#241C15" stroke-width="1.6"/>
+<g class="sc" font-size="28" fill="#241C15">
+<text x="96" y="104">Plate V.</text>
+<text x="1280" y="104" text-anchor="middle">How the ground is laid</text>
+<text x="2464" y="104" text-anchor="end">Vertical section</text>
+</g>
+
+<!-- your machine: the boundary nothing crosses -->
+<rect x="92" y="150" width="2376" height="1060" fill="none" stroke="#B3361F" stroke-width="3" stroke-dasharray="18 12"/>
+<g fill="#E6DCC5" stroke="#B3361F" stroke-width="3"><rect x="80" y="138" width="24" height="24"/><rect x="2456" y="138" width="24" height="24"/><rect x="80" y="1198" width="24" height="24"/><rect x="2456" y="1198" width="24" height="24"/></g>
+<rect x="740" y="1184" width="1080" height="52" fill="#E6DCC5"/>
+<text x="1280" y="1220" class="sc" font-size="28" fill="#B3361F" text-anchor="middle">Your machine · search, hooks and tools make no network calls</text>
+
+<!-- three sources -->
+<g>
+<rect x="140" y="190" width="460" height="150" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/>
+<text x="176" y="262" class="serif" font-size="50" fill="#241C15">Your chats</text>
+<text x="176" y="308" class="sc" font-size="22" fill="#B3361F">every tool · one memory · masked</text>
+<rect x="636" y="190" width="600" height="150" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/>
+<text x="676" y="262" class="serif" font-size="50" fill="#241C15">Commits and pull requests</text>
+<text x="676" y="308" class="sc" font-size="22" fill="#241C15">git, and gh if you like</text>
+<rect x="1272" y="190" width="440" height="150" rx="6" fill="#F6EFDF" stroke="#241C15" stroke-width="3"/>
+<text x="1308" y="262" class="serif" font-size="50" fill="#241C15">Notes and plans</text>
+<text x="1308" y="308" class="sc" font-size="22" fill="#241C15">vault, plans, <tspan class="mono" letter-spacing="0">CLAUDE.md</tspan></text>
+<g stroke="#241C15" stroke-width="2.4" stroke-dasharray="4 8"><path d="M370 340 V458"/><path d="M920 340 V458"/><path d="M1492 340 V458"/></g>
+<g fill="#241C15"><circle cx="352" cy="372" r="4"/><circle cx="390" cy="404" r="4"/><circle cx="362" cy="436" r="4"/><circle cx="902" cy="380" r="4"/><circle cx="938" cy="412" r="4"/><circle cx="908" cy="444" r="4"/><circle cx="1474" cy="368" r="4"/><circle cx="1510" cy="402" r="4"/><circle cx="1482" cy="438" r="4"/></g>
+</g>
+
+<!-- the five layers -->
+<g>
+<path d="M140 474 C600 458 1100 486 1600 470 S2200 462 2420 474 V1160 H140 Z" fill="#DCC795"/>
+<path d="M140 474 C600 458 1100 486 1600 470 S2200 462 2420 474 V1160 H140 Z" fill="url(#stip)"/>
+<path d="M140 604 C620 592 1120 616 1620 600 S2220 596 2420 606 V1160 H140 Z" fill="#C49A5C"/>
+<path d="M140 604 C620 592 1120 616 1620 600 S2220 596 2420 606 V1160 H140 Z" fill="url(#dash)"/>
+<path d="M140 736 C600 748 1120 726 1640 740 S2220 744 2420 734 V1160 H140 Z" fill="#93A07A"/>
+<path d="M140 736 C600 748 1120 726 1640 740 S2220 744 2420 734 V1160 H140 Z" fill="url(#shale)"/>
+<path d="M140 868 C620 856 1120 880 1640 864 S2220 858 2420 868 V1160 H140 Z" fill="#B06A45"/>
+<path d="M140 868 C620 856 1120 880 1640 864 S2220 858 2420 868 V1160 H140 Z" fill="url(#brick)"/>
+<path d="M140 1012 C600 1024 1120 1004 1640 1016 S2220 1020 2420 1010 V1160 H140 Z" fill="#6F8191"/>
+<path d="M140 1012 C600 1024 1120 1004 1640 1016 S2220 1020 2420 1010 V1160 H140 Z" fill="url(#rings)"/>
+<g fill="none" stroke="#241C15" stroke-width="2.6">
+<path d="M140 604 C620 592 1120 616 1620 600 S2220 596 2420 606"/>
+<path d="M140 736 C600 748 1120 726 1640 740 S2220 744 2420 734"/>
+<path d="M140 868 C620 856 1120 880 1640 864 S2220 858 2420 868"/>
+<path d="M140 1012 C600 1024 1120 1004 1640 1016 S2220 1020 2420 1010"/>
+</g>
+<path d="M140 474 C600 458 1100 486 1600 470 S2200 462 2420 474 V1160 H140 Z" fill="none" stroke="#241C15" stroke-width="4"/>
+</g>
+<g>
+<text x="184" y="530" class="sc" font-size="30" fill="#241C15">Words</text>
+<text x="184" y="576" class="it" font-size="38" fill="#241C15">every word of every chat, commit and note, ready to search</text>
+<text x="184" y="660" class="sc" font-size="30" fill="#241C15">Dates</text>
+<text x="184" y="706" class="it" font-size="38" fill="#241C15">each record knows its day, and what came after it</text>
+<text x="184" y="792" class="sc" font-size="30" fill="#241C15">Links</text>
+<text x="184" y="838" class="it" font-size="38" fill="#241C15">same file, same pull request, and which record replaced which</text>
+<text x="184" y="924" class="sc" font-size="30" fill="#F1E9D6">Decisions and dead ends</text>
+<text x="184" y="970" class="it" font-size="38" fill="#F1E9D6">found in chats, kept on purpose, or caught when an edit is undone or a test fails</text>
+<text x="184" y="1068" class="sc" font-size="30" fill="#F1E9D6">Files</text>
+<text x="184" y="1114" class="it" font-size="38" fill="#F1E9D6">the story of every file you touched</text>
+<text x="1290" y="530" class="sc" font-size="28" fill="#B3361F">One local store · no model inside</text>
+</g>
+
+<!-- the window and its two bores -->
+<circle cx="2031" cy="936" r="26" fill="none" stroke="#B3361F" stroke-width="6"/>
+<rect x="2316" y="472" width="30" height="176" fill="#EFE6D2" stroke="#241C15" stroke-width="3"/>
+<circle cx="2331" cy="664" r="26" fill="none" stroke="#B3361F" stroke-width="6"/>
+<rect x="2016" y="472" width="30" height="446" fill="#EFE6D2" stroke="#241C15" stroke-width="3"/>
+<text x="2066" y="790" class="sc" font-size="26" fill="#241C15">eight memory</text>
+<text x="2066" y="822" class="sc" font-size="26" fill="#241C15">tools</text>
+<text x="2304" y="560" class="sc" font-size="26" fill="#241C15" text-anchor="end">quiet</text>
+<text x="2304" y="592" class="sc" font-size="26" fill="#241C15" text-anchor="end">hooks</text>
+
+<rect x="1756" y="188" width="680" height="282" rx="12" fill="#241C15" opacity="0.18"/>
+<rect x="1750" y="180" width="680" height="282" rx="12" fill="#1E1A16" stroke="#241C15" stroke-width="3"/>
+<path d="M1751.5 192 a10.5 10.5 0 0 1 10.5 -10.5 H2418 a10.5 10.5 0 0 1 10.5 10.5 V226 H1751.5 Z" fill="#F4ECDA"/>
+<path d="M1752 226 H2428" stroke="#C9BBA0" stroke-width="2"/>
+<g fill="none" stroke="#5E4E3E" stroke-width="2.4"><circle cx="1782" cy="204" r="8"/><circle cx="1806" cy="204" r="8"/><circle cx="1830" cy="204" r="8"/></g>
+<text x="1858" y="213" class="mono" font-size="26" fill="#5E4E3E">your agent · shop</text>
+<circle cx="1792" cy="317" r="7" fill="#E58A6E"/><circle cx="1792" cy="363" r="7" fill="#E58A6E"/>
+<g class="mono" font-size="31">
+<text x="1782" y="280" fill="#F1E9D6"><tspan fill="#E58A6E">›</tspan> why did we split the cache?</text>
+<text x="1812" y="328" fill="#C9BBA0">thenwise · <tspan fill="#E58A6E">memory_why</tspan></text>
+<text x="1812" y="374" fill="#C9BBA0">hook · history of src/cache.ts</text>
+<text x="1782" y="430" fill="#F2C8B9">decided 06 oct · eight shards</text>
+</g>
+</svg>

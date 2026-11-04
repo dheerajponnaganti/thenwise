@@ -45,7 +45,7 @@ export function scanFile(rel, text) {
     if (!re.test(text) || SCOPED_OK.some((s) => s.re.source === re.source && rel.startsWith(s.under)) || known.some((k) => re.test(k))) continue
     hits.push(`${rel}: matches ${re}`)
   }
-  if (!known.includes('name') && !NAME_OK.has(rel.replace(/^package\//, '')) && NAME.test(text.replace(HANDLE, ''))) hits.push(`${rel}: names the author outside a repo URL`)
+  if (!known.includes('name') && !NAME_OK.has(rel.replace(/^(package|plugin)\//, '')) && NAME.test(text.replace(HANDLE, ''))) hits.push(`${rel}: names the author outside a repo URL`)
 
   return hits
 }

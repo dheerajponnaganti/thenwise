@@ -195,6 +195,7 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
 
 const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'path', 'get']
 if (cmd && QUERY.includes(cmd)) {
+  process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
   const { loadConfig } = await import('./ingest/config.ts')
   const { Graph } = await import('./query/engine.ts')
   const c = await import('./query/commands.ts')

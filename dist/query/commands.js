@@ -1,6 +1,7 @@
 // The Phase C commands: search, why, tried, asof, trace, resume, path, get. Each prints a short header, then
 // numbered results with kind, id, date, source and the part of the passage around the match. Pure functions: db in, text out.
 import { endOf, GOOD, local, localDay, queryTerms } from "./engine.js";
+import { basename } from 'node:path';
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i];
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i];
 const STRONG = /\b(why|decision|dead-end):/i;
@@ -126,9 +127,12 @@ function listing(g, items, limit = 10) {
     // One-liners stop before the tool output cap would cut them mid-list.
     let room = budget - 300 - full.join('\n\n').length;
     const more = items.slice(full.length, limit).map((x, i) => brief(i + full.length + 1, x.h)).filter((l) => (room -= l.length + 1) >= 0);
-    return [...full, ...(more.length ? [`more matches (get <id> prints one):\n${more.join('\n')}`] : [])];
+    return [...full, ...(more.length ? [`more matches (${verb('read')} <id> prints one):\n${more.join('\n')}`] : [])];
 }
-const CUT = 'passages are cut to the words around the match ("..."); get <id>#<passage> prints one in full';
+/** How a result names its follow-up commands: the MCP tool names for an agent (MCP and the hooks), the CLI verbs when a
+ * person runs `thenwise search` and the like (the CLI sets THENWISE_CLI_VERBS). */
+const verb = (tool) => (process.env.THENWISE_CLI_VERBS === '1' ? (tool === 'read' ? 'get' : 'current') : `memory_${tool}`);
+const cutNote = () => `passages are cut to the words around the match ("..."); ${verb('read')} <id>#<passage> prints one in full`;
 function notRecorded(what, s) {
     const out = [`not recorded: nothing in the memory matches ${what}.`, ...rewording(s)];
     if (s.missing.length)
@@ -144,7 +148,7 @@ const head = (title, s, shown, total) => {
     out.push(...rewording(s));
     if (s.missing.length)
         out.push(`no record of the word(s): ${s.missing.join(', ')}`);
-    out.push(CUT);
+    out.push(cutNote());
     return out.join('\n');
 };
 /** The ranking behind search, why, tried, current and asof, shared by the text commands and the gold benchmark. */
@@ -216,7 +220,7 @@ function newerOnTopic(g, s, h, evidence = true) {
 }
 const newerNote = (g, s, h) => {
     const n = newerOnTopic(g, s, h);
-    return n ? `\n   NEWER on this topic (${n.why}): ${n.hit.node.kind} ${n.hit.node.id} (${local(n.hit.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now\n   newer says: ${flat(excerpt(n.hit.shown, 160, [], n.hit.idf)).replace(/\*\*/g, "")}` : '';
+    return n ? `\n   NEWER on this topic (${n.why}): ${n.hit.node.kind} ${n.hit.node.id} (${local(n.hit.node.at)}); this one may be outdated: read the newer one (or ${verb('current')}) before saying what holds now\n   newer says: ${flat(excerpt(n.hit.shown, 160, [], n.hit.idf)).replace(/\*\*/g, "")}` : '';
 };
 /** NEWER notes for the top 3, kept on the first result that has one only: one warning per answer. */
 const newerNotes = (g, s, hs) => {
@@ -330,7 +334,7 @@ export function asof(g, date, q, limit = 5) {
         return notRecorded(`"${q}" on or before ${date}`, s);
     const top = items.slice(0, Math.min(limit, 12)).map((x) => x.h);
     const newest = top.reduce((a, b) => (ms(b.node.at) > ms(a.node.at) ? b : a));
-    const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, best match first`, `searched: ${s.terms.join(' ')}`, 'memory files, and CLAUDE.md sections without git history, are undated and left out', CUT, `best match: ${label(g, top[0].node.id)} (${local(top[0].node.at)}); newest among the matches: ${label(g, newest.node.id)} (${local(newest.node.at)})`];
+    const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, best match first`, `searched: ${s.terms.join(' ')}`, 'memory files, and CLAUDE.md sections without git history, are undated and left out', cutNote(), `best match: ${label(g, top[0].node.id)} (${local(top[0].node.at)}); newest among the matches: ${label(g, newest.node.id)} (${local(newest.node.at)})`];
     const repos = commitsAt(g, end);
     if (repos.length)
         out.push(`the code as it was on ${date} (the newest commit on or before it; read a file with git show <sha>:<path>):`, ...repos);
@@ -367,7 +371,7 @@ export function trace(g, target, cap = 100, offset = 0, budget = 0) {
         const hits = s.good.slice(0, 8).sort((a, b) => ms(b.node.at) - ms(a.node.at));
         return [`trace "${target}": no file, PR, commit or note by that name; showing ${hits.length} topic matches, newest first, grouped by date`, `searched: ${s.terms.join(' ')}`, ...grouped(hits.map((h) => ({ date: h.node.at, text: result(0, h).replace(/^0\. /, '- ') })))].join('\n\n');
     }
-    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, CUT];
+    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, cutNote()];
     const items = [];
     for (const { id } of ex.slice(0, 3)) {
         const t = g.nodes.get(id);
@@ -411,9 +415,23 @@ function grouped(items) {
     }
     return out;
 }
+/** Inside a repository, what belongs to this project: its own records, and global notes that name it (a vault note about
+ * the project). Outside one, everything in scope. */
+function ofThisProject(g) {
+    if (g.scope === undefined)
+        return () => true;
+    const plain = (t) => ` ${t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+    const name = plain(basename(g.scope));
+    return (n) => {
+        const r = g.rootOf(n);
+        return r === g.scope || (r === '' && name.trim() !== '' && plain(`${n.id} ${n.title} ${g.fullText(n.id)}`).includes(name));
+    };
+}
 export function resume(g, q = '') {
     const terms = queryTerms(q);
-    const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team);
+    const mine = ofThisProject(g);
+    // Inside a repository, a home-folder chat is not where this project stands.
+    const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team && (q !== '' || g.scope === undefined || g.rootOf(n) === g.scope));
     let ses;
     let how = 'the newest session';
     const key = words(q).join('-');
@@ -436,7 +454,7 @@ export function resume(g, q = '') {
     else
         ses = sessions.sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0];
     if (!ses)
-        return 'not recorded: the graph holds no sessions.';
+        return g.scope === undefined || q ? 'not recorded: the graph holds no sessions.' : `not recorded: no session of ${basename(g.scope)} is in the memory yet.`;
     const out = [`resume${q ? ` "${q}"` : ''}: ${how}: ${label(g, ses.id)}, ${ses.at} to ${ses.until}`];
     const kids = g.bySource(ses.id).sort((a, b) => ms(b.at) - ms(a.at) || (a.id < b.id ? -1 : 1));
     const sum = kids.find((n) => n.kind === 'summary');
@@ -459,16 +477,16 @@ export function resume(g, q = '') {
     const cwd = String(ses.extra.cwd ?? '');
     const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10);
     out.push(`## Commits after the last turn (${lastAt})${commits.length ? '' : ': none recorded'}`, ...commits.map((n) => `- ${label(g, n.id)}, ${n.at}`));
-    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : g.ofKind('note').filter((n) => g.inScope(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
+    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : g.ofKind('note').filter((n) => g.inScope(n) && mine(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Newest matching vault notes${notes.length ? '' : ': none recorded'}`, ...notes.map((n) => `- ${label(g, n.id)}, ${n.at}, ${n.source}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 500)}`));
     // Where the work stands is often in the release history and the "next to build" line, whatever the query words.
     const releases = g.ofKind('commit', 'pr').filter((n) => g.inScope(n) && ((n.kind === 'commit' && /^(\w[\w-]* )?v?\d+\.\d+\.\d+\b/.test(n.title)) || (n.kind === 'pr' && /^release v?\d+\.\d+/i.test(n.title)))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Latest releases${releases.length ? '' : ': none recorded'}`, ...releases.map((n) => `- ${label(g, n.id)}, ${local(n.at)}`));
-    const next = g.ofKind('note', 'section').filter((n) => /pending|home/i.test(n.id)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
-    out.push(`## Next on the build list${next.length ? '' : ': none recorded'}`, ...[...new Set(next)].slice(0, 6));
-    for (const n of g.ofKind('note').filter((x) => /pending/i.test(x.id) && on(x)).slice(0, 2)) {
+    const next = g.ofKind('note', 'section').filter((n) => /pending|home/i.test(n.id) && g.inScope(n) && mine(n)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
+    out.push(`## Next on the build list${next.length ? '' : ': none recorded'}`, ...[...new Set(next)].slice(0, 3));
+    for (const n of g.ofKind('note').filter((x) => /pending/i.test(x.id) && g.inScope(x) && mine(x) && on(x)).slice(0, 2)) {
         const open = g.fullText(n.id).split('\n').filter((l) => /^\s*[-*]\s+\[ \]/.test(l));
-        out.push(`## Unchecked items in ${label(g, n.id)} (${n.at})`, open.length ? open.join('\n') : 'none unchecked');
+        out.push(`## Unchecked items in ${label(g, n.id)} (${n.at})`, open.length ? [...open.slice(0, 3), ...(open.length > 3 ? [`(${open.length - 3} more: memory_read ${n.id})`] : [])].join('\n') : 'none unchecked');
     }
     const since = [lastAt, ...notes.map((n) => n.at)].sort().pop();
     out.push(`## Check against the repo (this output only knows what was recorded up to ${since})`, `- working directory of the session: ${cwd || 'unknown'}`, '- current branch: `git branch --show-current`, and compare with the branch named in the notes or PRs above', '- uncommitted changes: `git status --short`', `- commits after ${since}: \`git log --since=${since.slice(0, 10)} --oneline\``, '- open PRs still open: `gh pr list`; the PRs above may have merged since', '- trust the repo over any note above when they disagree');

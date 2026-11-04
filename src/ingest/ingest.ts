@@ -227,7 +227,7 @@ export function scanSessions(cfg: Config): { files: SessionFile[]; skipped: numb
 
 export function gitOut(repo: string, args: string[], input?: string): string | null {
   try {
-    return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], ...(input === undefined ? {} : { input }) })
+    return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...(input === undefined ? {} : { input }) })
   } catch {
     return null
   }

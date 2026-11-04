@@ -41,7 +41,7 @@ function files(vault: string, memDir: string): string[] {
 
 const GIT_MS = 120_000 // a stalled push must not freeze every later sync
 function git(vault: string, args: string[]): string {
-  return execFileSync('git', ['-C', vault, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_MS, killSignal: 'SIGKILL' })
+  return execFileSync('git', ['-C', vault, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_MS, killSignal: 'SIGKILL', windowsHide: true })
 }
 
 function toGit(cfg: Config, vault: string): string[] {

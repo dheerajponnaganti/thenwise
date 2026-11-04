@@ -121,7 +121,7 @@ export function takeLock(file, pid = process.pid) {
 }
 /** Runs one query command in a child that is killed after QUERY_MS, so a slow store cannot hold a hook. */
 function query(env, args) {
-    const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, env: { ...process.env, THENWISE_HOME: env.dir } });
+    const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } });
     if (r.status !== 0) {
         log(env, `${args[0]} did not answer: ${r.error?.message ?? (r.stderr.trim().split('\n')[0] || `exit ${r.status}`)}`, 'warn', 'query_failed');
         return '';
@@ -170,7 +170,7 @@ function startSync(env) {
         return log(env, 'sync already running');
     mkdirSync(env.dir, { recursive: true });
     // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
-    spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', env: { ...process.env, THENWISE_HOME: env.dir } }).unref();
+    spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } }).unref();
     log(env, 'sync started', 'info', 'sync_started');
 }
 const distillStamp = (dir) => join(dir, 'distill-auto.json');
@@ -210,7 +210,7 @@ export function syncRun(env) {
                 continue;
             }
             const t = Date.now();
-            const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, env: { ...process.env, THENWISE_HOME: env.dir } });
+            const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } });
             if (verb === 'ingest')
                 changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout);
             if (verb === 'vault write' && r.status === 0)

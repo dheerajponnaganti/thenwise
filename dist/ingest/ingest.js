@@ -184,7 +184,7 @@ export function scanSessions(cfg) {
 }
 export function gitOut(repo, args, input) {
     try {
-        return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], ...(input === undefined ? {} : { input }) });
+        return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...(input === undefined ? {} : { input }) });
     }
     catch {
         return null;

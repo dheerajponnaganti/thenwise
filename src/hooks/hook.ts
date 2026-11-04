@@ -272,6 +272,15 @@ const reply = (event: string, additionalContext: string, systemMessage = '') =>
   process.env.ANTIGRAVITY_CONVERSATION_ID ? JSON.stringify(event === 'SessionStart' || event === 'UserPromptSubmit' ? { injectSteps: [{ ephemeralMessage: additionalContext }] } : {}) :
   JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext } : { ...(systemMessage ? { systemMessage } : {}), hookSpecificOutput: { hookEventName: event, additionalContext } })
 
+/** The context text inside a reply, whichever tool's shape it has. */
+const contextOf = (out: string): string => {
+  const o = JSON.parse(out)
+
+  return o.hookSpecificOutput?.additionalContext ?? o.additionalContext ?? o.injectSteps?.[0]?.ephemeralMessage ?? ''
+}
+/** Copilot and Antigravity show no hook text to the person; Claude Code and Codex show a systemMessage. */
+export const showsPerson = () => !process.env.COPILOT_PLUGIN_ROOT && !process.env.ANTIGRAVITY_CONVERSATION_ID
+
 // Copilot's shell tool has no plugin variables, so the model needs the plugin's folder to run the /thenwise: commands.
 const copilotGuide = (root: string) => `Thenwise memory runs from ${root}. In its /thenwise: commands, \${CLAUDE_PLUGIN_ROOT} stands for that folder. For questions about past work, decisions or what was tried, call the memory_* tools before guessing.`
 
@@ -410,9 +419,9 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     if (name === 'prompt') {
       const out = promptMap(env, input, cfg?.promptMap ?? true)
       const mates = lateTeam(env, input, cwd, graph)
-      const told = process.env.COPILOT_PLUGIN_ROOT ? '' : syncNotice(env.dir)
+      const told = showsPerson() ? syncNotice(env.dir) : ''
       if (!told && !mates) return out
-      const ctx = [out ? (process.env.COPILOT_PLUGIN_ROOT ? JSON.parse(out).additionalContext : JSON.parse(out).hookSpecificOutput.additionalContext) : '', mates].filter(Boolean).join('\n')
+      const ctx = [out ? contextOf(out) : '', mates].filter(Boolean).join('\n')
       const base = ctx ? JSON.parse(reply('UserPromptSubmit', ctx)) : {}
 
       return JSON.stringify({ ...base, ...(told ? { systemMessage: told } : {}) })

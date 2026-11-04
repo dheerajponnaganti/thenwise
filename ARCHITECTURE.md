@@ -15,7 +15,7 @@ team shares (optional) ───────────────────
 
 A session start and a session end run a background sync (`thenwise hook sync-run`), which archives and ingests what changed, and writes its progress to `sync-progress.json`. Search only reads the store, so it stays fast and needs no network.
 
-The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the newest chat another session left in the project straight from Claude Code's or Copilot's own live file, so the next agent knows where the work stopped even before the sync has copied that chat.
+The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the newest chat another session left in the project straight from the tool's own live file (Claude Code, Copilot CLI, Codex or Antigravity), so the next agent knows where the work stopped even before the sync has copied that chat.
 
 ## Module responsibilities
 

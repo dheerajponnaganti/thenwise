@@ -38,6 +38,18 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/dist/cli.js\" hook stop",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\dist\\cli.js\" hook stop",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

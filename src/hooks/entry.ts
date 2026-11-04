@@ -71,9 +71,9 @@ const latePending = (i: Record<string, any>) => {
   return typeof sid === 'string' && !!sid && existsSync(lateMark(resolveDataDir(), sid))
 }
 
-/** A first sync or a rebuild the person has not heard about lately (Claude Code only: Copilot shows no hook text). */
+/** A first sync or a rebuild the person has not heard about lately (Claude Code and Codex: Copilot and Antigravity show no hook text). */
 const syncToTell = () => {
-  if (process.env.COPILOT_PLUGIN_ROOT) return false
+  if (process.env.COPILOT_PLUGIN_ROOT || process.env.ANTIGRAVITY_CONVERSATION_ID) return false
   const p = readProgress(resolveDataDir())
 
   return !!p && p.kind !== 'auto' && (p.finished ? !p.told || p.told < p.finished : running(p)) // a killed sync has nothing to tell

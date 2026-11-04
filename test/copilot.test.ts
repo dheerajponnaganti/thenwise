@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -338,4 +338,16 @@ test('a chat with prompts that yields nothing is logged, so a changed file forma
   } finally {
     w.destroy()
   }
+})
+
+test("every /thenwise: command finds the CLI in Copilot too, where nothing fills in ${CLAUDE_PLUGIN_ROOT}", () => {
+  const line = 'R="${CLAUDE_PLUGIN_ROOT}"; node "${R:-${COPILOT_HOME:-$HOME/.copilot}/installed-plugins/thenwise/thenwise}/dist/cli.js"'
+  for (const f of readdirSync(resolve('commands'))) {
+    const text = readFileSync(resolve('commands', f), 'utf8')
+    for (const [, cmd] of text.matchAll(/`([^`]*dist\/cli\.js[^`]*)`/g)) assert.ok(cmd!.startsWith(line), `${f}: ${cmd}`)
+  }
+  if (process.platform === 'win32') return // Copilot's shell on Windows is PowerShell: covered with the Windows work
+  const where = (env: Record<string, string>) => execFileSync('sh', ['-c', `R=""; echo "\${R:-\${COPILOT_HOME:-$HOME/.copilot}/installed-plugins/thenwise/thenwise}"`], { env: { PATH: process.env.PATH!, ...env }, encoding: 'utf8' }).trim()
+  assert.equal(where({ HOME: '/h', COPILOT_HOME: '/c' }), '/c/installed-plugins/thenwise/thenwise')
+  assert.equal(where({ HOME: '/h' }), '/h/.copilot/installed-plugins/thenwise/thenwise')
 })

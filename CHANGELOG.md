@@ -7,6 +7,10 @@
 - Before this release, the plugin blocked every file edit in Copilot CLI, because Copilot denies an edit when a pre-edit hook fails and the released hooks could not run there. Copilot now gets no pre-edit hook at all, so a broken install can never block an edit.
 - Teams with mixed tools: a shared chat carries the tool it came from, and a teammate's results say "Copilot chat of alice" or "Claude Code chat of bob". The team server adds one column at its next start; older Thenwise versions keep working and send no tool.
 - `thenwise forget` and `thenwise uninstall` name Copilot's own chat files and the copies Copilot keeps on GitHub, which Thenwise cannot reach.
+- The `/thenwise:` commands work in Copilot CLI with any model. Copilot leaves `${CLAUDE_PLUGIN_ROOT}` empty, so each command now falls back to Copilot's install folder by itself; before, it depended on the model rewriting the path.
+- Claude Code and Copilot CLI now install the plugin from one `plugin/` folder in the repo, the way claude-mem and Ponytail ship theirs. Claude Code clones once instead of twice, so the extra clone can no longer fail with a permission error on a machine with no GitHub SSH key.
+
+
 
 ## 0.1.28
 

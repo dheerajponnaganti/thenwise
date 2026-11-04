@@ -122,6 +122,7 @@ if (cmd === 'mcp') {
 }
 
 if (cmd === 'hook') {
+  ;(await import('./setup/projects.ts')).memoProjects()
   const { resolveDataDir } = await import('./core/home.ts')
   const { runHook } = await import('./hooks/hook.ts')
   const { hookInput } = await import('./hooks/entry.ts')

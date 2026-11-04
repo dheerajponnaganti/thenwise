@@ -10,6 +10,7 @@ import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/
 import { maskSecrets } from '../core/secrets.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { updateNotice } from '../setup/update.ts'
+import { codexConverter } from '../ingest/codex.ts'
 import { copilotConverter, copilotDir } from '../ingest/copilot.ts'
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../ingest/plans.ts'
 import { repoRoot } from '../ingest/repos.ts'
@@ -302,6 +303,8 @@ export function markSeen(env: HookEnv, session: string, agent: unknown, file: st
 
 /** The file history for one file, once per session and agent; '' when there is none (and then the file stays unspent). */
 function fileHint(env: HookEnv, input: Record<string, any>, file: string, event = 'PostToolUse'): string {
+  // Antigravity takes no text after a tool, so the query would cost time and spend the file's one hint for nothing.
+  if (process.env.ANTIGRAVITY_CONVERSATION_ID) return ''
   const session = input.session_id
   const cwd = String(input.cwd ?? '')
   if (typeof session !== 'string' || !existsSync(join(env.dir, 'graph.db'))) return ''
@@ -377,7 +380,8 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     if (name !== 'status' && cfg && isOff(cfg, cwd) && !(name === 'session-start' && input.source !== 'compact')) return log(env, `memory is off for ${cwd}`) ?? ''
     if (name === 'session-end') {
       const sid = input.session_id ?? input.sessionId
-      if (typeof sid === 'string' && sid) rmSync(lateMark(env.dir, sid), { force: true })
+      // Antigravity's session-end hook is its Stop, after every model loop: the mark stays until the session's ten minutes run out.
+      if (typeof sid === 'string' && sid && !process.env.ANTIGRAVITY_CONVERSATION_ID) rmSync(lateMark(env.dir, sid), { force: true })
       // Antigravity's Stop fires after every model loop, not once per session: sync only when it is fully idle, and at
       // most every ten minutes, so a long session does not run a full sync per turn.
       if (process.env.ANTIGRAVITY_CONVERSATION_ID) {
@@ -468,7 +472,9 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
         return block || notice || guide || handoff ? reply('SessionStart', [guide, notice, handoff, block].filter(Boolean).join('\n'), notice) : ''
       }
       if (input.source !== 'compact') return notice || guide || handoff ? reply('SessionStart', [guide, notice, handoff].filter(Boolean).join('\n'), notice) : ''
-      const block = resumeAfterCompact(env, cwd, graph, currentTail(input.transcript_path, cwd))
+      // Codex (PLUGIN_ROOT, no Copilot root) passes its rollout file, which needs its converter like Copilot's chats.
+      const codex = !!process.env.PLUGIN_ROOT && !process.env.COPILOT_PLUGIN_ROOT && !process.env.ANTIGRAVITY_CONVERSATION_ID
+      const block = resumeAfterCompact(env, cwd, graph, currentTail(input.transcript_path, cwd, codex ? codexConverter(sid, cwd) : undefined))
 
       return block === '' ? '' : reply('SessionStart', block)
     }

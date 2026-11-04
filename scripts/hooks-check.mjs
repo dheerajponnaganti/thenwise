@@ -45,21 +45,35 @@ for (const [event, groups] of Object.entries(hooks)) {
 // Codex: shell strings with $PLUGIN_ROOT and a Windows form, and no pre-edit hook, for the same reason as Copilot.
 const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd'])
 const codexHooks = JSON.parse(readFileSync(join(ROOT, 'hooks/codex.json'), 'utf8')).hooks
+let codexCount = 0
 for (const [event, entries] of Object.entries(codexHooks)) {
   if (!CODEX_EVENTS.has(event)) problems.push(`codex.json ${event}: not an event Thenwise uses`)
   for (const e of entries) for (const h of e.hooks) {
-    if (!/^node "\$PLUGIN_ROOT\/dist\/cli\.js" hook [a-z-]+$/.test(h.command ?? '')) problems.push(`codex.json ${event}: command ${h.command} must run the plugin's CLI`)
-    if (!/^node "%PLUGIN_ROOT%\\dist\\cli\.js" hook [a-z-]+$/.test(h.commandWindows ?? '')) problems.push(`codex.json ${event}: commandWindows ${h.commandWindows} must run the plugin's CLI`)
+    codexCount++
+    const name = /^node "\$PLUGIN_ROOT\/dist\/cli\.js" hook ([a-z-]+)$/.exec(h.command ?? '')?.[1]
+    if (!name) problems.push(`codex.json ${event}: command ${h.command} must run the plugin's CLI`)
+    else if (!handled.has(name)) problems.push(`codex.json ${event}: hook "${name}" is not handled in src/hooks/hook.ts`)
+    const win = /^node "%PLUGIN_ROOT%\\dist\\cli\.js" hook ([a-z-]+)$/.exec(h.commandWindows ?? '')?.[1]
+    if (!win) problems.push(`codex.json ${event}: commandWindows ${h.commandWindows} must run the plugin's CLI`)
+    else if (win !== name) problems.push(`codex.json ${event}: commandWindows runs "${win}", command runs "${name}"`)
+    if (!(h.timeout > 0 && h.timeout <= 3)) problems.push(`codex.json ${event}: timeout ${h.timeout}, expected 1 to 3 seconds`)
   }
 }
 
 // Antigravity: root hooks.json, relative command from the plugin folder, and no pre-edit hook: reports say a slip there blocks tools.
 const AGY_EVENTS = new Set(['enabled', 'SessionStart', 'PreInvocation', 'PostToolUse', 'Stop'])
 const agyHooks = JSON.parse(readFileSync(join(ROOT, 'hooks.json'), 'utf8')).thenwise
+let agyCount = 0
 for (const [event, entries] of Object.entries(agyHooks)) {
   if (!AGY_EVENTS.has(event)) problems.push(`hooks.json ${event}: not an event Thenwise uses`)
   if (event === 'enabled') continue
-  for (const e of entries) for (const h of e.hooks ?? [e]) if (!/^node \.\/dist\/cli\.js hook [a-z-]+$/.test(h.command ?? '')) problems.push(`hooks.json ${event}: command ${h.command} must run the plugin's CLI`)
+  for (const e of entries) for (const h of e.hooks ?? [e]) {
+    agyCount++
+    const name = /^node \.\/dist\/cli\.js hook ([a-z-]+)$/.exec(h.command ?? '')?.[1]
+    if (!name) problems.push(`hooks.json ${event}: command ${h.command} must run the plugin's CLI`)
+    else if (!handled.has(name)) problems.push(`hooks.json ${event}: hook "${name}" is not handled in src/hooks/hook.ts`)
+    if (!(h.timeout > 0 && h.timeout <= 5)) problems.push(`hooks.json ${event}: timeout ${h.timeout}, expected 1 to 5 seconds`)
+  }
 }
 
 // Copilot CLI: camelCase events, exec plus args with no shell, timeoutSec. Copilot denies the tool call when a preToolUse hook
@@ -90,4 +104,4 @@ if (problems.length) {
   console.error(`hooks check: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n${problems.map((p) => `  ${p}`).join('\n')}`)
   process.exit(1)
 }
-console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} Claude Code hooks and ${Object.values(copilot.hooks).flat().length} Copilot CLI hooks fine`)
+console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} Claude Code, ${Object.values(copilot.hooks).flat().length} Copilot CLI, ${codexCount} Codex and ${agyCount} Antigravity hooks fine`)

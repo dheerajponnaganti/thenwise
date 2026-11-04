@@ -43,7 +43,20 @@ export function newProjectLines(claudeDir: string, roots: string[], excluded: (k
   return out.length ? [`not remembered yet: ${out.map((p) => p.folder).join(', ')}. Run \`thenwise setup\` to add ${out.length === 1 ? 'it' : 'them'}.`] : []
 }
 
+// A hook process loads the config more than once and lives under a second: it scans four tools' folders once.
+// Longer processes (ingest, the memory server) scan every time, so a new project folder is seen.
+const found = new Map<string, FoundProject[]>()
+let memo = false
+export const memoProjects = () => (memo = true)
 export function discoverProjects(claudeDir: string, sample = 20): FoundProject[] {
+  if (!memo) return scanProjects(claudeDir, sample)
+  const k = `${claudeDir}\0${sample}`
+  if (!found.has(k)) found.set(k, scanProjects(claudeDir, sample))
+
+  return found.get(k)!
+}
+
+function scanProjects(claudeDir: string, sample: number): FoundProject[] {
   const root = join(claudeDir, 'projects')
   const out: FoundProject[] = []
   for (const e of (existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []).sort((a, b) => (a.name < b.name ? -1 : 1))) {

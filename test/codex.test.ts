@@ -9,6 +9,7 @@ import { test } from 'node:test'
 
 import { claudeHookInput } from '../src/ingest/copilot.ts'
 import { codexConverter, codexSources } from '../src/ingest/codex.ts'
+import { parseSession } from '../src/ingest/transcript.ts'
 import { updateNotice } from '../src/setup/update.ts'
 
 const line = (type: string, payload: object, ordinal = 1) => JSON.stringify({ timestamp: '2026-11-01T10:00:00.000Z', ordinal, type, payload })
@@ -162,4 +163,26 @@ test('under Codex the update notice names Codex', () => {
     if (saved === undefined) delete process.env.PLUGIN_ROOT
     else process.env.PLUGIN_ROOT = saved
   }
+})
+
+test('a completed memory tool call or file change is a finished step, never the step a chat stopped in (live check, 2026-11-04)', () => {
+  const lines = [
+    msg('user', { type: 'input_text', text: 'call memory_resume' }),
+    done({ type: 'FileChange', id: 'f1', changes: { '/work/repo/a.ts': { type: 'add', content: 'x' } } }),
+    done({ type: 'McpToolCall', id: 'm1', server: 'thenwise', tool: 'memory_resume', arguments: {} }),
+  ]
+  const f = codexConverter('t1', '/work/repo')
+  const s = parseSession(lines.flatMap((l) => f(l)), 't1', '/home/u')
+  assert.equal(s.openCall, undefined)
+})
+
+test('one command that reads two files finishes both reads (live check, 2026-11-04)', () => {
+  const lines = [
+    msg('user', { type: 'input_text', text: 'look at the cache' }),
+    done({ type: 'CommandExecution', id: 'c1', cwd: '/work/repo', command: ['bash', '-lc', 'cat src/a.ts src/b.ts'], parsed_cmd: [{ type: 'read', path: 'src/a.ts' }, { type: 'read', path: 'src/b.ts' }], aggregated_output: 'x', exit_code: 0 }),
+  ]
+  const f = codexConverter('t1', '/work/repo')
+  const s = parseSession(lines.flatMap((l) => f(l)), 't1', '/home/u')
+  assert.equal(s.openCall, undefined)
+  assert.equal(s.turns[0]!.reads.size, 2)
 })

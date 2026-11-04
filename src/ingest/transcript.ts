@@ -58,7 +58,8 @@ const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|sys
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`)
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`)
 const AGENT_TOOLS = /^(Agent|Task)$/
-const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node --test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/
+// `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
+const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/
 const h = (s: unknown) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '')
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i
 

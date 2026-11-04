@@ -11,7 +11,7 @@ import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
-import { handoffBlock, insideAgent, ownChat } from '../hooks/handoff.ts'
+import { handoffBlock, ownChat } from '../hooks/handoff.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
 import { Graph, swapPending } from '../query/engine.ts'
 import * as c from '../query/commands.ts'
@@ -148,8 +148,9 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
         // The live handoff needs no store: it reads the other session's chat file now.
         const cfg = loadConfigSafe().config
         const project = here()
-        // A tool attached with `thenwise connect` matches no recorded agent and guesses nothing: its chats are not in these folders.
-        const live = cfg && project ? handoffBlock(cfg, project, ownChat(cfg, project, insideAgent())) : ''
+        // A memory server always runs inside an agent: with no session record (Codex before its hooks are trusted, the
+        // Antigravity App), the newest chat written in the last minute is the asking session's own.
+        const live = cfg && project ? handoffBlock(cfg, project, ownChat(cfg, project, true)) : ''
         const brief = g ? c.resume(g, vals[0]!.slice(0, 2000)) : ''
         const p = readProgress(dirname(dbPath()))
         const none = !g && running(p) ? `No memory yet: the first sync is ${percent(p)}% done (${p.phase}). Ask again in a minute, and tell the person the memory is still filling up.` : NONE

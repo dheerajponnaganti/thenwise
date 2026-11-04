@@ -384,6 +384,8 @@ test('questions left with [question] stay open in the brief and resume until an 
     assert.match(open[1]!, /from a Claude Code chat, 2 h ago .*why did you skip the migration test\?/)
     assert.match(c.resumeShort(g, 7, now), /open question q-[0-9a-f]{4} from bob/)
     assert.match(c.resume(g, ''), /## Open questions left for the next agent/)
+    // review 0.2.0 F4: an own Codex chat's question names Codex.
+    w.chat('cx1', { entrypoint: 'codex-cli', turns: [{ prompt: '[question] is the retry budget per store?', reply: 'ok', at: at(50) }] })
     // Answered by its id.
     const id = /^(q-[0-9a-f]{4})/.exec(open[1]!)![1]
     w.chat('own3', { turns: [{ prompt: 'go', reply: `[answer ${id}] it needed a fixture first`, at: at(5) }] })
@@ -391,7 +393,9 @@ test('questions left with [question] stay open in the brief and resume until an 
     w.ingest('g.db')
     const g2 = new Graph(w.path('g.db'))
     g2.scopeTo(w.proj)
-    assert.deepEqual(c.openQuestions(g2, now - 7 * 864e5, now).map((l) => /tturn:bob/.test(l)), [true])
+    const left = c.openQuestions(g2, now - 7 * 864e5, now)
+    assert.ok(left.some((l) => /tturn:bob/.test(l)))
+    assert.ok(left.some((l) => /from a Codex chat, .*is the retry budget per store\?/.test(l)))
   } finally {
     w.destroy()
   }

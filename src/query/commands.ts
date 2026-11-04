@@ -5,6 +5,7 @@ import { endOf, GOOD, Graph, local, localDay, queryTerms } from './engine.ts'
 import type { Hit, Node, Search } from './engine.ts'
 import { basename } from 'node:path'
 import { trigramSim } from '../capture/similar.ts'
+import { ago } from '../core/time.ts'
 
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i]
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i]
@@ -361,7 +362,7 @@ export function fileMates(g: Graph, fileId: string, now = Date.now()): string[] 
     const last = g.bySource(n.source).filter((t) => t.kind === 'turn').sort((a, b) => ms(b.at) - ms(a.at))[0]
     const stopped = last && STOP_LINE.test(g.fullText(last.id))
 
-    return `now: ${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''} worked on this file ${minsAgo(n.at, now)} (${n.id})${stopped ? '; that chat was stopped by the tool, so the work may be half done' : ''}`
+    return `now: ${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''} worked on this file ${ago(n.at, now)} (${n.id})${stopped ? '; that chat was stopped by the tool, so the work may be half done' : ''}`
   })
 }
 
@@ -500,11 +501,6 @@ export function resume(g: Graph, q = ''): string {
 const ORDER = ['Next on', 'Unchecked', 'Open questions', 'Teammates', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
 
 const STOP_LINE = /^\(stopped by the tool: (.*)\)$/m
-const minsAgo = (at: string, now: number) => {
-  const m = Math.max(0, Math.round((now - ms(at)) / 60_000))
-
-  return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`
-}
 
 /** Each teammate's newest chat in this project after `since` (at most `max`), newest first: where it stopped, so a teammate
  * can pick it up. Read from what they shared; the stop line travels with the turn. */
@@ -522,7 +518,7 @@ export function mateLatest(g: Graph, since: number, now = Date.now(), max = 2): 
     const stop = STOP_LINE.exec(text)?.[1]
     const asked = cut(flat(text.split('\n\n')[0] ?? s.title), 120)
 
-    return `${owner(s)}${s.extra?.tool ? ` (${s.extra.tool})` : ''}, ${minsAgo(s.until || s.at, now)} (${s.id}): ${stop ? `stopped by the tool (${cut(stop, 80)}); ` : ''}last asked: "${asked}"`
+    return `${owner(s)}${s.extra?.tool ? ` (${s.extra.tool})` : ''}, ${ago(s.until || s.at, now)} (${s.id}): ${stop ? `stopped by the tool (${cut(stop, 80)}); ` : ''}last asked: "${asked}"`
   })
 }
 
@@ -543,7 +539,7 @@ export function openQuestions(g: Graph, since: number, now = Date.now(), max = 3
     for (const q of (n.extra.questions as Q[] | undefined) ?? []) if (!open.some((o) => o.q.id === q.id)) open.push({ q, n })
   }
 
-  return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool === 'Copilot' ? 'a Copilot chat' : 'a Claude Code chat'}, ${minsAgo(n.at, now)} (${n.id}): ${cut(q.text, 200)}`)
+  return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool === 'Copilot' ? 'a Copilot chat' : 'a Claude Code chat'}, ${ago(n.at, now)} (${n.id}): ${cut(q.text, 200)}`)
 }
 
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
@@ -556,8 +552,8 @@ export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
   const mates = new Map<string, number>()
   for (const n of g.ofKind('session')) if (n.extra?.team && g.inScope(n) && ms(n.until || n.at) > (recent ? end : now - days * 864e5)) mates.set(owner(n), (mates.get(owner(n)) ?? 0) + 1)
   const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : ''
-  // A teammate's unfinished work from the last day, newer than your own last session: where they stopped.
-  const picks = mateLatest(g, Math.max(recent ? end : 0, now - 864e5), now).map((l) => `teammate's newest chat: ${l}`)
+  // A teammate's newest work from the last day: where they stopped. The late check at the first prompt uses the same window.
+  const picks = mateLatest(g, now - 864e5, now).map((l) => `teammate's newest chat: ${l}`)
   // Questions left for whoever picks the work up, from the last week, still open.
   picks.push(...openQuestions(g, now - 7 * 864e5, now, 2).map((l) => `open question ${l} (close it with [answer ${l.slice(0, 6)}] ...)`))
   if (!recent) return cut([team, ...picks].filter(Boolean).join('\n'), 800)

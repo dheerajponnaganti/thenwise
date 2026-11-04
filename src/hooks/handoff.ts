@@ -3,12 +3,13 @@
 // The store may not hold that chat yet: the sync that copies it runs in the background and finishes seconds later.
 
 import { spawnSync } from 'node:child_process'
-import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { maskSecrets } from '../core/secrets.ts'
+import { ago } from '../core/time.ts'
 import { type Config, globMatch, isOff } from '../ingest/config.ts'
-import { copilotConverter, copilotSources } from '../ingest/copilot.ts'
+import { copilotConverter, copilotSources, projectKey } from '../ingest/copilot.ts'
 import { markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from '../ingest/deadend.ts'
 import { trigramSim } from '../capture/similar.ts'
 import { isMarked } from '../ingest/parts.ts'
@@ -32,8 +33,6 @@ export interface LiveChat {
   cwd?: string // known up front for Copilot chats
 }
 
-const projectKey = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
-
 /** The checkouts of the repo a folder is in: the main one and its worktrees, read from .git/worktrees without running git. */
 export function checkouts(cwd: string): string[] {
   const root = repoRoot(cwd)
@@ -52,25 +51,49 @@ export function checkouts(cwd: string): string[] {
 
 const under = (p: string, roots: string[]) => roots.some((r) => normPath(p) === normPath(r) || normPath(p).startsWith(`${normPath(r)}/`))
 
+/** The folder a Claude Code chat ran in, from the `cwd` of its first lines; '' when none shows there. */
+function headCwd(path: string): string {
+  const b = Buffer.alloc(16 << 10)
+  const fd = openSync(path, 'r')
+  try {
+    const n = readSync(fd, b, 0, b.length, 0)
+    const m = /"cwd":\s*"((?:[^"\\]|\\.)*)"/.exec(b.toString('utf8', 0, n))
+
+    return m ? JSON.parse(`"${m[1]}"`) : ''
+  } catch {
+    return ''
+  } finally {
+    closeSync(fd)
+  }
+}
+
 /** Chats of this project from both tools, newest first, last written within DAYS, leaving out the given session ids. */
 export function liveChats(cfg: Pick<Config, 'claudeDir' | 'home'>, cwd: string, skip: string[] = [], now = Date.now()): LiveChat[] {
   const roots = checkouts(cwd)
   const out: LiveChat[] = []
   const fresh = (ms: number) => now - ms <= DAYS * 864e5
-  for (const r of roots) {
-    const key = projectKey(r)
-    const dir = join(cfg.claudeDir, 'projects', key)
+  const projects = join(cfg.claudeDir, 'projects')
+  // A chat started in a subfolder of the repo has its own folder key, which begins with the repo's; its cwd confirms it.
+  const keys = new Set(roots.map(projectKey))
+  let all: string[] = []
+  try {
+    all = readdirSync(projects)
+  } catch {} // no Claude Code chats at all
+  for (const key of all.filter((k) => keys.has(k) || [...keys].some((r) => k.startsWith(`${r}-`)))) {
+    const exact = keys.has(key)
     let names: string[] = []
     try {
-      names = readdirSync(dir).filter((n) => n.endsWith('.jsonl'))
+      names = readdirSync(join(projects, key)).filter((n) => n.endsWith('.jsonl'))
     } catch {
       continue
     }
     for (const n of names) {
       const id = n.slice(0, -6)
       if (skip.includes(id)) continue
-      const st = statSync(join(dir, n), { throwIfNoEntry: false })
-      if (st?.isFile() && st.size && fresh(st.mtimeMs)) out.push({ path: join(dir, n), rel: `${key}/${n}`, id, tool: 'Claude Code', mtimeMs: st.mtimeMs })
+      const path = join(projects, key, n)
+      const st = statSync(path, { throwIfNoEntry: false })
+      if (!st?.isFile() || !st.size || !fresh(st.mtimeMs) || (!exact && !under(headCwd(path), roots))) continue
+      out.push({ path, rel: `${key}/${n}`, id, tool: 'Claude Code', mtimeMs: st.mtimeMs })
     }
   }
   for (const c of copilotSources(cfg.home)) {
@@ -83,9 +106,9 @@ export function liveChats(cfg: Pick<Config, 'claudeDir' | 'home'>, cwd: string, 
 }
 
 /** The lines of a chat file another process may still be writing. A long one gives its start and its last part. */
-export function liveLines(path: string): { lines: string[]; partial: boolean } {
+export function liveLines(path: string, whole = WHOLE): { lines: string[]; partial: boolean; tailFrom?: number } {
   const size = statSync(path).size
-  if (size <= WHOLE) return { lines: readFileSync(path, 'utf8').split('\n'), partial: false }
+  if (size <= whole) return { lines: readFileSync(path, 'utf8').split('\n'), partial: false }
   const read = (at: number, len: number) => {
     const b = Buffer.alloc(len)
     const fd = openSync(path, 'r')
@@ -98,16 +121,31 @@ export function liveLines(path: string): { lines: string[]; partial: boolean } {
     return b.toString('utf8').split('\n')
   }
   // The head's last line and the tail's first are cut mid-line; the parser skips lines that are not JSON anyway.
-  return { lines: [...read(0, HEAD).slice(0, -1), ...read(size - TAIL, TAIL).slice(1)], partial: true }
+  const head = read(0, HEAD).slice(0, -1)
+  const tail = read(size - TAIL, TAIL).slice(1)
+
+  return { lines: [...head, ...tail], partial: true, tailFrom: head.length }
+}
+
+/** The first timestamp in some chat lines, in ms; Infinity when none. */
+function firstTime(lines: string[]): number {
+  for (const l of lines) {
+    const m = /"timestamp":\s*"([^"]+)"/.exec(l)
+    if (m && !Number.isNaN(Date.parse(m[1]!))) return Date.parse(m[1]!)
+  }
+
+  return Infinity
 }
 
 /** The chat parsed, or null when the rules keep it out: an excluded or forgotten project, a paused folder, a test chat, an entry point not kept. */
-export function readLive(cfg: Config, chat: LiveChat): (Session & { partial: boolean }) | null {
+export function readLive(cfg: Config, chat: LiveChat, whole = WHOLE): (Session & { partial: boolean }) | null {
   const key = chat.rel.split('/')[0]!
   const tombs = loadTombs(cfg.memDir)
   if (cfg.excludeProjects.some((g) => globMatch(g, key)) || isForgotten(tombs, chat.rel, chat.cwd)) return null
-  const { lines, partial } = liveLines(chat.path)
+  const { lines, partial, tailFrom } = liveLines(chat.path, whole)
   const s = parseSession(chat.tool === 'Copilot' ? lines.flatMap(copilotConverter(chat.id, chat.cwd ?? '')) : lines, chat.id, cfg.home)
+  // A long chat's middle is not read: a call from its start whose result sits there is no step the chat stopped in.
+  if (partial && s.openCall && Date.parse(s.openCall.at) < firstTime(lines.slice(tailFrom))) delete s.openCall
   if (!s.turns.length || isForgotten(tombs, chat.rel, s.cwd) || isOff(cfg, s.cwd)) return null
   if (!cfg.includeEntrypoints.includes(s.entrypoint) || isMarked(cfg.ingestExcludeMarkers, s.turns.map((t) => t.prompt))) return null
 
@@ -121,11 +159,6 @@ export const localTime = (iso: string) => {
 
   return Number.isNaN(d.getTime()) ? iso : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-const ago = (iso: string, now: number) => {
-  const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))
-
-  return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`
-}
 const flat = (t: string, n: number) => {
   const s = t.replace(/\s+/g, ' ').trim()
 
@@ -137,11 +170,12 @@ const tailOf = (t: string, n: number) => {
   return s.length > n ? `...${s.slice(-n)}` : s
 }
 
-/** Files and lines `git status --short` lists now; [] outside a repo or when git is missing or slow. */
-function uncommitted(cwd: string): string[] {
-  const r = spawnSync('git', ['--no-optional-locks', '-C', cwd, 'status', '--short'], { encoding: 'utf8', timeout: 1500, windowsHide: true })
+/** Files and lines `git status --short` lists now, or null when git did not answer (missing, not a repo, slow, huge):
+ * then the block says so, and never claims a clean tree. 500 ms keeps the session start inside its 3 s budget. */
+function uncommitted(cwd: string): string[] | null {
+  const r = spawnSync('git', ['--no-optional-locks', '-C', cwd, 'status', '--short'], { encoding: 'utf8', timeout: 500, maxBuffer: 8 << 20, windowsHide: true })
 
-  return r.status === 0 ? r.stdout.split('\n').filter(Boolean) : []
+  return r.status === 0 ? r.stdout.split('\n').filter(Boolean) : null
 }
 
 /** The handoff text for one parsed chat (masked, not yet capped). */
@@ -159,7 +193,7 @@ export function handoffText(s: Session & { partial?: boolean }, chat: Pick<LiveC
   const state = last.cutOff
     ? `stopped by the tool at ${localTime(last.cutOff.at)} (${ago(last.cutOff.at, now)}): ${last.cutOff.text}`
     : s.openCall
-      ? `stopped mid-step at ${localTime(s.openCall.at)} (${ago(s.openCall.at, now)}): ${s.openCall.name}${s.openCall.detail ? ` ${flat(rel(s.openCall.detail), 120)}` : ''}, no result recorded`
+      ? `stopped mid-step at ${localTime(s.openCall.at)} (${ago(s.openCall.at, now)}): ${s.openCall.name}${s.openCall.detail ? ` ${flat(s.openCall.name === 'Bash' ? s.openCall.detail : rel(s.openCall.detail), 120)}` : ''}, no result recorded`
       : `stopped at ${localTime(lastAt)} (${ago(lastAt, now)}) after a reply; whether it finished is in the reply below and the uncommitted files`
   const lines = [`state: ${state}`, `task: "${flat(first.prompt, 300)}" (first prompt, ${localTime(first.at)})`]
   const sum = s.summaries.at(-1)
@@ -216,7 +250,7 @@ export function factLines(s: Session, cwd: string, where: string): string[] {
   if (open.length) out.push(`open questions in ${where}: ${open.slice(-3).map((q) => `${questionId(q)}: ${flat(q, 160)}`).join('; ')} (close one with [answer q-xxxx] ...)`)
 
   const changed = uncommitted(cwd)
-  out.push(changed.length ? `uncommitted now (git status --short, ${changed.length} file${changed.length === 1 ? '' : 's'}): ${changed.slice(0, 10).map((l) => l.trim()).join(', ')}${changed.length > 10 ? ', ...' : ''}` : 'uncommitted now: nothing')
+  out.push(changed === null ? 'uncommitted now: unknown (git status did not answer in time)' : changed.length ? `uncommitted now (git status --short, ${changed.length} file${changed.length === 1 ? '' : 's'}): ${changed.slice(0, 10).map((l) => l.trim()).join(', ')}${changed.length > 10 ? ', ...' : ''}` : 'uncommitted now: nothing')
   return out
 }
 
@@ -234,7 +268,10 @@ export function capHandoff(text: string, n = HANDOFF_TOKENS): string {
 /** The handoff for a session starting in `cwd`: the newest other chat of the project that the rules let through, or ''. */
 export function handoffBlock(cfg: Config, cwd: string, skip: string[] = [], now = Date.now()): string {
   if (!cwd || isOff(cfg, cwd)) return ''
-  for (const chat of liveChats(cfg, cwd, skip, now).slice(0, 3)) {
+  // Roots someone chose by hand are the projects Thenwise may read; found ones (the default) are every project there is.
+  if (!cfg.rootsAuto && !cfg.roots.some((r) => under(cwd, [r]))) return ''
+  // A few fresh files can have no prompt yet (windows opened at once): look past them.
+  for (const chat of liveChats(cfg, cwd, skip, now).slice(0, 10)) {
     const s = readLive(cfg, chat)
     if (s) return capHandoff(handoffText(s, chat, cwd, now))
   }
@@ -242,11 +279,58 @@ export function handoffBlock(cfg: Config, cwd: string, skip: string[] = [], now 
   return ''
 }
 
-/** The chat a command or tool call run inside an agent should skip, which is the agent's own. Copilot names it to its MCP
- * servers; otherwise the agent's own chat is the newest one of the project, written in the last minute by the very call
- * that is running this. shortcut: a heuristic for Claude Code and Copilot's shell, which name no session; use an id once they pass one. */
-export function ownChat(cfg: Pick<Config, 'claudeDir' | 'home'>, cwd: string, inAgent: boolean, now = Date.now()): string[] {
-  const id = process.env.COPILOT_AGENT_SESSION_ID
+/** A process's parent, or 0 when it cannot be read: /proc on Linux, ps on macOS and the BSDs, nothing on Windows. */
+function parentOf(pid: number): number {
+  if (process.platform === 'win32') return 0 // shortcut: no cheap parent lookup on Windows, so ownChat falls back to its guess there
+  try {
+    if (process.platform === 'linux') return Number(readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\)\s+\S+\s+/s, '').split(' ')[0]) || 0
+    const r = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8', timeout: 300, windowsHide: true })
+
+    return Number(r.stdout.trim()) || 0
+  } catch {
+    return 0
+  }
+}
+/** This process's parent, grandparent and so on, nearest first, up to `depth`. */
+export function ancestors(depth: number, pid = process.pid): number[] {
+  const out: number[] = []
+  for (let p = parentOf(pid); p > 1 && out.length < depth; p = parentOf(p)) out.push(p)
+
+  return out
+}
+
+/** At session start, the hook records which agent process runs the session, so a tool or command run inside it can find
+ * its own session exactly (`<session>.agent` in hook-state; forget and the weekly sweep remove it). */
+export const agentFile = (dir: string, session: string) => join(dir, 'hook-state', `${session.replace(/[^\w-]/g, '_')}.agent`)
+export function recordAgent(dir: string, session: string, cwd: string) {
+  mkdirSync(join(dir, 'hook-state'), { recursive: true, mode: 0o700 })
+  writeFileSync(agentFile(dir, session), JSON.stringify({ session, cwd, pids: ancestors(3), at: new Date().toISOString() }), { mode: 0o600 })
+}
+/** The session of the agent this process runs inside: the recorded agent nearest up its parents; undefined when none. */
+export function agentSession(dir: string): string | undefined {
+  const state = join(dir, 'hook-state')
+  if (!existsSync(state)) return undefined
+  const recs: { session: string; pids: number[]; at: string }[] = []
+  for (const f of readdirSync(state).filter((n) => n.endsWith('.agent'))) {
+    try {
+      recs.push(JSON.parse(readFileSync(join(state, f), 'utf8')))
+    } catch {} // half written: skip
+  }
+  if (!recs.length) return undefined
+  // Nearest first: the agent process itself is found before a terminal shell two agents might share.
+  for (const p of ancestors(6)) {
+    const hit = recs.filter((r) => r.pids.includes(p)).sort((a, b) => (a.at < b.at ? 1 : -1))[0]
+    if (hit) return hit.session
+  }
+
+  return undefined
+}
+
+/** The chat a command or tool call run inside an agent should skip, which is the agent's own: Copilot names it to its MCP
+ * servers, and the session start recorded every agent's process. Only when neither answers (Windows, an install older than
+ * the record) the guess remains: the newest chat of the project, written in the last minute by the call running this. */
+export function ownChat(cfg: Pick<Config, 'claudeDir' | 'home' | 'memDir'>, cwd: string, inAgent: boolean, now = Date.now()): string[] {
+  const id = process.env.COPILOT_AGENT_SESSION_ID || agentSession(cfg.memDir)
   if (id) return [id]
   if (!inAgent) return []
   const newest = liveChats(cfg, cwd, [], now)[0]

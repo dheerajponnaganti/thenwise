@@ -9,7 +9,7 @@ export const COPILOT_ENTRYPOINT = 'copilot-cli'
 export const copilotDir = (home: string) => process.env.COPILOT_HOME || join(home, '.copilot')
 
 // Claude Code names a project folder by its path with every other character turned into "-"; Copilot chats join the same key.
-const projectKey = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
+export const projectKey = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
 
 type Tool = { name: string; input: Record<string, unknown> }
 

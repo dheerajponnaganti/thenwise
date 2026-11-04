@@ -308,6 +308,8 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
         mkdirSync(dirname(dest), { recursive: true, mode: 0o700 })
         for (let d = dirname(dest); d !== out; d = dirname(d)) chmodSync(d, 0o700)
         st = streamMask(src.path, tmp, parts.length === 2, src.convert?.()) // a long chat is read in chunks, never whole
+        // Another tool changed its file format: it has prompts, and nothing came out. Without this the memory just goes quiet.
+        if (src.convert && !st.lines && /"user\.message"|"role":\s*"user"/.test(readFileSync(src.path, 'utf8'))) logger('archive', cfg.memDir).warn('chat_not_understood', { rel })
       }
       const raw = unchanged ? (old.checked === check ? null : chatText(readFileSync(dest))) : st!.slim
       let info = parents.get(parts.length === 4 ? `${parts[0]}/${parts[1]}.jsonl` : '') ?? { cwd: old?.cwd ?? '', marked: false }

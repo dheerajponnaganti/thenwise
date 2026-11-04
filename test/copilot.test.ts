@@ -12,7 +12,7 @@ import { runHook } from '../src/hooks/hook.ts'
 import { forget } from '../src/privacy/forget.ts'
 import { runDoctor } from '../src/setup/doctor.ts'
 import { discoverProjects } from '../src/setup/projects.ts'
-import { asClaudeTool, claudeHookInput } from '../src/ingest/copilot.ts'
+import { asClaudeTool, claudeHookInput, copilotConverter, copilotSessionCwd } from '../src/ingest/copilot.ts'
 import { parseSession } from '../src/ingest/transcript.ts'
 import { normPath } from '../src/core/vault-index.ts'
 import { World } from './world.ts'
@@ -296,6 +296,45 @@ test('forget removes a Copilot chat from the archive and keeps it out, and says 
     assert.equal(w.archive().archived, 0, 'the tombstone keeps it out')
     assert.ok(!existsSync(gz))
     assert.ok(existsSync(join(w.home, '.copilot/session-state/cp-7/events.jsonl')), "Copilot's own file is never touched")
+  } finally {
+    w.destroy()
+  }
+})
+
+test('the memory tools find the project of the running Copilot session, not the plugin folder', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tw-copilot-cwd-'))
+  const saved = process.env.COPILOT_HOME
+  process.env.COPILOT_HOME = join(home, 'copilot')
+  try {
+    mkdirSync(join(home, 'copilot', 'session-state', 's1'), { recursive: true })
+    writeFileSync(join(home, 'copilot', 'session-state', 's1', 'workspace.yaml'), 'id: s1\ncwd: /work/repo\n')
+    assert.equal(copilotSessionCwd(home, 's1'), '/work/repo')
+    assert.equal(copilotSessionCwd(home, 'missing'), '')
+    assert.equal(copilotSessionCwd(home, undefined), '')
+    assert.equal(copilotSessionCwd(home, '../s1'), '')
+  } finally {
+    if (saved === undefined) delete process.env.COPILOT_HOME
+    else process.env.COPILOT_HOME = saved
+  }
+})
+
+test('a subagent event marked only by parentToolCallId stays out, and a task summary is kept', () => {
+  const f = copilotConverter('s', '/w')
+  assert.deepEqual(f(ev('assistant.message', { content: 'subagent says', parentToolCallId: 'c1' })), [])
+  assert.match(f(ev('session.task_complete', { summary: 'Shipped the fix.' }))[0]!, /Shipped the fix\./)
+})
+
+test('a chat with prompts that yields nothing is logged, so a changed file format is not silent', () => {
+  const w = new World()
+  try {
+    const dir = join(w.home, '.copilot/session-state/cp-new')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'workspace.yaml'), `id: cp-new\ncwd: ${w.proj}\n`)
+    writeFileSync(join(dir, 'events.jsonl'), `${ev('user.message', { contentV2: [{ text: 'the format moved' }] })}\n`)
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    w.archive()
+    process.env.THENWISE_LOG = 'off'
+    assert.match(readFileSync(join(w.memDir, 'logs', 'thenwise.log'), 'utf8'), /chat_not_understood/)
   } finally {
     w.destroy()
   }

@@ -56,6 +56,7 @@ A session start and a session end run a background sync (`thenwise hook sync-run
 | `src/privacy/uninstall.ts` | `uninstall` | Stops the sync and lists what to delete. It deletes nothing |
 | `src/setup/setup.ts` | `setup` | First-run setup |
 | `src/setup/projects.ts` | `discoverProjects` | Finds projects from the chat folders |
+| `src/setup/connect.ts` | `plan`, `apply` | Adds the memory tools to another coding tool's MCP config |
 | `src/setup/update.ts` | `checkForUpdate`, `updateNotice`, `updateStatus` | The daily version check from the background sync, and the notice read from its saved answer |
 | `src/setup/doctor.ts` | `runDoctor` | Checks the install, with one fix line per problem |
 | `src/setup/off.ts` | `switchCommand` | `thenwise off` and `on` |

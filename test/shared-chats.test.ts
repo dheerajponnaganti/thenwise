@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { real } from '../src/ingest/repos.ts'
@@ -15,7 +15,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { loadConfigSafe } from '../src/ingest/config.ts'
-import { trimTrace } from '../src/hooks/hook.ts'
+import { runHook, trimTrace } from '../src/hooks/hook.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
 import { teamChats, teamChatsPart, teamClaims } from '../src/ingest/parts.ts'
@@ -307,6 +307,40 @@ test('T19-H6: the startup brief gets one line with the teammates\' chats since t
     assert.match(brief, /teammates' chats in this project since your last session: 3 \(alice 2, bob 1\)/)
     assert.match(brief, /last session here/)
   } finally {
+    w.destroy()
+  }
+})
+
+test('a teammate\'s half-finished chat: the brief, resume and a late prompt say where it stopped, with the tool', () => {
+  const w = new World()
+  const keep = process.env.THENWISE_HOME
+  try {
+    const now = Date.now()
+    w.chat('own', { turns: [{ prompt: 'my work', reply: 'done', at: new Date(now - 3 * 3600e3).toISOString() }] })
+    const stopped = { id: 'b9', at: now - 20 * 60e3, line: 'Split the price cache into eight shards', kind: 'turn' as const, passages: ['Split the price cache into eight shards\n\nThe hash breaks on store ids with a dash.', "(stopped by the tool: You've hit your session limit · resets 10pm)"], paths: [], shas: [], prs: [], dead_end: false, dead_kind: '' }
+    cache(w, wire({ owner: 'bob', session: 'bs9', tool: 'Copilot', started_at: now - 30 * 60e3, ended_at: now - 20 * 60e3, head: stopped.line, turns: [stopped] }))
+    w.archive()
+    const db = relative(w.home, join(w.memDir, 'graph.db')) // the hooks read the store in the data folder
+    w.ingest(db)
+    const g = new Graph(w.path(db))
+    g.scopeTo(w.proj)
+    const line = /teammate's newest chat: bob \(Copilot\), 20 min ago \(tses:bob\/bs9\): stopped by the tool \(You've hit your session limit · resets 10pm\); last asked: "Split the price cache into eight shards/
+    assert.match(c.resumeShort(g, 7, now), line)
+    assert.match(c.resume(g, ''), /## Teammates' newest chats here\n+- bob \(Copilot\)/)
+    // A session that started before the chat arrived hears about it at its first prompt, once.
+    process.env.THENWISE_HOME = w.memDir
+    const env = { dir: w.memDir, cli: 'src/cli.ts' }
+    mkdirSync(join(w.memDir, 'hook-state'), { recursive: true })
+    writeFileSync(join(w.memDir, 'hook-state', 'me1.late'), JSON.stringify({ at: new Date(now - 40 * 60e3).toISOString(), shown: [] }))
+    writeFileSync(join(w.memDir, 'hook-state', 'me2.late'), JSON.stringify({ at: new Date(now - 5 * 60e3).toISOString(), shown: [] }))
+    writeFileSync(join(w.memDir, 'hook-state', 'me3.late'), JSON.stringify({ at: new Date(now - 5 * 60e3).toISOString(), shown: ['tses:bob/bs9'] }))
+    assert.equal(runHook('prompt', { session_id: 'me3', prompt: 'add a button', cwd: w.proj }, env), '') // the start's brief named it already
+    assert.equal(runHook('prompt', { session_id: 'me1', prompt: 'add a button', cwd: w.proj }, env), '') // a stale mark is dropped
+    const out = JSON.parse(runHook('prompt', { session_id: 'me2', prompt: 'add a button', cwd: w.proj }, env))
+    assert.match(out.hookSpecificOutput.additionalContext, /<memory-team[^]*bob \(Copilot\)[^]*stopped by the tool/)
+    assert.equal(existsSync(join(w.memDir, 'hook-state', 'me2.late')), false)
+  } finally {
+    keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
     w.destroy()
   }
 })

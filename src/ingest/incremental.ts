@@ -252,7 +252,8 @@ function update(db: DatabaseSync, cfg: Config, opts: IngestOptions, dbPath: stri
   const roots = rootsKey(cfg)
   const rootsMoved = roots !== S.get("SELECT value FROM ingest_state WHERE key = 'roots'")?.value
   S.run("INSERT OR REPLACE INTO ingest_state VALUES ('roots', ?)", roots)
-  for (const sf of files) {
+  for (const [i, sf] of files.entries()) {
+    opts.onProgress?.(i + 1, files.length)
     const old = known.get(sf.file)
     const recheck = rootsMoved && (old?.status === 'in' || old?.status === 'out')
     if (!recheck && old && old.size === sf.size && old.mtime === sf.mtime && old.ctime === sf.ctime && old.ino === sf.ino) continue

@@ -448,6 +448,9 @@ export function resume(g: Graph, q = ''): string {
   const lower = (n: Node) => `${n.title}\n${g.fullText(n.id)}`.toLowerCase()
   const on = (n: Node) => !terms.length || terms.some((t) => lower(n).includes(t))
   const prs = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN' && on(n)).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 8)
+  // Teammates' newest chats here, so their half-finished work can be picked up: the last turns of each.
+  const mates = mateLatest(g, Date.now() - 7 * 864e5)
+  if (mates.length) out.push("## Teammates' newest chats here", ...mates.map((l) => `- ${l}`))
   out.push(`## Open PRs${prs.length ? '' : ': none recorded'}`, ...prs.map((n) => `- ${label(g, n.id)}, opened ${n.at}, ${n.extra.url}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 400)}`))
   const cwd = String(ses.extra.cwd ?? '')
   const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10)
@@ -473,7 +476,34 @@ export function resume(g: Graph, q = ''): string {
 
   return [out[0]!, ...groups.flat()].join('\n\n')
 }
-const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
+const ORDER = ['Next on', 'Unchecked', 'Teammates', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
+
+const STOP_LINE = /^\(stopped by the tool: (.*)\)$/m
+const minsAgo = (at: string, now: number) => {
+  const m = Math.max(0, Math.round((now - ms(at)) / 60_000))
+
+  return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`
+}
+
+/** Each teammate's newest chat in this project after `since` (at most `max`), newest first: where it stopped, so a teammate
+ * can pick it up. Read from what they shared; the stop line travels with the turn. */
+export function mateLatest(g: Graph, since: number, now = Date.now(), max = 2): string[] {
+  const newest = new Map<string, Node>()
+  for (const n of g.ofKind('session')) {
+    if (!n.extra?.team || !g.inScope(n) || ms(n.until || n.at) <= since) continue
+    const o = owner(n)
+    if (!newest.has(o) || ms(newest.get(o)!.until || newest.get(o)!.at) < ms(n.until || n.at)) newest.set(o, n)
+  }
+
+  return [...newest.values()].sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at)).slice(0, max).map((s) => {
+    const last = g.bySource(s.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(b.at) - ms(a.at))[0]
+    const text = last ? g.fullText(last.id) : ''
+    const stop = STOP_LINE.exec(text)?.[1]
+    const asked = cut(flat(text.split('\n\n')[0] ?? s.title), 120)
+
+    return `${owner(s)}${s.extra?.tool ? ` (${s.extra.tool})` : ''}, ${minsAgo(s.until || s.at, now)} (${s.id}): ${stop ? `stopped by the tool (${cut(stop, 80)}); ` : ''}last asked: "${asked}"`
+  })
+}
 
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
  * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
@@ -485,7 +515,9 @@ export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
   const mates = new Map<string, number>()
   for (const n of g.ofKind('session')) if (n.extra?.team && g.inScope(n) && ms(n.until || n.at) > (recent ? end : now - days * 864e5)) mates.set(owner(n), (mates.get(owner(n)) ?? 0) + 1)
   const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : ''
-  if (!recent) return team
+  // A teammate's unfinished work from the last day, newer than your own last session: where they stopped.
+  const picks = mateLatest(g, Math.max(recent ? end : 0, now - 864e5), now).map((l) => `teammate's newest chat: ${l}`)
+  if (!recent) return cut([team, ...picks].filter(Boolean).join('\n'), 800)
   const first = g.bySource(ses!.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0]
   const out = [`last session here: ${local(ses!.until || ses!.at)} (${ses!.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses!.title), 140)}"`]
   const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > end).sort((a, b) => ms(b.at) - ms(a.at))
@@ -495,6 +527,7 @@ export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
   const open = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN').sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 3)
   if (open.length) out.push(`open PRs: ${open.map((n) => label(g, n.id)).join('; ')}`)
   if (team) out.push(team)
+  out.push(...picks)
 
   return cut(out.join('\n'), 800)
 }

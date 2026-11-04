@@ -14,6 +14,7 @@ import { runDoctor } from '../src/setup/doctor.ts'
 import { discoverProjects } from '../src/setup/projects.ts'
 import { asClaudeTool, claudeHookInput } from '../src/ingest/copilot.ts'
 import { parseSession } from '../src/ingest/transcript.ts'
+import { normPath } from '../src/core/vault-index.ts'
 import { World } from './world.ts'
 
 // Event shapes as Copilot CLI 1.0.105 writes them (session-state/<id>/events.jsonl), trimmed to the fields Thenwise reads.
@@ -88,8 +89,8 @@ test('Copilot CLI chats are archived masked in Claude Code shape, then ingested;
     assert.equal(s.cwd, w.proj)
     assert.equal(s.turns.length, 1)
     const t = s.turns[0]!
-    assert.ok(t.reads.has(join(w.proj, 'src/a.ts')))
-    assert.deepEqual([...t.edits].sort(), [join(w.proj, 'src/a.ts'), join(w.proj, 'src/new.ts')])
+    assert.ok(t.reads.has(normPath(join(w.proj, 'src/a.ts'))))
+    assert.deepEqual([...t.edits].sort(), [normPath(join(w.proj, 'src/a.ts')), normPath(join(w.proj, 'src/new.ts'))])
     assert.deepEqual(t.commitMsgs.map((c) => c.subject), ['Split the cache into eight shards'])
     assert.ok(t.commitShas.has('1a2b3c4'))
     assert.match(t.reply.join(' '), /stops locking under load/)
@@ -198,10 +199,10 @@ test('answers from a Copilot chat say so', () => {
 
 test('after Copilot compacts a chat, the next prompt carries the resume brief once; Claude Code is left to its own path', () => {
   const w = new World()
-  const keep = { HOME: process.env.HOME, THENWISE_HOME: process.env.THENWISE_HOME, COPILOT_PLUGIN_ROOT: process.env.COPILOT_PLUGIN_ROOT }
+  const keep = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, THENWISE_HOME: process.env.THENWISE_HOME, COPILOT_PLUGIN_ROOT: process.env.COPILOT_PLUGIN_ROOT }
   try {
     copilotChat(w, 'cp-5', 'split the cache into eight shards')
-    Object.assign(process.env, { HOME: w.home, THENWISE_HOME: w.memDir })
+    Object.assign(process.env, { HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir })
     const env = { dir: w.memDir, cli: resolve('src/cli.ts') }
     const input = { hook_event_name: 'PreCompact', session_id: 'cp-5', cwd: w.proj }
 

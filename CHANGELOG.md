@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Windows: Thenwise no longer opens blank Node.js console windows. Every process it starts (the background sync, memory lookups, git) now runs hidden; before, windows flashed open with each hook and the sync's window stayed until you closed it.
+
 ## 0.1.27
 
 Memory pointers now reach more past questions and long prompts, a too old Node says what to do, and team sync is steadier. In a new eval, answers held level with 0.1.26 on 6% fewer tokens.

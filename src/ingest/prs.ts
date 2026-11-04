@@ -67,7 +67,7 @@ export function fetchPrs(cfg: Config, repos: string[], opts: PrOptions = {}): Pr
     if (!fresh && !backoff && !noGh) {
       const timeout = (opts.timeoutMs ?? cfg.ghTimeoutMs) * 2 ** Math.min(e?.slow ?? 0, 3)
       try {
-        const raw = execFileSync('gh', ['pr', 'list', '--repo', slug, '--state', 'all', '--limit', '2000', '--json', FIELDS], { encoding: 'utf8', maxBuffer: 1 << 29, timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] })
+        const raw = execFileSync('gh', ['pr', 'list', '--repo', slug, '--state', 'all', '--limit', '2000', '--json', FIELDS], { encoding: 'utf8', maxBuffer: 1 << 29, timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
         const prs = JSON.parse(raw)
         if (!Array.isArray(prs)) throw new Error('gh did not return a list')
         cache[slug] = { fetchedAt: now, tried: now, error: '', prs: maskDeep(prs) as any[], mask: MASK_VERSION }
@@ -100,7 +100,7 @@ export function prStatus(cfg: Config, repos: string[]): string[] {
   const cache = readCache(cfg)
   const slugs = slugsOf(cfg, repos)
   if (!slugs.length) return ['PRs: no repo with a GitHub remote']
-  const lines = spawnSync('gh', ['--version'], { stdio: 'ignore' }).error ? ['PRs skipped: gh is not installed (install it and sign in to read pull requests)'] : []
+  const lines = spawnSync('gh', ['--version'], { stdio: 'ignore', windowsHide: true }).error ? ['PRs skipped: gh is not installed (install it and sign in to read pull requests)'] : []
 
   return lines.concat(slugs.map(({ slug }) => {
     const c = cache[slug]

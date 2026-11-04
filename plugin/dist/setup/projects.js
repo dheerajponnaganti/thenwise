@@ -2,6 +2,8 @@
 // of the real path (dots, underscores, spaces and slashes all become "-"), so the real folder comes from the `cwd` field.
 import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { antigravitySources } from "../ingest/antigravity.js";
+import { codexSources } from "../ingest/codex.js";
 import { copilotSources } from "../ingest/copilot.js";
 function headCwd(file) {
     const fd = openSync(file, 'r');
@@ -28,7 +30,20 @@ export function newProjectLines(claudeDir, roots, excluded) {
     const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !roots.some((r) => p.folder === r || p.folder.startsWith(`${r}/`)));
     return out.length ? [`not remembered yet: ${out.map((p) => p.folder).join(', ')}. Run \`thenwise setup\` to add ${out.length === 1 ? 'it' : 'them'}.`] : [];
 }
+// A hook process loads the config more than once and lives under a second: it scans four tools' folders once.
+// Longer processes (ingest, the memory server) scan every time, so a new project folder is seen.
+const found = new Map();
+let memo = false;
+export const memoProjects = () => (memo = true);
 export function discoverProjects(claudeDir, sample = 20) {
+    if (!memo)
+        return scanProjects(claudeDir, sample);
+    const k = `${claudeDir}\0${sample}`;
+    if (!found.has(k))
+        found.set(k, scanProjects(claudeDir, sample));
+    return found.get(k);
+}
+function scanProjects(claudeDir, sample) {
     const root = join(claudeDir, 'projects');
     const out = [];
     for (const e of (existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []).sort((a, b) => (a.name < b.name ? -1 : 1))) {
@@ -48,7 +63,7 @@ export function discoverProjects(claudeDir, sample = 20) {
         out.push({ key: e.name, chats: files.length, folder: ranked[0] ?? null, clash: ranked.slice(1) });
     }
     // Copilot CLI chats name their folder in workspace.yaml; a folder only Copilot has worked in is a project too.
-    for (const c of copilotSources(dirname(claudeDir))) {
+    for (const c of [...copilotSources(dirname(claudeDir)), ...codexSources(dirname(claudeDir)), ...antigravitySources(dirname(claudeDir))]) {
         if (/^([a-zA-Z]:)?[\\/]?$/.test(c.cwd))
             continue;
         const name = c.rel.split('/')[0];

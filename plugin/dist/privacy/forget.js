@@ -9,6 +9,8 @@ import { readNotes } from "../capture/notes.js";
 import { expandHome, legacyDir } from "../core/home.js";
 import { normPath } from "../core/vault-index.js";
 import { takeLock } from "../hooks/hook.js";
+import { antigravityDirs, antigravitySources } from "../ingest/antigravity.js";
+import { codexDir, codexSources } from "../ingest/codex.js";
 import { copilotDir, copilotSources } from "../ingest/copilot.js";
 import { tighten } from "./perms.js";
 import { dropPrCache, ingest } from "../ingest/ingest.js";
@@ -57,7 +59,7 @@ function chatsOf(cfg) {
             for (const e of list(join(root, p.name)))
                 add(p.name, e.name.replace(/\.jsonl(\.gz)?$/, ''));
     }
-    for (const c of copilotSources(cfg.home)) {
+    for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home)]) {
         cwds.set(`${c.rel.split('/')[0]}/${c.id}`, c.cwd);
         add(c.rel.split('/')[0], c.id);
     }
@@ -225,6 +227,8 @@ export async function forget(cfg, target, opts = {}) {
         out('Not reachable from here:');
         out(`  Claude Code's own chat files in ${join(cfg.claudeDir, 'projects')} (never touched; a tombstone keeps them out of Thenwise)`);
         out(`  Copilot CLI's own chat files in ${join(copilotDir(cfg.home), 'session-state')} (never touched; the same tombstone applies), and the copies Copilot keeps on GitHub`);
+        out(`  Codex's own chat files in ${join(codexDir(cfg.home), 'sessions')} (never touched; the same tombstone applies)`);
+        out(`  Antigravity's own chat files in ${antigravityDirs(cfg.home)[0]} and its CLI and IDE folders (never touched; the same tombstone applies)`);
         out('  git history of a backed-up vault');
         out('  iCloud or Time Machine versions of any folder above');
         out('  copies teammates already pulled');

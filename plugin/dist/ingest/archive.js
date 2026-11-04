@@ -8,6 +8,8 @@ import { errFields, logger } from "../core/log.js";
 import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
+import { antigravityConverter, antigravitySources } from "./antigravity.js";
+import { codexConverter, codexSources } from "./codex.js";
 import { copilotConverter, copilotSources } from "./copilot.js";
 import { withLock } from "./lock.js";
 import { isMarked } from "./parts.js";
@@ -247,10 +249,17 @@ function archiveLocked(cfg, opts) {
     const sources = new Map();
     collect(join(base, 'claude-projects'), sources, false);
     collect(join(cfg.claudeDir, 'projects'), sources, true);
-    for (const c of copilotSources(cfg.home)) {
-        const st = statSync(c.path);
-        sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => copilotConverter(c.id, c.cwd) });
-    }
+    // A chat file can go between the listing and the stat (Copilot clears a session, Codex moves a rollout): skip it.
+    const other = (tool, found, conv) => {
+        for (const c of found) {
+            const st = statSync(c.path, { throwIfNoEntry: false });
+            if (st)
+                sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, tool, convert: () => conv(c.id, c.cwd) });
+        }
+    };
+    other('copilot', copilotSources(cfg.home), copilotConverter);
+    other('codex', codexSources(cfg.home), codexConverter);
+    other('antigravity', antigravitySources(cfg.home), antigravityConverter);
     const res = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 };
     if (cfg.off)
         return { ...res, off: sources.size };
@@ -285,7 +294,7 @@ function archiveLocked(cfg, opts) {
                     chmodSync(d, 0o700);
                 st = streamMask(src.path, tmp, parts.length === 2, src.convert?.()); // a long chat is read in chunks, never whole
                 // Another tool changed its file format: it has prompts, and nothing came out. Without this the memory just goes quiet.
-                if (src.convert && !st.lines && /"user\.message"|"role":\s*"user"/.test(readFileSync(src.path, 'utf8')))
+                if (src.convert && !st.lines && /"user\.message"|"role":\s*"user"|"USER_INPUT"/.test(readFileSync(src.path, 'utf8')))
                     logger('archive', cfg.memDir).warn('chat_not_understood', { rel });
             }
             const raw = unchanged ? (old.checked === check ? null : chatText(readFileSync(dest))) : st.slim;
@@ -359,9 +368,9 @@ function archiveLocked(cfg, opts) {
             }
             // Copilot can replace its chat file. A /rewind withdraws turns on purpose; losing turns any other way must not lose them here too.
             // shortcut: the archived copy is kept only until the file outgrows it, merge by event id if this log line ever shows up.
-            if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !/"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8'))) {
+            if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !(src.tool === 'copilot' && /"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8')))) {
                 rmSync(tmp, { force: true });
-                logger('archive', cfg.memDir).warn('copilot_chat_shrank', { rel, lines: masked.lines, kept: old.lines });
+                logger('archive', cfg.memDir).warn(`${src.tool ?? 'converted'}_chat_shrank`, { rel, lines: masked.lines, kept: old.lines });
                 manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, pending: masked.pending };
                 for (const line of old.unparsed)
                     res.unparsed.push({ rel, line });

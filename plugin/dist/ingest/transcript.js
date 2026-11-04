@@ -14,7 +14,14 @@ const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|sys
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`);
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`);
 const AGENT_TOOLS = /^(Agent|Task)$/;
-const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node --test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/;
+/** A subagent's report without the tool's own bookkeeping: a background launch is only an acknowledgement (no report),
+ * and neither is a pointer to a report sent as a message; a report ends with its agent id and usage, which are not what
+ * the subagent found. */
+export const agentReport = (out) => /^\s*(Async agent launched successfully\b|This agent's report was delivered to you as a message\b)/.test(out)
+    ? ''
+    : out.replace(/<usage>[\s\S]*?<\/usage>/g, '').split('\n').filter((l) => !/^agentId: \S+ \(/.test(l) && !/^\s*\[Harness note\b/.test(l)).join('\n').trim();
+// `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
+const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/;
 const h = (s) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '');
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i;
 export function normalizePath(path, home, cwd = '/') {
@@ -150,6 +157,7 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
     const cut = until ? Date.parse(until) : Infinity;
     const s = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub };
     const pending = new Map();
+    const open = new Map(); // tool calls with no result yet
     let turn = null;
     for (const line of typeof text === 'string' ? text.split('\n') : text) {
         let d;
@@ -186,14 +194,19 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
             }
             if (Array.isArray(content)) {
                 for (const b of content) {
+                    if (b?.type === 'tool_result')
+                        open.delete(b.tool_use_id);
                     const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined;
                     if (!hit)
                         continue;
                     const out = textOf(b.content);
-                    if (hit.kind === 'agent')
-                        out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))); // a subagent's report to the turn that asked
+                    if (hit.kind === 'agent') {
+                        const report = agentReport(out).slice(0, 8000); // a subagent's report to the turn that asked
+                        if (report)
+                            (hit.turn.reply.push(report), hit.turn.agentReports.push(report));
+                    }
                     else if (hit.kind === 'test')
-                        hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true });
+                        hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, ...(hit.cmd ? { cmd: hit.cmd } : {}) });
                     else if (hit.kind === 'commit') {
                         for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {
                             hit.turn.commitShas.add(m[1]);
@@ -212,11 +225,18 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                 s.turns.push(turn);
             }
         }
+        else if (d.isApiErrorMessage === true) {
+            // "You've hit your session limit · resets 10pm": the tool stopped the turn. Not a reply, and never searched as one.
+            if (turn)
+                turn.cutOff = { at: d.timestamp ?? turn.at, text: textOf(content).replace(/\s+/g, ' ').trim().slice(0, 160) };
+        }
         else if (typeof content === 'string') {
             if (turn && content)
-                turn.reply.push(content);
+                (delete turn.cutOff, turn.reply.push(content)); // work after an error means the turn went on
         }
         else if (Array.isArray(content)) {
+            if (turn && content.length)
+                delete turn.cutOff;
             for (const b of content) {
                 if (b?.type === 'text' && turn && typeof b.text === 'string')
                     turn.reply.push(b.text);
@@ -224,6 +244,8 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                     continue;
                 const inp = b.input ?? {};
                 const file = inp.file_path ?? inp.notebook_path;
+                if (turn && typeof b.id === 'string')
+                    open.set(b.id, { turn, name: String(b.name), detail: String(typeof inp.command === 'string' ? inp.command : (file ?? '')).replace(/\s+/g, ' ').slice(0, 120), at: d.timestamp ?? turn.at });
                 if (typeof file === 'string') {
                     const p = normalizePath(file, home, s.cwd || '/');
                     s.paths.add(p);
@@ -246,7 +268,7 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                         turn?.ran.add(p);
                     }
                     if (turn && TEST_RUN.test(inp.command))
-                        pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at });
+                        pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) });
                     if (turn && GIT_COMMIT.test(inp.command)) {
                         const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command);
                         const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n');
@@ -263,5 +285,9 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
             }
         }
     }
+    const last = s.turns.at(-1);
+    const stuck = [...open.values()].filter((o) => o.turn === last).pop();
+    if (stuck)
+        s.openCall = { name: stuck.name, detail: stuck.detail, at: stuck.at };
     return s;
 }

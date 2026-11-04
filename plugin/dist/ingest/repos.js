@@ -58,7 +58,7 @@ export function discoverRepos(configured, cwds) {
 export function githubSlug(repo) {
     let out = '';
     try {
-        out = execFileSync('git', ['-C', repo, 'config', '--get-regexp', '^remote\\..*\\.url$'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        out = execFileSync('git', ['-C', repo, 'config', '--get-regexp', '^remote\\..*\\.url$'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
     }
     catch {
         return undefined;

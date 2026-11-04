@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { expandHome, resolveDataDir } from "../core/home.js";
 import { normPath } from "../core/vault-index.js";
 import { discoverProjects } from "../setup/projects.js";
+import { ANTIGRAVITY_ENTRYPOINT } from "./antigravity.js";
+import { CODEX_ENTRYPOINT } from "./codex.js";
 import { COPILOT_ENTRYPOINT } from "./copilot.js";
 export const CONFIG_VERSION = 1;
 // A string is a leaf type; an object is a nested table. Unknown keys are warned, wrong types are errors.
@@ -14,6 +16,7 @@ const SCHEMA = {
     exclude_projects: 'string[]',
     off: 'boolean',
     update_check: 'boolean',
+    notices: 'string',
     off_projects: 'string[]',
     ingest: { roots: 'string[]', repos: 'string[]', github_repos: 'string[]', vaults: 'string[]', docs: 'string[]', include_entrypoints: 'string[]', exclude_projects: 'string[]', exclude_markers: 'string[]', gh_timeout_s: 'number', prs: 'boolean', plans: 'boolean', git_all: 'boolean' },
     vault: { place: 'string', layout: 'string', path: 'string', commit: 'boolean' },
@@ -128,6 +131,7 @@ export function loadConfigSafe(home = homedir()) {
         plans: ing.plans ?? true,
         promptMap: user.hooks?.prompt_map ?? true,
         startupBrief: user.hooks?.startup_brief ?? true,
+        notices: user.notices ?? 'all',
         outputChars: user.tools?.output_chars ?? 0,
         captureAuto: user.capture?.auto ?? false,
         autoShare: user.team?.auto_share ?? [],
@@ -138,7 +142,7 @@ export function loadConfigSafe(home = homedir()) {
         vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
         backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
         scope: user.scope ?? 'project',
-        includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', '', COPILOT_ENTRYPOINT],
+        includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', '', COPILOT_ENTRYPOINT, CODEX_ENTRYPOINT, ANTIGRAVITY_ENTRYPOINT],
         ingestExcludeProjects: ing.exclude_projects ?? [],
         ingestExcludeMarkers: ing.exclude_markers ?? ['[no-memory]'],
         ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,

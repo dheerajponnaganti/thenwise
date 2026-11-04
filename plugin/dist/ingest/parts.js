@@ -8,9 +8,11 @@ import { maskSecrets } from "../core/secrets.js";
 import { normPath } from "../core/vault-index.js";
 import { parseTrailers, readNotes } from "../capture/notes.js";
 import { globMatch } from "./config.js";
+import { ANTIGRAVITY_ENTRYPOINT } from "./antigravity.js";
+import { CODEX_ENTRYPOINT } from "./codex.js";
 import { COPILOT_ENTRYPOINT } from "./copilot.js";
 import { skipReason } from "../vault/user.js";
-import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from "./deadend.js";
+import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from "./deadend.js";
 import { githubSlug, repoRoot } from "./repos.js";
 import { readChats } from "../teams/chatcache.js";
 import { normalizePath } from "./transcript.js";
@@ -64,6 +66,14 @@ export const editDirs = (s) => [...new Set([...s.turns].flatMap((t) => [...t.edi
 export const workDirs = (cfg, dirs) => dirs.filter((d) => cfg.roots.some((r) => under(d, r)));
 /** What one chat file gives: its nodes (merged by id), its own edges, and the commit and PR references of its turns. */
 export const chatSuffix = (folder) => `@${folder.replace(/[^\w.-]/g, '_')}`;
+/** The last passage of a turn the tool stopped: it travels with the turn (store, team wire, resume) and says why the work paused. */
+export const stoppedLine = (text) => `(stopped by the tool: ${text})`;
+/** Questions left for the next agent and answers to them, as a turn's extra fields; {} when there are none. */
+export function questionFields(text) {
+    const qs = markedQuestions(text);
+    const as = markedAnswers(text);
+    return { ...(qs.length ? { questions: qs.map((q) => ({ id: questionId(q), text: q })) } : {}), ...(as.length ? { answers: as } : {}) };
+}
 export function sessionPart(s, key, sfx = '') {
     const nodes = new Map();
     const edges = new Map();
@@ -75,7 +85,7 @@ export function sessionPart(s, key, sfx = '') {
     // A subagent file adds turns to its parent, whose own file gives the session node.
     const dirs = editDirs(s);
     // A chat from another coding tool says so, so answers can name where they came from.
-    const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : {};
+    const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {};
     if (!s.sub)
         node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } });
     const done = structural(s.turns);
@@ -87,7 +97,7 @@ export function sessionPart(s, key, sfx = '') {
         const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' } : undefined);
         const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'));
         const de = st ?? (phrase ? { text: phrase, kind: 'phrase' } : undefined);
-        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } });
+        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')) } });
         edge(tid, sid, 'part_of', t.at);
         if (st && 'file' in st && st.file)
             edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at);
@@ -200,7 +210,7 @@ export function datedSections(body) {
 function fileDated(f) {
     if (repoRoot(dirname(f))) {
         try {
-            const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
+            const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim();
             if (out && !Number.isNaN(Date.parse(out)))
                 return { at: iso(Date.parse(out)), from: 'git' };
         }
@@ -491,7 +501,7 @@ export function teamChatsPart(cfg, repos = cfg.repos, chats = teamChats(cfg)) {
             const at = iso(t.at);
             const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`;
             const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {};
-            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead } }));
+            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }));
             out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} });
             if (repo)
                 for (const p of t.paths)

@@ -1,17 +1,19 @@
 // `thenwise connect <tool>`: adds the memory tools to another coding tool through its MCP config, so that tool can read
-// this memory and whatever a team shared into it. It reads only: chats from those tools are not captured.
+// this memory and whatever a team shared into it. Codex and Antigravity chats are read by their own readers; connect adds
+// only the memory tools.
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-export const TOOLS = ['codex', 'cursor', 'gemini', 'opencode'];
+export const TOOLS = ['antigravity', 'codex', 'cursor', 'gemini', 'opencode'];
 /** Full paths, because a desktop app's PATH often has no node. The server command: this Node and this package. */
 export function serverCommand(node = process.execPath, cli = realpathSync(process.argv[1])) {
     return [node, [cli, 'mcp']];
 }
 const fileOf = (tool, home, env) => tool === 'codex' ? join(env.CODEX_HOME || join(home, '.codex'), 'config.toml')
-    : tool === 'cursor' ? join(home, '.cursor', 'mcp.json')
-        : tool === 'gemini' ? join(home, '.gemini', 'settings.json')
-            : join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode', 'opencode.json');
+    : tool === 'antigravity' ? join(home, '.gemini', 'config', 'mcp_config.json')
+        : tool === 'cursor' ? join(home, '.cursor', 'mcp.json')
+            : tool === 'gemini' ? join(home, '.gemini', 'settings.json')
+                : join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode', 'opencode.json');
 /** The entry in each tool's own JSON shape. Cursor starts servers outside the project, so it is told the folder. */
 function jsonEntry(tool, [command, args], extra) {
     if (tool === 'opencode')

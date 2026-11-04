@@ -1,6 +1,9 @@
 // The Phase C commands: search, why, tried, asof, trace, resume, path, get. Each prints a short header, then
 // numbered results with kind, id, date, source and the part of the passage around the match. Pure functions: db in, text out.
 import { endOf, GOOD, local, localDay, queryTerms } from "./engine.js";
+import { basename } from 'node:path';
+import { trigramSim } from "../capture/similar.js";
+import { ago } from "../core/time.js";
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i];
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i];
 const STRONG = /\b(why|decision|dead-end):/i;
@@ -98,9 +101,48 @@ const quoted = (text) => text.split('\n').filter((l) => l.trim()).map((l) => `  
 const deadNote = (n) => (n.extra?.deadEnd ? `\n   dead end (automatic, ${n.extra.deadEndKind ?? 'phrase'}): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '');
 /** Dead ends from what happened (an undo, a failed test, a revert, a closed PR, the person's own mark) weigh more than a phrase. */
 export const deadWeight = (n) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?? 'phrase') === 'phrase' ? 1 : 2);
-function result(i, h, extra = '') {
+/** The short source on a result line; the date, project and id are on the line already. */
+function where(n) {
+    if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session'))
+        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)} (team)`;
+    if (n.kind === 'turn' || n.kind === 'summary')
+        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat ${short(n.source)}`;
+    if (n.kind === 'session')
+        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat to ${when(n.until)}`;
+    if (n.kind === 'pr')
+        return n.until ? `merged ${n.until}` : String(n.extra.state ?? 'open');
+    if (n.kind === 'commit')
+        return branchNote(n).replace(/^ \((.*)\)$/, '$1');
+    if (n.kind === 'team')
+        return `shared by ${n.extra?.sharedBy ?? n.source.replace(/^team:/, '')} (team)`;
+    return n.source === n.id ? '' : n.source;
+}
+const when = (at) => local(at).replace(/ UTC.*$/, '');
+/** A chat turn's passage that holds only what the person typed: the words of a question, not evidence of an answer.
+ * Ingest records the prompt's length; turns stored before that carry none and are never labelled. */
+function isPrompt(g, h) {
+    const len = h.node.extra?.promptLen;
+    if (h.node.kind !== 'turn' || typeof len !== 'number')
+        return false;
+    const at = g.fullText(h.node.id).indexOf(h.text.slice(0, 200));
+    return at >= 0 && at + h.text.length <= len + 2;
+}
+/** Weight of a prompt passage in why, tried and current, which look for answers. */
+const PROMPT = 0.5;
+/** A hit that is only a heading or a title line shows the start of the text under it. */
+function bodyUnder(g, h) {
+    const t = h.text.trim();
+    if (t.includes('\n') || !(t.startsWith('#') || t === h.node.title.trim()))
+        return '';
+    const full = g.fullText(h.node.id);
+    const i = full.indexOf(t);
+    const body = flat(i >= 0 ? full.slice(i + t.length) : full);
+    return body ? `\n${quoted(cut(body, 300))}` : '';
+}
+function result(i, h, extra = '', g) {
     const n = h.node;
-    return `${i}. [${n.kind}] ${n.id}\n   date: ${local(n.at)}   project: ${h.project}   source: ${sourceOf(n)}   passage: ${h.pid.split('#').pop()}   found by: ${h.lanes.join('+')}${deadNote(n)}${extra}\n${quoted(excerpt(h.shown, 360, [], h.idf))}`;
+    const src = where(n);
+    return `${i}. [${g && isPrompt(g, h) ? 'prompt' : n.kind}] ${h.pid.replace(/#p0$/, '')}\n   ${when(n.at)} · ${h.project}${src ? ` · ${src}` : ''}${deadNote(n)}${extra}\n${quoted(excerpt(h.shown, 360, [], h.idf))}${g ? bodyUnder(g, h) : ''}`;
 }
 /** A chat turn read as one unit: what was asked (when the match is further down the turn) and how the next turn answered.
  * The question and the answer are often in different passages from the words that matched. */
@@ -108,27 +150,52 @@ function turnAround(g, h) {
     const n = h.node;
     if (n.kind !== 'turn')
         return '';
-    const asked = h.pid.endsWith('#p0') ? '' : `\n   asked: ${cut(flat(g.fullText(n.id).split('\n\n')[0] ?? n.title), 200)}`;
+    const asked = h.pid.endsWith('#p0') || isPrompt(g, h) ? '' : `\n   asked: ${cut(flat(g.fullText(n.id).split('\n\n')[0] ?? n.title), 200)}`;
     const sib = g.bySource(n.source).filter((x) => x.kind === 'turn').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1));
     const next = sib[sib.findIndex((x) => x.id === n.id) + 1];
-    const reply = next ? flat(g.fullText(next.id).split('\n\n').slice(1).join(' ')) || flat(next.title) : '';
-    return `${asked}${next ? `\n   same chat, next (${next.id}): ${cut(reply, 150)}` : ''}`;
+    const reply = next ? flat(g.fullText(next.id).split('\n\n').slice(1).join(' ')) : '';
+    return `${asked}${reply ? `\n   same chat, next (${next.id}): ${cut(reply, 100)}` : ''}`;
 }
 /** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable
  * from `tools.output_chars` in config.json). More room shows more results in full. */
 export const outputChars = () => Math.max(2000, Math.min(Number(process.env.THENWISE_OUTPUT_CHARS) || 4000, 20000));
 /** One line for a lower result: kind, id, date and the words around the match. */
-const brief = (i, h) => `${i}. ${h.node.id} ${local(h.node.at).slice(0, 10)} project: ${h.project} | ${flat(excerpt(h.shown, 80, [], h.idf)).replace(/\*\*/g, '')}`;
+const brief = (i, h) => `${i}. ${h.node.id} ${localDay(h.node.at)} · ${h.project} | ${flat(excerpt(h.shown, 80, [], h.idf)).replace(/\*\*/g, '')}`;
+/** A title with its numbers taken out: "Release v0.1.3" and "Release v0.1.4" share one. */
+const pattern = (h) => `${h.project}|${h.node.kind}|${flat(h.node.title).replace(/\d+/g, '#').toLowerCase()}`;
+/** Three or more one-line PRs or commits of one project whose titles differ only in numbers fold into the first.
+ * Chat turns never fold: two prompts that read "continue" lead to different work. */
+function fold(hs) {
+    const out = [];
+    const by = new Map();
+    const count = new Map();
+    for (const h of hs)
+        count.set(pattern(h), (count.get(pattern(h)) ?? 0) + 1);
+    for (const h of hs) {
+        const p = pattern(h);
+        const first = by.get(p);
+        if (first && count.get(p) >= 3 && (h.node.kind === 'pr' || h.node.kind === 'commit') && h.node.title.trim())
+            first.like.push(h);
+        else
+            (by.set(p, { h, like: [] }), out.push(by.get(p)));
+    }
+    return out;
+}
 /** The top 3 in full (with the next turn of the same chat), then up to 7 more as one line each, so Claude has more to choose from. */
 function listing(g, items, limit = 10) {
     const budget = outputChars();
-    const full = items.slice(0, budget >= 8000 ? 5 : 3).map((x, i) => result(i + 1, x.h, x.extra + turnAround(g, x.h)));
+    const full = items.slice(0, budget >= 8000 ? 5 : 3).map((x, i) => result(i + 1, x.h, x.extra + turnAround(g, x.h), g));
     // One-liners stop before the tool output cap would cut them mid-list.
     let room = budget - 300 - full.join('\n\n').length;
-    const more = items.slice(full.length, limit).map((x, i) => brief(i + full.length + 1, x.h)).filter((l) => (room -= l.length + 1) >= 0);
-    return [...full, ...(more.length ? [`more matches (get <id> prints one):\n${more.join('\n')}`] : [])];
+    const more = fold(items.slice(full.length, limit).map((x) => x.h))
+        .map((x, i) => `${brief(i + full.length + 1, x.h)}${x.like.length ? ` (+${x.like.length} more titled like it: ${x.like.map((h) => h.node.id).join(', ')})` : ''}`)
+        .filter((l) => (room -= l.length + 1) >= 0);
+    return [...full, ...(more.length ? [`more matches:\n${more.join('\n')}`] : [])];
 }
-const CUT = 'passages are cut to the words around the match ("..."); get <id>#<passage> prints one in full';
+/** How a result names its follow-up commands: the MCP tool names for an agent (MCP and the hooks), the CLI verbs when a
+ * person runs `thenwise search` and the like (the CLI sets THENWISE_CLI_VERBS). */
+const verb = (tool) => (process.env.THENWISE_CLI_VERBS === '1' ? (tool === 'read' ? 'get' : 'current') : `memory_${tool}`);
+const cutNote = () => `passages are cut to the words around the match ("..."); ${verb('read')} <id>#<passage> prints one in full`;
 function notRecorded(what, s) {
     const out = [`not recorded: nothing in the memory matches ${what}.`, ...rewording(s)];
     if (s.missing.length)
@@ -139,14 +206,34 @@ function notRecorded(what, s) {
 }
 /** Says what the search changed: synonyms it also searched, and spellings it corrected. */
 const rewording = (s) => [...(s.feedback?.length ? [`also searched (from the first results): ${s.feedback.join(', ')}`] : []), ...(s.expanded.length ? [`also searched: ${s.expanded.map((e) => `${e.to.join(', ')} (for ${e.from})`).join('; ')}`] : []), ...(s.fixed.length ? [`did you mean: ${s.fixed.map((f) => f.to).join(', ')} (for ${s.fixed.map((f) => f.from).join(', ')})`] : [])];
-const head = (title, s, shown, total) => {
-    const out = [`${title}: ${shown} of ${total} matching passages`, `searched: ${s.terms.join(' ') || '(exact references only)'}`];
+const head = (title, q, s, shown, total) => {
+    const out = [`${title} "${cut(flat(q), 80)}": ${shown.length} of ${total} passages, cut around the match; ${verb('read')} <id> prints one in full`];
     out.push(...rewording(s));
     if (s.missing.length)
         out.push(`no record of the word(s): ${s.missing.join(', ')}`);
-    out.push(CUT);
+    const gap = matchGap(s, shown);
+    if (gap)
+        out.push(gap);
     return out.join('\n');
 };
+/** Idf a word needs to count as distinctive: in under about 3% of passages. */
+const DISTINCT = 3.5;
+/** When no shown passage holds all of the query's distinctive words (rare in the corpus and above the query's median
+ * weight, numbers and version fragments aside) and the closest lacks the rarest, one line says so. It reports what the
+ * search found, never a guess at the answer: passages that hold only some of those words may be about something else. */
+function matchGap(s, shown) {
+    const w = Object.entries(s.weights).filter(([t]) => t.length >= 3 && !/\d/.test(t)).sort((a, b) => b[1] - a[1]);
+    if (w.length < 2 || !shown.length)
+        return '';
+    const v = w.map((x) => x[1]);
+    const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+    const key = w.filter(([, x]) => x > mid && x >= DISTINCT).map(([t]) => t);
+    // A question that hinges on two or three rare words; a longer one says the same thing in other words too often.
+    if (key.length < 2 || key.length > 3)
+        return '';
+    const lacks = shown.map((h) => key.filter((t) => !h.has.includes(t))).sort((a, b) => a.length - b.length)[0];
+    return lacks.includes(key[0]) ? `no shown passage has all of: ${key.join(', ')} (the closest lacks ${lacks.join(', ')})` : '';
+}
 /** The ranking behind search, why, tried, current and asof, shared by the text commands and the gold benchmark. */
 export function rank(g, cmd, q, opts = {}) {
     if (cmd === 'search') {
@@ -170,7 +257,7 @@ export function search(g, q, limit = 10) {
         return notRecorded(`"${q}"`, s);
     const hs = s.good.slice(0, limit);
     const notes = newerNotes(g, s, hs);
-    return [head('search', s, Math.min(limit, s.good.length), s.good.length), '', ...listing(g, hs.map((h, i) => ({ h, extra: notes[i] })), limit)].join('\n\n');
+    return [head('search', q, s, hs, s.good.length), ...listing(g, hs.map((h, i) => ({ h, extra: notes[i] })), limit)].join('\n\n');
 }
 // How final a record is: a merged PR, a commit or a dated log entry is the outcome; chat is often the discussion before it.
 // A rule line from a CLAUDE.md is not an outcome (curated rules are); a doc section is guidance.
@@ -185,16 +272,15 @@ function sameTopic(g, h, x) {
         return 'supersedes it';
     const linked = (id) => new Set(g.neighbours(id).map((e) => e.to).filter((t) => /^(file|pr):/.test(t)));
     const mine = linked(h.node.id);
-    const shared = [...linked(x.node.id)].find((t) => mine.has(t));
+    // A file counts only between two commits: chats read and touch files on the way, and every change near a file shares it.
+    const shared = [...linked(x.node.id)].find((t) => mine.has(t) && (t.startsWith('pr:') || (x.node.kind === 'commit' && h.node.kind === 'commit')));
     if (shared)
-        return `touches the same ${shared.startsWith('pr:') ? 'PR' : 'file'}, ${label(g, shared)}`;
+        return `same ${shared.startsWith('pr:') ? 'PR' : 'file'}, ${label(g, shared)}`;
     const [a, b] = [h.node.title, x.node.title].map((t) => flat(t).toLowerCase());
     if (a.length >= 8 && b.length >= 8 && (a.includes(b) || b.includes(a)))
-        return 'carries the same title';
-    const rare = [...new Set(words(h.text).filter((w) => w.length >= 4))].sort((a, b) => h.idf(b) - h.idf(a) || (a < b ? -1 : 1)).slice(0, 5);
-    const theirs = new Set(words(x.text));
-    const both = rare.filter((w) => theirs.has(w));
-    return both.length >= 2 ? `shares the words ${both.join(', ')}` : '';
+        return 'same title';
+    // Shared words are no evidence: two later records on a short query share them by chance.
+    return '';
 }
 /** The most relevant newer record on the same topic, when there is one strong enough to matter, and why it counts. */
 function newerOnTopic(g, s, h, evidence = true) {
@@ -216,7 +302,7 @@ function newerOnTopic(g, s, h, evidence = true) {
 }
 const newerNote = (g, s, h) => {
     const n = newerOnTopic(g, s, h);
-    return n ? `\n   NEWER on this topic (${n.why}): ${n.hit.node.kind} ${n.hit.node.id} (${local(n.hit.node.at)}); this one may be outdated: read the newer one (or run current) before saying what holds now\n   newer says: ${flat(excerpt(n.hit.shown, 160, [], n.hit.idf)).replace(/\*\*/g, "")}` : '';
+    return n ? `\n   NEWER: ${n.hit.node.id} (${localDay(n.hit.node.at)}), ${n.why}. Read it before saying what holds now.` : '';
 };
 /** NEWER notes for the top 3, kept on the first result that has one only: one warning per answer. */
 const newerNotes = (g, s, hs) => {
@@ -247,7 +333,7 @@ function rankCurrent(g, topic) {
         // Ranking keeps the looser test: on the benchmark it orders current better; only the warning text needs evidence.
         const later = newerOnTopic(g, s, h, false)?.hit;
         const overtaken = later && final(later.node) >= final(h.node) ? 0.6 : 1;
-        return { h, v: (h.score / top) * (0.5 + h.cov) * final(h.node) * (0.7 + 0.6 * recent) * overtaken };
+        return { h, v: (h.score / top) * (0.5 + h.cov) * final(h.node) * (0.7 + 0.6 * recent) * overtaken * (isPrompt(g, h) ? PROMPT : 1) };
     })
         .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1));
     return { s, items: scored.map((x) => ({ h: x.h })) };
@@ -257,12 +343,12 @@ export function current(g, topic, limit = 5) {
     if (!s.good.length)
         return notRecorded(`"${topic}"`, s);
     const out = [
-        head('current', s, Math.min(limit, scored.length), scored.length),
-        'ranked for what holds now: final records (PRs, commits, dated log entries) and newer ones first; earlier chat may describe a plan that changed',
+        head('current', topic, s, scored.slice(0, limit).map((x) => x.h), scored.length),
+        'ranked for what holds now: PRs, commits and dated entries, newer first; earlier chat may be a plan that changed',
     ];
     const hs = scored.slice(0, limit).map((x) => x.h);
     const notes = newerNotes(g, s, hs);
-    return [out.join('\n'), '', ...hs.map((h, i) => result(i + 1, h, notes[i]))].join('\n\n');
+    return [out.join('\n'), ...hs.map((h, i) => result(i + 1, h, notes[i], g))].join('\n\n');
 }
 /** why and tried: the topic's best passages, boosted when they state a reason or an attempt. Relevance leads; markers only
  * reorder close calls, so a plain commit message that holds the answer is not thrown away. */
@@ -274,7 +360,7 @@ function rankMarked(g, name, topic, markers) {
     const scored = s.good
         .map((h) => {
         const m = markers.filter((r) => r.test(h.text)).length + (STRONG.test(h.text) ? 1 : 0) + (name === 'tried' ? deadWeight(h.node) : 0);
-        return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) };
+        return { h, m, v: (h.score / top) * (0.5 + h.cov) * (1 + 0.4 * Math.min(m, 3)) * (isPrompt(g, h) ? PROMPT : 1) };
     })
         .sort((a, b) => b.v - a.v || (a.h.pid < b.h.pid ? -1 : 1));
     return { s, items: scored.map((x) => ({ h: x.h, m: x.m })) };
@@ -285,7 +371,7 @@ function marked(g, name, topic, limit = 10) {
         return notRecorded(`${name} for "${topic}"`, s);
     const top = scored.slice(0, limit);
     const notes = newerNotes(g, s, top.map((x) => x.h));
-    return [head(name, s, Math.min(limit, scored.length), scored.length), '', ...listing(g, top.map((x, i) => ({ h: x.h, extra: `   markers: ${x.m}${notes[i]}` })), limit)].join('\n\n');
+    return [head(name, topic, s, top.map((x) => x.h), scored.length), ...listing(g, top.map((x, i) => ({ h: x.h, extra: notes[i] })), limit)].join('\n\n');
 }
 export const why = (g, topic) => marked(g, 'why', topic);
 export const tried = (g, topic) => marked(g, 'tried', topic);
@@ -330,15 +416,15 @@ export function asof(g, date, q, limit = 5) {
         return notRecorded(`"${q}" on or before ${date}`, s);
     const top = items.slice(0, Math.min(limit, 12)).map((x) => x.h);
     const newest = top.reduce((a, b) => (ms(b.node.at) > ms(a.node.at) ? b : a));
-    const out = [`asof ${date}: ${top.length} of ${s.good.length} matching passages dated on or before ${date}, best match first`, `searched: ${s.terms.join(' ')}`, 'memory files, and CLAUDE.md sections without git history, are undated and left out', CUT, `best match: ${label(g, top[0].node.id)} (${local(top[0].node.at)}); newest among the matches: ${label(g, newest.node.id)} (${local(newest.node.at)})`];
+    const out = [`asof ${date} "${cut(flat(q), 80)}": ${top.length} of ${s.good.length} passages dated on or before it, best match first, cut around the match; ${verb('read')} <id> prints one in full`, ...rewording(s), 'undated records (memory files, CLAUDE.md sections without git history) are left out', `best match: ${label(g, top[0].node.id)} (${local(top[0].node.at)}); newest among the matches: ${label(g, newest.node.id)} (${local(newest.node.at)})`];
     const repos = commitsAt(g, end);
     if (repos.length)
         out.push(`the code as it was on ${date} (the newest commit on or before it; read a file with git show <sha>:<path>):`, ...repos);
     const blocks = top.map((h, i) => {
         const later = i < 3 ? replacedBy(g, h, q, s) : undefined;
-        return result(i + 1, h, later ? `\n   ${later}` : '');
+        return result(i + 1, h, later ? `\n   ${later}` : '', g);
     });
-    return [out.join('\n'), '', ...blocks].join('\n\n');
+    return [out.join('\n'), ...blocks].join('\n\n');
 }
 /** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
 function commitsAt(g, end) {
@@ -358,6 +444,23 @@ function pick(g, id, keys) {
     return ps.find((p) => keys.some((k) => k && p.text.toLowerCase().includes(k.toLowerCase()))) ?? ps[0];
 }
 /** `offset` skips that many of the newest items (paging); `budget` is the character budget for the items, 0 for no limit. */
+/** Teammates who worked on a file in the last day, newest first, one line each: who, which tool, when, and whether their chat
+ * was stopped by the tool (so the work there may be half done). */
+export function fileMates(g, fileId, now = Date.now()) {
+    const newest = new Map();
+    for (const e of g.adj.get(fileId) ?? []) {
+        const n = g.nodes.get(e.to);
+        if (!n || n.kind !== 'turn' || !n.extra?.team || now - ms(n.at) > 864e5 || !g.inScope(n))
+            continue;
+        if (!newest.has(owner(n)) || ms(newest.get(owner(n)).at) < ms(n.at))
+            newest.set(owner(n), n);
+    }
+    return [...newest.values()].sort((a, b) => ms(b.at) - ms(a.at)).map((n) => {
+        const last = g.bySource(n.source).filter((t) => t.kind === 'turn').sort((a, b) => ms(b.at) - ms(a.at))[0];
+        const stopped = last && STOP_LINE.test(g.fullText(last.id));
+        return `now: ${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''} worked on this file ${ago(n.at, now)} (${n.id})${stopped ? '; that chat was stopped by the tool, so the work may be half done' : ''}`;
+    });
+}
 export function trace(g, target, cap = 100, offset = 0, budget = 0) {
     const ex = g.exact(target);
     if (!ex.length) {
@@ -367,7 +470,7 @@ export function trace(g, target, cap = 100, offset = 0, budget = 0) {
         const hits = s.good.slice(0, 8).sort((a, b) => ms(b.node.at) - ms(a.node.at));
         return [`trace "${target}": no file, PR, commit or note by that name; showing ${hits.length} topic matches, newest first, grouped by date`, `searched: ${s.terms.join(' ')}`, ...grouped(hits.map((h) => ({ date: h.node.at, text: result(0, h).replace(/^0\. /, '- ') })))].join('\n\n');
     }
-    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, CUT];
+    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), cutNote()];
     const items = [];
     for (const { id } of ex.slice(0, 3)) {
         const t = g.nodes.get(id);
@@ -411,9 +514,23 @@ function grouped(items) {
     }
     return out;
 }
+/** Inside a repository, what belongs to this project: its own records, and global notes that name it (a vault note about
+ * the project). Outside one, everything in scope. */
+function ofThisProject(g) {
+    if (g.scope === undefined)
+        return () => true;
+    const plain = (t) => ` ${t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+    const name = plain(basename(g.scope));
+    return (n) => {
+        const r = g.rootOf(n);
+        return g.ours(r) || (r === '' && name.trim() !== '' && plain(`${n.id} ${n.title} ${g.fullText(n.id)}`).includes(name));
+    };
+}
 export function resume(g, q = '') {
     const terms = queryTerms(q);
-    const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team);
+    const mine = ofThisProject(g);
+    // Inside a repository, a home-folder chat is not where this project stands.
+    const sessions = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team && (q !== '' || g.scope === undefined || g.ours(g.rootOf(n))));
     let ses;
     let how = 'the newest session';
     const key = words(q).join('-');
@@ -436,7 +553,7 @@ export function resume(g, q = '') {
     else
         ses = sessions.sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at))[0];
     if (!ses)
-        return 'not recorded: the graph holds no sessions.';
+        return g.scope === undefined || q ? 'not recorded: the graph holds no sessions.' : `not recorded: no session of ${basename(g.scope)} is in the memory yet.`;
     const out = [`resume${q ? ` "${q}"` : ''}: ${how}: ${label(g, ses.id)}, ${ses.at} to ${ses.until}`];
     const kids = g.bySource(ses.id).sort((a, b) => ms(b.at) - ms(a.at) || (a.id < b.id ? -1 : 1));
     const sum = kids.find((n) => n.kind === 'summary');
@@ -455,20 +572,27 @@ export function resume(g, q = '') {
     const lower = (n) => `${n.title}\n${g.fullText(n.id)}`.toLowerCase();
     const on = (n) => !terms.length || terms.some((t) => lower(n).includes(t));
     const prs = g.ofKind('pr').filter((n) => g.inScope(n) && n.extra.state === 'OPEN' && on(n)).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 8);
+    // Teammates' newest chats here, so their half-finished work can be picked up: the last turns of each.
+    const mates = mateLatest(g, Date.now() - 7 * 864e5);
+    if (mates.length)
+        out.push("## Teammates' newest chats here", ...mates.map((l) => `- ${l}`));
+    const qs = openQuestions(g, Date.now() - 7 * 864e5, Date.now(), 5);
+    if (qs.length)
+        out.push('## Open questions left for the next agent (answer with [answer q-xxxx] ...)', ...qs.map((l) => `- ${l}`));
     out.push(`## Open PRs${prs.length ? '' : ': none recorded'}`, ...prs.map((n) => `- ${label(g, n.id)}, opened ${n.at}, ${n.extra.url}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 400)}`));
     const cwd = String(ses.extra.cwd ?? '');
     const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10);
     out.push(`## Commits after the last turn (${lastAt})${commits.length ? '' : ': none recorded'}`, ...commits.map((n) => `- ${label(g, n.id)}, ${n.at}`));
-    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : g.ofKind('note').filter((n) => g.inScope(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
+    const notes = (terms.length ? g.search(q, { filter: (n) => n.kind === 'note' }).good.map((h) => h.node) : g.ofKind('note').filter((n) => g.inScope(n) && mine(n))).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Newest matching vault notes${notes.length ? '' : ': none recorded'}`, ...notes.map((n) => `- ${label(g, n.id)}, ${n.at}, ${n.source}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 500)}`));
     // Where the work stands is often in the release history and the "next to build" line, whatever the query words.
     const releases = g.ofKind('commit', 'pr').filter((n) => g.inScope(n) && ((n.kind === 'commit' && /^(\w[\w-]* )?v?\d+\.\d+\.\d+\b/.test(n.title)) || (n.kind === 'pr' && /^release v?\d+\.\d+/i.test(n.title)))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
     out.push(`## Latest releases${releases.length ? '' : ': none recorded'}`, ...releases.map((n) => `- ${label(g, n.id)}, ${local(n.at)}`));
-    const next = g.ofKind('note', 'section').filter((n) => /pending|home/i.test(n.id)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
-    out.push(`## Next on the build list${next.length ? '' : ': none recorded'}`, ...[...new Set(next)].slice(0, 6));
-    for (const n of g.ofKind('note').filter((x) => /pending/i.test(x.id) && on(x)).slice(0, 2)) {
+    const next = g.ofKind('note', 'section').filter((n) => /pending|home/i.test(n.id) && g.inScope(n) && mine(n)).flatMap((n) => g.fullText(n.id).split('\n').filter((l) => /next to build|\*\*next\b|^\s*[-*]\s+\[ \]\s+\*\*first/i.test(l)).map((l) => `- ${cut(l.trim(), 400)} (${label(g, n.id)})`));
+    out.push(`## Next on the build list${next.length ? '' : ': none recorded'}`, ...[...new Set(next)].slice(0, 3));
+    for (const n of g.ofKind('note').filter((x) => /pending/i.test(x.id) && g.inScope(x) && mine(x) && on(x)).slice(0, 2)) {
         const open = g.fullText(n.id).split('\n').filter((l) => /^\s*[-*]\s+\[ \]/.test(l));
-        out.push(`## Unchecked items in ${label(g, n.id)} (${n.at})`, open.length ? open.join('\n') : 'none unchecked');
+        out.push(`## Unchecked items in ${label(g, n.id)} (${n.at})`, open.length ? [...open.slice(0, 3), ...(open.length > 3 ? [`(${open.length - 3} more: memory_read ${n.id})`] : [])].join('\n') : 'none unchecked');
     }
     const since = [lastAt, ...notes.map((n) => n.at)].sort().pop();
     out.push(`## Check against the repo (this output only knows what was recorded up to ${since})`, `- working directory of the session: ${cwd || 'unknown'}`, '- current branch: `git branch --show-current`, and compare with the branch named in the notes or PRs above', '- uncommitted changes: `git status --short`', `- commits after ${since}: \`git log --since=${since.slice(0, 10)} --oneline\``, '- open PRs still open: `gh pr list`; the PRs above may have merged since', '- trust the repo over any note above when they disagree');
@@ -480,7 +604,47 @@ export function resume(g, q = '') {
     groups.sort((a, b) => rank(a) - rank(b));
     return [out[0], ...groups.flat()].join('\n\n');
 }
-const ORDER = ['Next on', 'Unchecked', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest'];
+const ORDER = ['Next on', 'Unchecked', 'Open questions', 'Teammates', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest'];
+const STOP_LINE = /^\(stopped by the tool: (.*)\)$/m;
+/** Each teammate's newest chat in this project after `since` (at most `max`), newest first: where it stopped, so a teammate
+ * can pick it up. Read from what they shared; the stop line travels with the turn. */
+export function mateLatest(g, since, now = Date.now(), max = 2) {
+    const newest = new Map();
+    for (const n of g.ofKind('session')) {
+        if (!n.extra?.team || !g.inScope(n) || ms(n.until || n.at) <= since)
+            continue;
+        const o = owner(n);
+        if (!newest.has(o) || ms(newest.get(o).until || newest.get(o).at) < ms(n.until || n.at))
+            newest.set(o, n);
+    }
+    return [...newest.values()].sort((a, b) => ms(b.until || b.at) - ms(a.until || a.at)).slice(0, max).map((s) => {
+        const last = g.bySource(s.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(b.at) - ms(a.at))[0];
+        const text = last ? g.fullText(last.id) : '';
+        const stop = STOP_LINE.exec(text)?.[1];
+        const asked = cut(flat(text.split('\n\n')[0] ?? s.title), 120);
+        return `${owner(s)}${s.extra?.tool ? ` (${s.extra.tool})` : ''}, ${ago(s.until || s.at, now)} (${s.id}): ${stop ? `stopped by the tool (${cut(stop, 80)}); ` : ''}last asked: "${asked}"`;
+    });
+}
+/** Questions left with `[question]` in this project's chats (yours and your teammates') since `since`, that no later
+ * `[answer]` closed, newest first. An answer closes a question by its id, or by naming it closely. */
+export function openQuestions(g, since, now = Date.now(), max = 3) {
+    const rows = g.db.prepare(`SELECT id, at FROM nodes WHERE kind = 'turn' AND at >= ? AND (extra LIKE '%"questions":%' OR extra LIKE '%"answers":%') ORDER BY at`).all(new Date(since).toISOString());
+    const open = [];
+    for (const r of rows) {
+        const n = g.nodes.get(r.id);
+        if (!n || !g.inScope(n))
+            continue;
+        for (const a of n.extra.answers ?? []) {
+            const i = open.findIndex((o) => (a.id ? o.q.id === a.id : trigramSim(a.text, o.q.text) >= 0.5));
+            if (i >= 0)
+                open.splice(i, 1);
+        }
+        for (const q of n.extra.questions ?? [])
+            if (!open.some((o) => o.q.id === q.id))
+                open.push({ q, n });
+    }
+    return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool ? `a ${n.extra.tool} chat` : 'a Claude Code chat'}, ${ago(n.at, now)} (${n.id}): ${cut(q.text, 200)}`);
+}
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
  * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
 export function resumeShort(g, days = 7, now = Date.now()) {
@@ -493,8 +657,12 @@ export function resumeShort(g, days = 7, now = Date.now()) {
         if (n.extra?.team && g.inScope(n) && ms(n.until || n.at) > (recent ? end : now - days * 864e5))
             mates.set(owner(n), (mates.get(owner(n)) ?? 0) + 1);
     const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : '';
+    // A teammate's newest work from the last day: where they stopped. The late check at the first prompt uses the same window.
+    const picks = mateLatest(g, now - 864e5, now).map((l) => `teammate's newest chat: ${l}`);
+    // Questions left for whoever picks the work up, from the last week, still open.
+    picks.push(...openQuestions(g, now - 7 * 864e5, now, 2).map((l) => `open question ${l} (close it with [answer ${l.slice(0, 6)}] ...)`));
     if (!recent)
-        return team;
+        return cut([team, ...picks].filter(Boolean).join('\n'), 800);
     const first = g.bySource(ses.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0];
     const out = [`last session here: ${local(ses.until || ses.at)} (${ses.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses.title), 140)}"`];
     const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > end).sort((a, b) => ms(b.at) - ms(a.at));
@@ -508,6 +676,7 @@ export function resumeShort(g, days = 7, now = Date.now()) {
         out.push(`open PRs: ${open.map((n) => label(g, n.id)).join('; ')}`);
     if (team)
         out.push(team);
+    out.push(...picks);
     return cut(out.join('\n'), 800);
 }
 /** Up to three one-line pointers for a prompt, or '' when the match is weak: the best match must cover half the query
@@ -588,7 +757,8 @@ export function get(g, id) {
     const full = g.fullText(nid);
     // A short node prints whole: its reason may sit in the next passage.
     const text = p && nid !== id && full.length >= 3000 ? g.passages(nid).find((x) => x.n === Number(p[2]))?.text : full;
-    const edges = (g.adj.get(nid) ?? []).filter((e) => e.kind !== 'part_of').slice(0, 15).map((e) => `  ${e.out ? sentence(g, nid, e.to, e.kind, e.extra) : sentence(g, e.to, nid, e.kind, e.extra)}`);
+    // A link that only says a chat ran a command in a folder tells the reader nothing, and a busy chat has hundreds.
+    const edges = (g.adj.get(nid) ?? []).filter((e) => e.kind !== 'part_of' && e.kind !== 'ran_in').slice(0, 15).map((e) => `  ${e.out ? sentence(g, nid, e.to, e.kind, e.extra) : sentence(g, e.to, nid, e.kind, e.extra)}`);
     return [`[${n.kind}] ${id}\ndate: ${local(n.at)}   project: ${g.projectName(n)}   source: ${sourceOf(n)}\ntitle: ${n.title}`, text ?? `not recorded: ${id} has no such passage`, edges.length ? `links (first ${edges.length}):\n${edges.join('\n')}` : ''].filter(Boolean).join('\n\n');
 }
 const words = (q) => q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];

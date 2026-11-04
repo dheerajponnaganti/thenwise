@@ -27,7 +27,7 @@ export const issueRepo = () => /github\.com[/:]([^/]+\/[^/.]+)/.exec(manifest().
 function claudeVersion() {
     // One command string on Windows: Node warns on stderr when a shell gets separate arguments.
     const win = process.platform === 'win32';
-    const r = spawnSync(win ? 'claude --version' : 'claude', win ? [] : ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: win });
+    const r = spawnSync(win ? 'claude --version' : 'claude', win ? [] : ['--version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], shell: win, windowsHide: true });
     return r.status === 0 ? r.stdout.trim().split('\n')[0] : 'not found';
 }
 /**
@@ -110,7 +110,7 @@ export function saveReport(md, dir = resolveDataDir(), now = new Date()) {
     writeFileSync(file, md, { mode: 0o600 });
     return file;
 }
-const run = (cmd, args, input) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 30_000, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+const run = (cmd, args, input) => spawnSync(cmd, args, { encoding: 'utf8', timeout: 30_000, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true });
 /** Puts the text on the clipboard with the platform's own tool. */
 export function copy(text) {
     const tools = process.platform === 'darwin' ? [['pbcopy', []]] : process.platform === 'win32' ? [['clip', []]] : [['wl-copy', []], ['xclip', ['-selection', 'clipboard']], ['xsel', ['--clipboard', '--input']]];

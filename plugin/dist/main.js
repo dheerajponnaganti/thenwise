@@ -3,13 +3,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expandHome } from "./core/home.js";
+// Tools whose own chat folders every sync reads, connected or not.
+const READS_CHATS = new Set(['antigravity', 'codex']);
 const [cmd, vaultArg, dirArg] = process.argv.slice(2);
 const xp = (p) => (p === undefined ? undefined : expandHome(p, homedir()));
 const flag = (name) => {
     const i = process.argv.indexOf(`--${name}`);
     return i > 0 ? process.argv[i + 1] : undefined;
 };
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
 if (cmd === '--help' || cmd === '-h' || cmd === 'help')
     (console.log(USAGE), process.exit(0));
 if (cmd === '--version' || cmd === '-v')
@@ -85,7 +87,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
         const done = (await import("./core/log.js")).logger('sync', cfg.memDir).time('archive');
         let r;
         try {
-            r = archive(cfg, { prune: process.argv.includes('--prune-excluded') });
+            const { reporter } = await import("./core/progress.js");
+            r = archive(cfg, { prune: process.argv.includes('--prune-excluded'), onProgress: reporter(cfg.memDir, 'copying chats') ?? undefined });
         }
         catch (e) {
             if (e.message !== 'archive already running')
@@ -113,7 +116,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
         const { ingest, report } = await import("./ingest/ingest.js");
         if (flag('vault'))
             cfg.vaults = [resolve(xp(flag('vault')))];
-        const r = ingest(cfg, { prs: xp(flag('prs')), db: xp(flag('db')), until: flag('until'), memoryFrom: xp(flag('memory-from')), full: process.argv.includes('--full') });
+        const { reporter } = await import("./core/progress.js");
+        const r = ingest(cfg, { prs: xp(flag('prs')), db: xp(flag('db')), until: flag('until'), memoryFrom: xp(flag('memory-from')), full: process.argv.includes('--full'), onProgress: reporter(cfg.memDir, 'building the store') ?? undefined });
         const log = (await import("./core/log.js")).logger('ingest', cfg.memDir);
         log.info(r.mode, { ms: r.ms, files: r.filesRead, sessions: r.sessionsIn, out: r.sessionsOut, excluded: r.excludedEval, warnings: r.warnings.length });
         for (const w of r.warnings)
@@ -137,12 +141,15 @@ if (cmd === 'mcp') {
     process.exit(0);
 }
 if (cmd === 'hook') {
+    ;
+    (await import("./setup/projects.js")).memoProjects();
     const { resolveDataDir } = await import("./core/home.js");
     const { runHook } = await import("./hooks/hook.js");
     const { hookInput } = await import("./hooks/entry.js");
     const out = runHook(vaultArg ?? '', vaultArg === 'sync-run' || vaultArg === 'status' ? {} : await hookInput(), { dir: resolveDataDir(), cli: process.argv[1] });
-    if (out)
-        process.stdout.write(`${out}\n`);
+    // Antigravity reads a hook's stdout as JSON, so saying nothing is printed as an empty object.
+    if (out || process.env.ANTIGRAVITY_CONVERSATION_ID)
+        process.stdout.write(`${out || '{}'}\n`);
     process.exit(0);
 }
 if (cmd === 'connect') {
@@ -162,7 +169,29 @@ if (cmd === 'connect') {
     if (p.next === null && /left alone/.test(p.note))
         console.log(p.snippet);
     else if (p.note === 'connected')
-        console.log(`Restart ${tool} to load the memory tools. It can read this memory and what your team shared; its own chats are not remembered yet.`);
+        console.log(`Restart ${tool} to load the memory tools. It can read this memory and what your team shared; ${READS_CHATS.has(tool) ? 'its own chats join this memory at each sync' : 'its own chats are not remembered yet'}.`);
+    process.exit(0);
+}
+if (cmd === 'notices') {
+    const { loadConfig, readConfigFile, saveConfig } = await import("./ingest/config.js");
+    const cfg = loadConfig();
+    const set = process.argv[3];
+    if (set !== 'all' && set !== 'important' && set !== 'off')
+        (console.error('usage: thenwise notices all|important|off'), process.exit(2));
+    saveConfig(cfg.memDir, { ...readConfigFile(cfg.memDir).raw, notices: set });
+    console.log({ all: 'Thenwise shows a line when it hands over work, when something fails, when chats leave this machine and when notes wait.', important: 'Thenwise shows a line only on first run, when something fails, and when chats leave this machine.', off: 'Thenwise shows no lines. /thenwise:status still has everything.' }[set]);
+    process.exit(0);
+}
+if (cmd === 'shown') {
+    const { resolveDataDir } = await import("./core/home.js");
+    const { readSent } = await import("./core/notices.js");
+    const r = readSent(resolveDataDir(), flag('session'));
+    if (!r || !r.sent.length)
+        (console.log('Nothing from Thenwise was added to a session yet.'), process.exit(0));
+    const total = r.sent.reduce((n, s) => n + s.tokens, 0);
+    console.log(`What Thenwise added to the agent in session ${r.session}: ${r.sent.length} block${r.sent.length === 1 ? '' : 's'}, about ${total} tokens, oldest first.\n`);
+    for (const s of r.sent)
+        console.log(`== ${s.at.replace('T', ' ').slice(0, 19)} · ${s.event} · ${s.kind} · about ${s.tokens} tokens\n${s.text}\n`);
     process.exit(0);
 }
 if (cmd === 'update-check') {
@@ -186,6 +215,10 @@ if (cmd === 'status') {
     const { newProjectLines } = await import("./setup/projects.js");
     const { globMatch } = await import("./ingest/config.js");
     const cfg = loadConfig();
+    const { progressLine, readProgress } = await import("./core/progress.js");
+    const sync = progressLine(readProgress(cfg.memDir));
+    if (sync)
+        console.log(`sync: ${sync}`);
     for (const l of statusLines(cfg, xp(flag('db')) ?? join(cfg.memDir, 'graph.db')))
         console.log(l);
     for (const l of newProjectLines(cfg.claudeDir, cfg.roots, (k) => cfg.excludeProjects.some((g) => globMatch(g, k))))
@@ -247,6 +280,7 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
 }
 const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'path', 'get'];
 if (cmd && QUERY.includes(cmd)) {
+    process.env.THENWISE_CLI_VERBS = '1'; // a person reads this: name the CLI commands, not the MCP tools
     const { loadConfig } = await import("./ingest/config.js");
     const { Graph } = await import("./query/engine.js");
     const c = await import("./query/commands.js");
@@ -257,8 +291,17 @@ if (cmd && QUERY.includes(cmd)) {
         rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
     const cfg = loadConfig();
     const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
+    // resume starts with where another session of this project stopped, read from its live chat: it needs no store.
+    let live = '';
+    if (cmd === 'resume' && !process.argv.includes('--short') && !flag('mates-since') && (flag('project') || process.argv.includes('--here'))) {
+        const { handoffBlock, insideAgent, ownChat } = await import("./hooks/handoff.js");
+        const project = xp(flag('project')) ?? process.cwd();
+        const block = handoffBlock(cfg, project, ownChat(cfg, project, insideAgent()));
+        if (block)
+            live = `## Live handoff (read from the chat file now)\n${block}`;
+    }
     if (!existsSync(dbPath))
-        (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2));
+        (live ? (console.log(live), process.exit(0)) : (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2)));
     const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }); // lazy reads only what the command touches; --full loads the whole graph
     g.expand = process.argv.includes('--expand');
     // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
@@ -277,8 +320,10 @@ if (cmd && QUERY.includes(cmd)) {
         console.log(c.tried(g, q));
     else if (cmd === 'trace')
         console.log(c.trace(g, q));
+    else if (cmd === 'resume' && flag('mates-since'))
+        console.log(c.mateLatest(g, Date.parse(flag('mates-since')) || 0).join('\n'));
     else if (cmd === 'resume')
-        console.log(process.argv.includes('--short') ? c.resumeShort(g) : c.resume(g, q));
+        console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'));
     else if (cmd === 'get')
         console.log(c.get(g, q));
     else if (cmd === 'asof')

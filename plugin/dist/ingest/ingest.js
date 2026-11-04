@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readSync, chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { writeProgress } from "../core/progress.js";
 import { DatabaseSync } from 'node:sqlite';
 import { syncTrailers } from "../capture/notes.js";
 import { errFields, logger } from "../core/log.js";
@@ -26,7 +27,11 @@ export { GENERATED, datedSections } from "./parts.js";
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 // 4 (0.1.24): shell commands link more files and commits (Linux and Windows paths, relative paths, `git -c`), so older chats are read again.
 // 5 (0.1.25): a title word the body never says gets a passage, so existing stores rebuild to find it.
-export const STATE_VERSION = 5;
+// 6 (0.2.0): a turn the tool stopped (a usage limit) ends with its stop line, and the limit text is no longer a reply;
+//   a background subagent's launch notice and a report's agent id and usage are no reply either.
+//   A turn records its prompt's length, so results can label a passage that holds only the person's words.
+//   A commit sentence about dead ends themselves is no dead end.
+export const STATE_VERSION = 6;
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2;
@@ -184,7 +189,7 @@ export function scanSessions(cfg) {
 }
 export function gitOut(repo, args, input) {
     try {
-        return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], ...(input === undefined ? {} : { input }) });
+        return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], { encoding: 'utf8', maxBuffer: 1 << 29, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...(input === undefined ? {} : { input }) });
     }
     catch {
         return null;
@@ -274,6 +279,8 @@ export function ingest(cfg, opts = {}) {
                     console.error(e);
             }
         }
+        if (!r && existsSync(dbPath) && process.env.THENWISE_PROGRESS)
+            writeProgress(cfg.memDir, { kind: 'rebuild' }); // an update (a new store version) rebuilds everything: say so
         r ??= fullBuild(cfg, opts, dbPath);
         if (failed)
             r.warnings.push(failed);
@@ -309,7 +316,8 @@ function fullBuild(cfg, opts, dbPath) {
     const counts = { in: 0, entry: 0, marker: 0, empty: 0, out: 0 };
     const sessions = [];
     const fileRows = [];
-    for (const sf of files) {
+    for (const [i, sf] of files.entries()) {
+        opts.onProgress?.(i + 1, files.length);
         const s = parseSf(sf, cfg.home, opts.until);
         const status = classify(cfg, s);
         counts[status]++;

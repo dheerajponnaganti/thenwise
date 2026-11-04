@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "thenwise": {
+      "command": "node",
+      "args": [
+        "./dist/cli.js",
+        "mcp"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "THENWISE_HOME",
+        "THENWISE_SYNC",
+        "PWD",
+        "CODEX_HOME",
+        "COPILOT_HOME"
+      ],
+      "default_tools_approval_mode": "approve"
+    }
+  }
+}

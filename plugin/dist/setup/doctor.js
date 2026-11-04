@@ -1,4 +1,5 @@
 // `thenwise doctor` with no argument: checks the install and gives one fix line per failure. Read only.
+import { codexHooksTrusted } from "../ingest/codex.js";
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -6,13 +7,14 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDir } from "../core/home.js";
 import { logger, recentErrors } from "../core/log.js";
+import { codexDir } from "../ingest/codex.js";
 import { copilotDir } from "../ingest/copilot.js";
 import { readConfigFile } from "../ingest/config.js";
 import { diskRoom } from "../ingest/ingest.js";
 import { updateStatus } from "./update.js";
 export function ghSignedIn() {
     try {
-        return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 }).status === 0;
+        return spawnSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0;
     }
     catch {
         return false;
@@ -33,7 +35,7 @@ async function sqliteFts5() {
 function mcpStarts(home) {
     const cli = fileURLToPath(new URL(`../cli${extname(fileURLToPath(import.meta.url))}`, import.meta.url));
     const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'doctor', version: '1' } } };
-    const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, env: { ...process.env, HOME: home } });
+    const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, HOME: home } });
     return /"memory_search"/.test(r.stdout ?? '');
 }
 function pluginRegistered(home) {
@@ -51,7 +53,14 @@ function pluginRegistered(home) {
     // Copilot CLI: installed-plugins/<marketplace>/<plugin>, or _direct/<plugin>.
     const installed = join(copilotDir(home), 'installed-plugins');
     const dirs = (d) => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : []);
-    return dirs(installed).some((m) => dirs(join(installed, m)).some((p) => /thenwise/i.test(p)));
+    if (dirs(installed).some((m) => dirs(join(installed, m)).some((p) => /thenwise/i.test(p))))
+        return true;
+    // Codex: plugins/cache/<marketplace>/<plugin>.
+    const codex = join(codexDir(home), 'plugins', 'cache');
+    if (dirs(codex).some((m) => dirs(join(codex, m)).some((p) => /thenwise/i.test(p))))
+        return true;
+    // Antigravity: one plugins folder, shared by its CLI, app and IDE.
+    return dirs(join(home, '.gemini', 'config', 'plugins')).some((p) => /thenwise/i.test(p));
 }
 export async function runDoctor(home = homedir(), opts = {}) {
     const checks = [];
@@ -93,12 +102,16 @@ export async function runDoctor(home = homedir(), opts = {}) {
         const short = room.free < room.need;
         checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` });
     }
-    add('plugin', pluginRegistered(home), 'registered with Claude Code or Copilot CLI', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise');
+    add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI, Codex or Antigravity', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise. In Antigravity run: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin');
+    // Codex runs plugin hooks only once the person trusts them in /hooks, and asks again after every plugin update.
+    const codexTrust = codexHooksTrusted(home);
+    if (codexTrust !== undefined)
+        add('codex hooks', codexTrust, 'trusted in Codex', "Codex has not trusted Thenwise's hooks, so automatic sync and hook context are off there; memory tools still work. In Codex, open /hooks and trust them.");
     add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.');
-    add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000 }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com');
+    add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com');
     // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.
     const prsOn = cfg.raw?.ingest?.prs === true;
-    const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000 }).error !== undefined;
+    const noGh = !opts.gh && spawnSync('gh', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).error !== undefined;
     const signedIn = (opts.gh ?? ghSignedIn)();
     if (signedIn || prsOn)
         add('gh', signedIn, 'signed in', noGh ? 'gh is not installed, and GitHub PR reading is on. Get it from https://cli.github.com' : 'gh is not signed in, and GitHub PR reading is on. Run: gh auth login');

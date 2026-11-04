@@ -1,9 +1,10 @@
 // The first stop for the hooks that fire on most tool calls and prompts (read, post, prompt): decides from the hook input alone whether
 // there is anything to do, before the CLI loads SQLite and the store code. Imports nothing but node:fs, node:path and the
-// Copilot shape mapper (which imports only those two).
-import { existsSync } from 'node:fs';
+// Copilot shape mapper and the progress file reader (which import only those two).
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDataDir } from "../core/home.js";
+import { readProgress, running } from "../core/progress.js";
 import { claudeHookInput } from "../ingest/copilot.js";
 /** The planning-with-files plan files. */
 export const STEMS = ['task_plan', 'findings', 'progress'];
@@ -53,13 +54,45 @@ export const resumePending = (i) => {
     const sid = i.session_id ?? i.sessionId;
     return !!process.env.COPILOT_PLUGIN_ROOT && typeof sid === 'string' && !!sid && existsSync(compactedMark(resolveDataDir(), sid));
 };
+/** Set at session start for a team member: a teammate's chat that the start's sync fetches arrives after the brief, so the
+ * first prompts check for it. */
+export const lateMark = (dir, session) => join(dir, 'hook-state', `${session.replace(/[^\w.-]/g, '_')}.late`);
+const latePending = (i) => {
+    const sid = i.session_id ?? i.sessionId;
+    return typeof sid === 'string' && !!sid && existsSync(lateMark(resolveDataDir(), sid));
+};
+/** A first sync or a rebuild the person has not heard about lately (Claude Code and Codex: Copilot and Antigravity show no hook text). */
+const syncToTell = () => {
+    if (process.env.COPILOT_PLUGIN_ROOT || process.env.ANTIGRAVITY_CONVERSATION_ID)
+        return false;
+    const p = readProgress(resolveDataDir());
+    return !!p && p.kind !== 'auto' && (p.finished ? !p.told || p.told < p.finished : running(p)); // a killed sync has nothing to tell
+};
+// After each reply, a team member's sync runs at most this often, so a teammate gets the chat while it is still fresh.
+export const STOP_SYNC_MS = 10 * 60_000;
+export const stopStamp = (dir) => join(dir, 'hook-state', 'stop-sync');
+/** A stop hook only matters to a team member: alone, the next session reads the chat file itself. */
+export function stopIdle(name, now = Date.now()) {
+    const dir = resolveDataDir();
+    if (!existsSync(join(dir, 'team.json')))
+        return true;
+    try {
+        // Cut off by a limit or an error: send the chat now, at most once a minute (Copilot reports every error).
+        return now - statSync(stopStamp(dir)).mtimeMs < (name === 'stop-failure' ? 60_000 : STOP_SYNC_MS);
+    }
+    catch {
+        return false;
+    }
+}
 /** True when the hook has nothing to do: a Read hook for another tool, or a Bash command that prints no single file,
  * run in a folder with no plan files. Anything else goes on to the full hook, which decides exactly. */
 export function nothingToDo(name, i) {
     if (name === 'prompt')
-        return !resumePending(i) && (typeof i.prompt !== 'string' || !asksAboutThePast(i.prompt));
+        return !resumePending(i) && !syncToTell() && !latePending(i) && (typeof i.prompt !== 'string' || !asksAboutThePast(i.prompt));
     if (name === 'read')
         return i.tool_name !== 'Read' || typeof i.tool_input?.file_path !== 'string';
+    if (name === 'stop' || name === 'stop-failure')
+        return stopIdle(name);
     if (name !== 'post' || i.tool_name !== 'Bash')
         return false;
     const cmd = i.tool_input?.command;

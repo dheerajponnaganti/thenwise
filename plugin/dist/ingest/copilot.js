@@ -5,7 +5,7 @@ import { join } from 'node:path';
 export const COPILOT_ENTRYPOINT = 'copilot-cli';
 export const copilotDir = (home) => process.env.COPILOT_HOME || join(home, '.copilot');
 // Claude Code names a project folder by its path with every other character turned into "-"; Copilot chats join the same key.
-const projectKey = (folder) => folder.replace(/[^A-Za-z0-9]/g, '-');
+export const projectKey = (folder) => folder.replace(/[^A-Za-z0-9]/g, '-');
 /** `apply_patch` sends one patch text for many files: each file becomes an Edit (or a Write for a new file). */
 function patchTools(patch) {
     const files = [];
@@ -28,6 +28,17 @@ export function asClaudeTool(name, args) {
     if (typeof args === 'string' && (name === 'apply_patch' || args.includes('*** Begin Patch')))
         return patchTools(args);
     const a = (args && typeof args === 'object' ? args : {});
+    // Antigravity: names vary by version, so both generations are mapped.
+    if (name === 'read_file' || name === 'view_file')
+        return [{ name: 'Read', input: { file_path: a.Path ?? a.AbsolutePath ?? a.TargetFile } }];
+    if (name === 'edit_file' || name === 'replace_file_content' || name === 'multi_replace_file_content')
+        return [{ name: 'Edit', input: { file_path: a.Path ?? a.TargetFile, old_string: a.Target ?? a.TargetContent, new_string: a.Replacement ?? a.ReplacementContent } }];
+    if (name === 'write_file' || name === 'write_to_file')
+        return [{ name: 'Write', input: { file_path: a.Path ?? a.TargetFile, content: a.Content ?? a.CodeContent } }];
+    if (name === 'run_command')
+        return [{ name: 'Bash', input: { command: a.CommandLine } }];
+    if (name === 'call_mcp_tool')
+        return [{ name: `mcp__${a.ServerName}__${a.ToolName}`, input: a.Arguments ?? {} }];
     if (name === 'view')
         return [{ name: 'Read', input: { file_path: a.path } }];
     if (name === 'edit')
@@ -51,6 +62,11 @@ export function asClaudeTool(name, args) {
 }
 /** A hook payload in Claude Code's fields and tool names. Claude Code's own payloads come back as they were. */
 export function claudeHookInput(raw) {
+    // Antigravity: camelCase, its folders as a list, and the prompt on every model call of a turn: only the first one counts.
+    if (raw.conversationId !== undefined) {
+        const { toolCall, invocationNum, lastUserInput, workspacePaths, transcriptPath, conversationId } = raw;
+        raw = { session_id: conversationId, cwd: Array.isArray(workspacePaths) ? (workspacePaths[0] ?? '') : '', source: 'startup', transcript_path: transcriptPath, ...(invocationNum ? {} : { prompt: lastUserInput }), ...(toolCall ? { tool_name: toolCall.name, tool_input: toolCall.args } : {}), ...(raw.fullyIdle === false ? { fullyIdle: false } : {}) };
+    }
     // Copilot's own payloads say sessionId; with a Claude-format hooks file it may send either.
     let i = raw.session_id === undefined && raw.sessionId !== undefined ? { ...raw, session_id: raw.sessionId } : raw;
     // Copilot starts a fresh session with source "new" where Claude Code says "startup".
@@ -60,6 +76,9 @@ export function claudeHookInput(raw) {
     if (typeof name !== 'string')
         return i;
     let args = i.tool_input ?? i.toolArgs;
+    // Codex hands a patch as { command: <patch text> }.
+    if (name === 'apply_patch' && typeof args?.command === 'string')
+        args = args.command;
     if (typeof args === 'string' && name !== 'apply_patch') {
         try {
             args = JSON.parse(args); // Copilot sends toolArgs as JSON text
@@ -108,6 +127,11 @@ export function copilotConverter(sessionId, cwd) {
         }
         if (d?.type === 'session.task_complete' && typeof x.summary === 'string' && x.summary)
             return [row('assistant', [{ type: 'text', text: x.summary }])];
+        // Copilot stopped the turn: an abort (a credit limit, a remote stop) or a shutdown on an error. Claude Code writes such a stop
+        // as an assistant row marked isApiErrorMessage, so both reach the parser the same way.
+        const stop = d?.type === 'abort' ? String(x.reason ?? 'aborted') : d?.type === 'session.shutdown' && x.shutdownType === 'error' ? `an error${x.errorReason ? `: ${x.errorReason}` : ''}` : '';
+        if (stop)
+            return [row('assistant', [{ type: 'text', text: stop }], { isApiErrorMessage: true })];
         if (d?.type === 'tool.execution_complete') {
             const out = typeof x.result?.content === 'string' ? x.result.content : '';
             return [row('user', [{ type: 'tool_result', tool_use_id: x.toolCallId, content: out, is_error: x.success === false }])];

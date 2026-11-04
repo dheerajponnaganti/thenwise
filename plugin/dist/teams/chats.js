@@ -8,6 +8,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { MASK_VERSION, maskSecrets } from "../core/secrets.js";
 import { editDirs, isMarked, workDirs, sessionPart, under } from "../ingest/parts.js";
 import { isOff } from "../ingest/config.js";
+import { ANTIGRAVITY_ENTRYPOINT } from "../ingest/antigravity.js";
+import { CODEX_ENTRYPOINT } from "../ingest/codex.js";
 import { COPILOT_ENTRYPOINT } from "../ingest/copilot.js";
 import { githubSlug, real, repoRoot, sessionRepo } from "../ingest/repos.js";
 import { chatLines, parseSession } from "../ingest/transcript.js";
@@ -197,7 +199,7 @@ export function buildChat(cfg, repo, c, scrub, opts = {}) {
     }
     if (!turns.length)
         return { skip: 'empty' };
-    const unit = { project: projectKey(repo), tool: s.entrypoint === COPILOT_ENTRYPOINT ? 'Copilot' : 'Claude Code', head: clean(s.turns[0].prompt.split('\n')[0]).slice(0, 200), started_at: Date.parse(s.start) || 0, ended_at: Date.parse(s.end) || 0, mask: MASK_VERSION, turns };
+    const unit = { project: projectKey(repo), tool: s.entrypoint === COPILOT_ENTRYPOINT ? 'Copilot' : s.entrypoint === CODEX_ENTRYPOINT ? 'Codex' : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? 'Antigravity' : 'Claude Code', head: clean(s.turns[0].prompt.split('\n')[0]).slice(0, 200), started_at: Date.parse(s.start) || 0, ended_at: Date.parse(s.end) || 0, mask: MASK_VERSION, turns };
     return { session: c.session, unit, sha: createHash('sha256').update(JSON.stringify(unit)).digest('hex'), bytes, passages: count, subagentFiles: cfg.shareSubagents ? 0 : c.subagents.length, cut, dropped };
 }
 /** What sharing a project would send. `pick` chooses which of n passages are shown (random by default; a test passes its own). */

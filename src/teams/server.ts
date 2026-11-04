@@ -318,7 +318,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
   }
   /** A chat unit as stored: turns rebuilt from their passages (metadata sits on a turn's first row). */
   const unitOf = (c: Row, full: boolean) => {
-    const head = { owner: c.owner, session: c.session, project: c.project, rev: c.rev, started_at: c.started_at, ended_at: c.ended_at, head: c.head, mask: c.mask, bytes: c.bytes, turn_count: c.turns }
+    const head = { owner: c.owner, session: c.session, project: c.project, rev: c.rev, started_at: c.started_at, ended_at: c.ended_at, head: c.head, mask: c.mask, bytes: c.bytes, turn_count: c.turns, tool: c.tool ?? '' }
     if (!full) return head
     const turns: Row[] = []
     for (const r of db.prepare('SELECT * FROM chat_passages WHERE owner_id = ? AND session = ? ORDER BY rowid').all(c.owner_id, c.session) as Row[])
@@ -345,8 +345,8 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('DELETE FROM chat_passages WHERE owner_id = ? AND session = ?').run(me.id, session)
-      db.prepare('INSERT INTO chats (team_id, owner_id, owner, project, session, rev, seq, started_at, ended_at, head, turns, bytes, mask, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, session) DO UPDATE SET owner = excluded.owner, project = excluded.project, rev = excluded.rev, seq = excluded.seq, started_at = excluded.started_at, ended_at = excluded.ended_at, head = excluded.head, turns = excluded.turns, bytes = excluded.bytes, mask = excluded.mask, updated_at = excluded.updated_at')
-        .run(me.team_id, me.id, me.name, unit.project, session, rev, seq, unit.started_at, unit.ended_at, unit.head, unit.turns.length, unit.bytes, unit.mask, now())
+      db.prepare('INSERT INTO chats (team_id, owner_id, owner, project, session, rev, seq, started_at, ended_at, head, turns, bytes, mask, updated_at, tool) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner_id, session) DO UPDATE SET owner = excluded.owner, project = excluded.project, rev = excluded.rev, seq = excluded.seq, started_at = excluded.started_at, ended_at = excluded.ended_at, head = excluded.head, turns = excluded.turns, bytes = excluded.bytes, mask = excluded.mask, updated_at = excluded.updated_at, tool = excluded.tool')
+        .run(me.team_id, me.id, me.name, unit.project, session, rev, seq, unit.started_at, unit.ended_at, unit.head, unit.turns.length, unit.bytes, unit.mask, now(), unit.tool)
       const ins = db.prepare('INSERT INTO chat_passages (team_id, owner_id, session, turn, n, at, line, text, paths, shas, prs, dead_end, dead_kind, kind, dead_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       for (const tn of unit.turns)
         tn.passages.forEach((text, n) => ins.run(me.team_id, me.id, session, tn.id, n, tn.at, n ? '' : tn.line, text, n ? '[]' : JSON.stringify(tn.paths), n ? '[]' : JSON.stringify(tn.shas), n ? '[]' : JSON.stringify(tn.prs), tn.dead_end ? 1 : 0, tn.dead_kind, tn.kind, tn.dead_text))

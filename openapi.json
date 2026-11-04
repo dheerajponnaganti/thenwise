@@ -2648,6 +2648,10 @@
           "seq": {
             "type": "integer"
           },
+          "tool": {
+            "type": "string",
+            "maxLength": 40
+          },
           "turns": {
             "type": "array",
             "items": {
@@ -2759,6 +2763,10 @@
           },
           "turn_count": {
             "type": "integer"
+          },
+          "tool": {
+            "type": "string",
+            "description": "The coding tool the chat came from, such as Claude Code or Copilot. Empty from an older sender."
           }
         },
         "required": [
@@ -2806,6 +2814,10 @@
           },
           "turn_count": {
             "type": "integer"
+          },
+          "tool": {
+            "type": "string",
+            "description": "The coding tool the chat came from, such as Claude Code or Copilot. Empty from an older sender."
           },
           "turns": {
             "type": "array",

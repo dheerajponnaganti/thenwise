@@ -1003,3 +1003,35 @@ test('scope: a chat in a worktree of the project is shared under the project', (
     w.destroy()
   }
 })
+
+test('mixed tools: a Copilot CLI member and a Claude Code member read each other\'s chats, and each answer names the tool', needs, async () => {
+  const t = await team()
+  try {
+    // bob works in Copilot CLI: one chat in the same project, in Copilot's own file shape.
+    const dir = join(t.b.home, '.copilot/session-state/cp-1')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'workspace.yaml'), `id: cp-1\ncwd: ${t.b.proj}\n`)
+    const ev = (type: string, data: object, id: string) => JSON.stringify({ type, data, id, parentId: null, timestamp: '2026-10-29T12:54:40.000Z' })
+    writeFileSync(join(dir, 'events.jsonl'), `${[ev('session.start', { sessionId: 'cp-1', copilotVersion: '1.0.105', context: { cwd: t.b.proj } }, 'e1'), ev('user.message', { content: 'Why does the wombat importer retry twice?' }, 'e2'), ev('assistant.message', { content: 'Because the first attempt only warms the cache.', toolRequests: [] }, 'e3')].join('\n')}\n`)
+    t.b.archive()
+    t.share(t.a)
+    t.share(t.b)
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    assert.match(await pushShared(t.b.cfg), /^1 chat pushed/)
+    assert.match(await fetchShared(t.a.memDir), /1 team chats? fetched/)
+    assert.match(await fetchShared(t.b.memDir), /1 team chats? fetched/)
+    assert.equal(readChats(t.a.memDir)[0]!.tool, 'Copilot')
+    assert.equal(readChats(t.b.memDir)[0]!.tool, 'Claude Code')
+    t.a.ingest('g.db')
+    const fromBob = c.search(new Graph(t.a.path('g.db')), 'wombat importer retry')
+    assert.match(fromBob, /tturn:bob\//)
+    assert.match(fromBob, /Copilot chat of bob/)
+    const { a, b } = t.b.both()
+    assert.equal(a, b, 'update equals rebuild with an own Copilot chat and a teammate\'s Claude Code chat')
+    const fromAlice = c.search(new Graph(t.b.path('inc.db')), 'exporter drop shards')
+    assert.match(fromAlice, /tturn:alice\/c1-0/)
+    assert.match(fromAlice, /Claude Code chat of alice/)
+  } finally {
+    await t.stop()
+  }
+})

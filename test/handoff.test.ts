@@ -294,3 +294,24 @@ test('inside an agent, the asking session is its own newest chat and is skipped'
   const plain = spawnSync(process.execPath, ['src/cli.ts', 'resume', '--project', w.proj], { encoding: 'utf8', env: { ...process.env, HOME: w.home, USERPROFILE: w.home, CLAUDECODE: '', COPILOT_CLI: '', COPILOT_HOME: join(w.home, '.copilot') } })
   assert.match(plain.stdout, /chat="ses:cc-me"/)
 })
+
+test('a question left in the other chat shows in the handoff until that chat answers it', () => {
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-q', undefined, 'Split the cache\n[question] should the old prices.json be deleted after the move?')
+  assert.match(handoffBlock(w.cfg(), w.proj), /open questions in that chat: q-[0-9a-f]{4}: should the old prices\.json be deleted after the move\?/)
+  const done = world()
+  claudeChat(done.home, done.proj, 'cc-q', undefined, 'Split the cache\n[question] should the old prices.json be deleted?\n[answer] yes, the old prices.json should be deleted')
+  assert.doesNotMatch(handoffBlock(done.cfg(), done.proj), /open questions/)
+})
+
+test('after a compaction, the session gets back what it did: edited files, the last test and what is uncommitted', () => {
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-c')
+  writeFileSync(join(w.proj, 'src/cache.ts'), 'export const a = 2\n')
+  const file = join(w.home, '.claude/projects', key(w.proj), 'cc-c.jsonl')
+  const out = runHook('session-start', { session_id: 'cc-c', source: 'compact', cwd: w.proj, transcript_path: file }, { dir: join(w.home, '.thenwise'), cli: 'none' })
+  assert.match(out, /## What this session did/)
+  assert.match(out, /edited in this session \(newest first\): src\/cache\.ts \(1 edit\)/)
+  assert.match(out, /last test: `npm test` at .*: failed/)
+  assert.match(out, /uncommitted now \(git status --short, 1 file\): M src\/cache\.ts/)
+})

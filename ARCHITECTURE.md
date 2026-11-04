@@ -98,7 +98,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `SessionStart` | Starts a sync, and adds the handoff from the newest other chat of the project and a short brief, or a resume block after a compaction; says when the first sync starts |
 | `UserPromptSubmit` | Adds up to three pointers when a prompt asks about the past, a teammate's chat that arrived after the start, and the first sync's progress |
 | `PreToolUse` on edits | Keeps a plan version before it changes |
-| `PostToolUse` on reads and shell commands | Adds a file's dead ends and decisions |
+| `PostToolUse` on reads and shell commands | Adds a file's dead ends and decisions, led by a teammate who worked on it in the last day |
 | `PreCompact` | Marks a compaction, so Copilot CLI gets its resume brief on the next prompt |
 | `Stop`, `StopFailure` | For a team member: starts a sync after a reply (at most every 10 minutes) and at once after a usage limit or an error |
 | `SessionEnd` | Starts a sync |

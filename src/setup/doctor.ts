@@ -72,7 +72,10 @@ function pluginRegistered(home: string): boolean {
   // Codex: plugins/cache/<marketplace>/<plugin>.
   const codex = join(codexDir(home), 'plugins', 'cache')
 
-  return dirs(codex).some((m) => dirs(join(codex, m)).some((p) => /thenwise/i.test(p)))
+  if (dirs(codex).some((m) => dirs(join(codex, m)).some((p) => /thenwise/i.test(p)))) return true
+
+  // Antigravity: one plugins folder, shared by its CLI, app and IDE.
+  return dirs(join(home, '.gemini', 'config', 'plugins')).some((p) => /thenwise/i.test(p))
 }
 
 export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: string; gh?: () => boolean; git?: () => boolean; mcp?: () => boolean } = {}): Promise<Check[]> {
@@ -120,7 +123,7 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
     checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` })
   }
 
-  add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI or Codex', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise')
+  add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI, Codex or Antigravity', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise. In Antigravity run: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
   add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
   // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.

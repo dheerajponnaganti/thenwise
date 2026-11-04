@@ -11,6 +11,7 @@ import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
+import { antigravityConverter, antigravitySources } from './antigravity.ts'
 import { codexConverter, codexSources } from './codex.ts'
 import { copilotConverter, copilotSources } from './copilot.ts'
 import { withLock } from './lock.ts'
@@ -23,7 +24,7 @@ interface Source {
   size: number
   mtimeMs: number
   ctimeMs: number
-  /** A Copilot or Codex chat: makes a fresh converter to Claude Code's line shape for each read. */
+  /** A Copilot, Codex or Antigravity chat: makes a fresh converter to Claude Code's line shape for each read. */
   convert?: () => (line: string) => string[]
 }
 export interface ManifestEntry {
@@ -282,6 +283,10 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
     const st = statSync(c.path)
     sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => codexConverter(c.id, c.cwd) })
   }
+  for (const c of antigravitySources(cfg.home)) {
+    const st = statSync(c.path)
+    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => antigravityConverter(c.id, c.cwd) })
+  }
   const res: ArchiveResult = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 }
   if (cfg.off) return { ...res, off: sources.size }
   mkdirSync(out, { recursive: true, mode: 0o700 })
@@ -314,7 +319,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
         for (let d = dirname(dest); d !== out; d = dirname(d)) chmodSync(d, 0o700)
         st = streamMask(src.path, tmp, parts.length === 2, src.convert?.()) // a long chat is read in chunks, never whole
         // Another tool changed its file format: it has prompts, and nothing came out. Without this the memory just goes quiet.
-        if (src.convert && !st.lines && /"user\.message"|"role":\s*"user"/.test(readFileSync(src.path, 'utf8'))) logger('archive', cfg.memDir).warn('chat_not_understood', { rel })
+        if (src.convert && !st.lines && /"user\.message"|"role":\s*"user"|"USER_INPUT"/.test(readFileSync(src.path, 'utf8'))) logger('archive', cfg.memDir).warn('chat_not_understood', { rel })
       }
       const raw = unchanged ? (old.checked === check ? null : chatText(readFileSync(dest))) : st!.slim
       let info = parents.get(parts.length === 4 ? `${parts[0]}/${parts[1]}.jsonl` : '') ?? { cwd: old?.cwd ?? '', marked: false }

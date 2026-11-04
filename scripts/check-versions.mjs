@@ -24,6 +24,8 @@ export function checkVersions(root, tag) {
   if (copilot.version !== version) problems.push(`.plugin/plugin.json version ${copilot.version} differs from package.json ${version}`)
   const codex = json('.codex-plugin/plugin.json')
   if (codex.version !== version) problems.push(`.codex-plugin/plugin.json version ${codex.version} differs from package.json ${version}`)
+  const agy = json('.antigravity-plugin/plugin.json')
+  if (agy.version !== version) problems.push(`.antigravity-plugin/plugin.json version ${agy.version} differs from package.json ${version}`)
   // A marketplace entry that carried a version would silently lose to plugin.json.
   for (const entry of json('.claude-plugin/marketplace.json').plugins ?? []) {
     if ('version' in entry) problems.push('marketplace.json carries a version; plugin.json is the single source')
@@ -31,7 +33,7 @@ export function checkVersions(root, tag) {
   // plugin/ is what users install: a release that bumps the version must rebuild it (npm run plugin:folder).
   if (existsSync(join(root, 'plugin'))) {
     // A tool's manifest joins plugin/ only at the release that ships it, so check the manifests it holds.
-    for (const f of ['package.json', '.claude-plugin/plugin.json', '.plugin/plugin.json', '.codex-plugin/plugin.json']) {
+    for (const f of ['package.json', '.claude-plugin/plugin.json', '.plugin/plugin.json', '.codex-plugin/plugin.json', '.antigravity-plugin/plugin.json']) {
       if (f !== 'package.json' && !existsSync(join(root, 'plugin', f))) continue
       const v = existsSync(join(root, 'plugin', f)) ? json(join('plugin', f)).version : undefined
       if (v !== version) problems.push(`plugin/${f} version ${v} differs from package.json ${version}: run npm run plugin:folder`)

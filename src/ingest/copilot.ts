@@ -33,6 +33,12 @@ export function asClaudeTool(name: string, args: unknown): Tool[] {
   // With a Claude-format hooks file apply_patch arrives named Edit, its text unchanged.
   if (typeof args === 'string' && (name === 'apply_patch' || args.includes('*** Begin Patch'))) return patchTools(args)
   const a = (args && typeof args === 'object' ? args : {}) as Record<string, any>
+  // Antigravity: names vary by version, so both generations are mapped.
+  if (name === 'read_file' || name === 'view_file') return [{ name: 'Read', input: { file_path: a.Path ?? a.AbsolutePath ?? a.TargetFile } }]
+  if (name === 'edit_file' || name === 'replace_file_content' || name === 'multi_replace_file_content') return [{ name: 'Edit', input: { file_path: a.Path ?? a.TargetFile, old_string: a.Target ?? a.TargetContent, new_string: a.Replacement ?? a.ReplacementContent } }]
+  if (name === 'write_file' || name === 'write_to_file') return [{ name: 'Write', input: { file_path: a.Path ?? a.TargetFile, content: a.Content ?? a.CodeContent } }]
+  if (name === 'run_command') return [{ name: 'Bash', input: { command: a.CommandLine } }]
+  if (name === 'call_mcp_tool') return [{ name: `mcp__${a.ServerName}__${a.ToolName}`, input: a.Arguments ?? {} }]
   if (name === 'view') return [{ name: 'Read', input: { file_path: a.path } }]
   if (name === 'edit') return [{ name: 'Edit', input: { file_path: a.path, old_string: a.old_str, new_string: a.new_str } }]
   if (name === 'create') return [{ name: 'Write', input: { file_path: a.path, content: a.file_text } }]
@@ -51,6 +57,11 @@ export function asClaudeTool(name: string, args: unknown): Tool[] {
 
 /** A hook payload in Claude Code's fields and tool names. Claude Code's own payloads come back as they were. */
 export function claudeHookInput(raw: Record<string, any>): Record<string, any> {
+  // Antigravity: camelCase, its folders as a list, and the prompt on every model call of a turn: only the first one counts.
+  if (raw.conversationId !== undefined) {
+    const { toolCall, invocationNum, lastUserInput, workspacePaths, transcriptPath, conversationId } = raw
+    raw = { session_id: conversationId, cwd: Array.isArray(workspacePaths) ? (workspacePaths[0] ?? '') : '', source: 'startup', transcript_path: transcriptPath, ...(invocationNum ? {} : { prompt: lastUserInput }), ...(toolCall ? { tool_name: toolCall.name, tool_input: toolCall.args } : {}), ...(raw.fullyIdle === false ? { fullyIdle: false } : {}) }
+  }
   // Copilot's own payloads say sessionId; with a Claude-format hooks file it may send either.
   let i = raw.session_id === undefined && raw.sessionId !== undefined ? { ...raw, session_id: raw.sessionId } : raw
   // Copilot starts a fresh session with source "new" where Claude Code says "startup".

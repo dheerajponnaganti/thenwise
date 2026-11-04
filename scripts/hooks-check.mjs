@@ -53,6 +53,15 @@ for (const [event, entries] of Object.entries(codexHooks)) {
   }
 }
 
+// Antigravity: root hooks.json, relative command from the plugin folder, and no pre-edit hook: reports say a slip there blocks tools.
+const AGY_EVENTS = new Set(['enabled', 'SessionStart', 'PreInvocation', 'PostToolUse', 'Stop'])
+const agyHooks = JSON.parse(readFileSync(join(ROOT, 'hooks.json'), 'utf8')).thenwise
+for (const [event, entries] of Object.entries(agyHooks)) {
+  if (!AGY_EVENTS.has(event)) problems.push(`hooks.json ${event}: not an event Thenwise uses`)
+  if (event === 'enabled') continue
+  for (const e of entries) for (const h of e.hooks ?? [e]) if (!/^node \.\/dist\/cli\.js hook [a-z-]+$/.test(h.command ?? '')) problems.push(`hooks.json ${event}: command ${h.command} must run the plugin's CLI`)
+}
+
 // Copilot CLI: camelCase events, exec plus args with no shell, timeoutSec. Copilot denies the tool call when a preToolUse hook
 // errors, so Thenwise registers none there: a broken install must never block an edit.
 const COPILOT_EVENTS = new Set(['sessionStart', 'userPromptSubmitted', 'postToolUse', 'preCompact', 'sessionEnd', 'agentStop', 'errorOccurred'])

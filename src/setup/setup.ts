@@ -75,7 +75,7 @@ export async function setup(argv: string[], home: string = homedir()): Promise<n
     const claudeDir = join(home, '.claude')
     const found = discoverProjects(claudeDir)
     if (!found.length) {
-      out(`No chats yet from Claude Code, Copilot CLI or Codex (nothing under ${join(claudeDir, 'projects')} or ${join(copilotDir(home), 'session-state')}). Run \`thenwise setup\` again after your first session.`)
+      out(`No chats yet from Claude Code, Copilot CLI, Codex or Antigravity (nothing under ${join(claudeDir, 'projects')} or ${join(copilotDir(home), 'session-state')}). Run \`thenwise setup\` again after your first session.`)
 
       return 0
     }

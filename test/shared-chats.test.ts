@@ -1154,3 +1154,31 @@ test('mixed tools: a Codex member shares a chat, and the answer names Codex', ne
     await t.stop()
   }
 })
+
+test('mixed tools: an Antigravity member shares a chat, and the answer names Antigravity', needs, async () => {
+  const t = await team()
+  try {
+    const logs = join(t.b.home, '.gemini/antigravity-cli/brain/ag-1/.system_generated/logs')
+    mkdirSync(logs, { recursive: true })
+    mkdirSync(join(t.b.proj, 'src'), { recursive: true })
+    const step = (i: number, type: string, more: object) => JSON.stringify({ step_index: i, source: 'MODEL', status: 'DONE', created_at: '2026-10-29T12:54:40Z', type, ...more })
+    writeFileSync(join(logs, 'transcript_full.jsonl'), `${[
+      step(0, 'USER_INPUT', { content: '<USER_REQUEST>\nwhy did the numbat importer stop retrying\n</USER_REQUEST>\n<ADDITIONAL_METADATA>never shared</ADDITIONAL_METADATA>' }),
+      step(1, 'PLANNER_RESPONSE', { content: 'Retries hid the numbat outage, so the importer fails fast now.', tool_calls: [{ name: 'read_file', args: { Path: join(t.b.proj, 'src', 'a.ts') } }] }),
+      step(2, 'GENERIC', { content: 'file text' }),
+    ].join('\n')}\n`)
+    t.b.archive()
+    t.share(t.b)
+    assert.match(await pushShared(t.b.cfg), /^1 chat pushed/)
+    assert.match(await fetchShared(t.a.memDir), /1 team chats? fetched/)
+    assert.equal(readChats(t.a.memDir)[0]!.tool, 'Antigravity')
+    t.a.ingest('g.db')
+    const answer = c.search(new Graph(t.a.path('g.db')), 'numbat importer retrying')
+    assert.match(answer, /Antigravity chat of bob/)
+    assert.doesNotMatch(answer, /never shared/)
+    const { a, b } = t.b.both()
+    assert.equal(a, b, 'update equals rebuild with an own Antigravity chat')
+  } finally {
+    await t.stop()
+  }
+})

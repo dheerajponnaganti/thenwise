@@ -15,7 +15,7 @@ import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../inge
 import { repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
-import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, stopIdle, stopStamp } from './entry.ts'
+import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from './entry.ts'
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
 import { alive, progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
 
@@ -268,6 +268,8 @@ export function syncNotice(dir: string, now = Date.now()): string {
 
 // Copilot (it sets COPILOT_PLUGIN_ROOT) reads additionalContext at the top level; Claude Code reads it under hookSpecificOutput.
 const reply = (event: string, additionalContext: string, systemMessage = '') =>
+  // Antigravity parses output strictly: only its session and invocation hooks may add steps, and PostToolUse must stay empty.
+  process.env.ANTIGRAVITY_CONVERSATION_ID ? JSON.stringify(event === 'SessionStart' || event === 'UserPromptSubmit' ? { injectSteps: [{ ephemeralMessage: additionalContext }] } : {}) :
   JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext } : { ...(systemMessage ? { systemMessage } : {}), hookSpecificOutput: { hookEventName: event, additionalContext } })
 
 // Copilot's shell tool has no plugin variables, so the model needs the plugin's folder to run the /thenwise: commands.
@@ -367,6 +369,14 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     if (name === 'session-end') {
       const sid = input.session_id ?? input.sessionId
       if (typeof sid === 'string' && sid) rmSync(lateMark(env.dir, sid), { force: true })
+      // Antigravity's Stop fires after every model loop, not once per session: sync only when it is fully idle, and at
+      // most every ten minutes, so a long session does not run a full sync per turn.
+      if (process.env.ANTIGRAVITY_CONVERSATION_ID) {
+        const stamp = join(env.dir, 'hook-state', 'antigravity-sync')
+        if (input.fullyIdle === false || Date.now() - (statSync(stamp, { throwIfNoEntry: false })?.mtimeMs ?? 0) < STOP_SYNC_MS) return ''
+        mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
+        writeFileSync(stamp, '', { mode: 0o600 })
+      }
 
       return startSync(env) ?? '' // copy the chat before Claude Code's cleanup can delete it
     }

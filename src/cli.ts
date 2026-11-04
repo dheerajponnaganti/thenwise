@@ -4,7 +4,10 @@
 // The hooks on most tool calls stop here when they have nothing to do, before SQLite and the store code load.
 if (process.argv[2] === 'hook' && ['post', 'read', 'prompt', 'stop', 'stop-failure'].includes(process.argv[3]!)) {
   const { hookInput, nothingToDo } = await import('./hooks/entry.ts')
-  if (nothingToDo(process.argv[3]!, await hookInput())) process.exit(0)
+  if (nothingToDo(process.argv[3]!, await hookInput())) {
+    if (process.env.ANTIGRAVITY_CONVERSATION_ID) console.log('{}')
+    process.exit(0)
+  }
 }
 
 const origEmit = process.emitWarning.bind(process) as (w: unknown, ...a: unknown[]) => void
@@ -26,7 +29,8 @@ try {
   const msg = `Thenwise needs Node 22.16 or later with built-in SQLite; you have ${process.version}. Install a newer Node from https://nodejs.org, then start a new session.`
   // Hooks stay quiet, except at session start: a system message is what the user sees, the context is what Claude sees.
   if (process.argv[2] === 'hook') {
-    if (process.argv[3] === 'session-start') console.log(JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext: msg } : { systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }))
+    if (process.env.ANTIGRAVITY_CONVERSATION_ID) console.log(JSON.stringify(process.argv[3] === 'session-start' ? { injectSteps: [{ ephemeralMessage: msg }] } : {}))
+    else if (process.argv[3] === 'session-start') console.log(JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext: msg } : { systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }))
     process.exit(0)
   }
   console.error(msg)

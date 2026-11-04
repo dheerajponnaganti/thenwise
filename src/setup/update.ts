@@ -77,7 +77,7 @@ export function updateNotice(cfg: Config, running = runningVersion()): string {
   // A first run has no record to compare: an install is not an update.
   if (s.ran && compareVersions(running, s.ran) > 0) lines.push(`Thenwise updated to ${running}. What changed: ${RELEASES}/v${running}`)
   const newer = s.latest && compareVersions(s.latest, running) > 0 && s.notified !== s.latest && checkEnabled(cfg) && !autoUpdateOn(cfg) ? s.latest : undefined
-  if (newer) lines.push(`Thenwise ${newer} is out, you have ${running}. ${process.env.COPILOT_PLUGIN_ROOT ? 'Update with: copilot plugin update thenwise' : process.env.PLUGIN_ROOT ? 'Update with: codex plugin marketplace upgrade thenwise' : 'Update in /plugin (Marketplaces, thenwise)'}, or run: npm install -g thenwise@latest. ${OFF_LINE}`)
+  if (newer) lines.push(`Thenwise ${newer} is out, you have ${running}. ${process.env.ANTIGRAVITY_CONVERSATION_ID ? 'Update with: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin' : process.env.COPILOT_PLUGIN_ROOT ? 'Update with: copilot plugin update thenwise' : process.env.PLUGIN_ROOT ? 'Update with: codex plugin marketplace upgrade thenwise' : 'Update in /plugin (Marketplaces, thenwise)'}, or run: npm install -g thenwise@latest. ${OFF_LINE}`)
   if (s.ran !== running || newer) saveState(cfg.memDir, { ...s, ran: running, ...(newer ? { notified: newer } : {}) })
 
   return lines.join('\n')

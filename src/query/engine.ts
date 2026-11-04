@@ -236,7 +236,10 @@ export class Graph {
     // Slugs come from the store's meta (written at ingest); a root it does not list falls back to the folder name, never to git.
     let slugs: Record<string, string> = {}
     try {
-      this.slugs = slugs = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}')
+      // Keys in the same form as project roots (real path, forward slashes): ingest wrote them as found, which on Windows
+      // has backslashes and anywhere may pass through a symlink, so a clone would never match its project.
+      const raw = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}') as Record<string, string>
+      this.slugs = slugs = Object.fromEntries(Object.entries(raw).map(([k, v]) => [normPath(real(k)), v]))
     } catch { /* older store: folder names only */ }
     for (const n of team) {
       const p = String(n.extra.project ?? n.project)

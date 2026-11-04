@@ -62,7 +62,7 @@ test('Codex: the files of an apply_patch get their hint before the edit, once ea
   const dir = tempDir()
   writeGraph(dir)
   const env = { dir, cli: resolve('src/cli.ts') }
-  const edit = { tool_name: 'apply_patch', tool_input: { command: patch }, session_id: 's2', cwd: '/x/p' }
+  const edit = { tool_name: 'apply_patch', tool_input: { command: patch }, session_id: 's2', cwd: resolve('/x/p') }
   const first = JSON.parse(runHook('plan', edit, env))
   assert.equal(first.hookSpecificOutput.hookEventName, 'PreToolUse')
   assert.match(first.hookSpecificOutput.additionalContext, /memory-history file="src\/cache.ts"/)

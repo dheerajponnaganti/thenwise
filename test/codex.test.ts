@@ -75,7 +75,9 @@ test('current Codex writes its folder as a file URL: reads, changes, the chat fo
     mkdirSync(day, { recursive: true })
     writeFileSync(join(day, 'rollout-a.jsonl'), `${meta('T-url', url)}\n`)
     writeFileSync(join(day, 'rollout-b.jsonl'), `${meta('T-remote', 'file://other-host/x')}\n`)
-    assert.deepEqual(codexSources(home).map((x) => [x.id, x.cwd]), [['T-url', folder]])
+    // On Windows a file URL with a host is a network share (\\\\other-host\\x); elsewhere it names no local file and stays out.
+    const remote = process.platform === 'win32' ? [['T-remote', '\\\\other-host\\x']] : []
+    assert.deepEqual(codexSources(home).map((x) => [x.id, x.cwd]), [['T-url', folder], ...remote])
   } finally {
     if (saved === undefined) delete process.env.CODEX_HOME
     else process.env.CODEX_HOME = saved

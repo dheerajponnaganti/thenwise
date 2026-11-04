@@ -560,12 +560,12 @@ export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: W
     if (!checkouts.has(c.project)) checkouts.set(c.project, checkoutOf(c.project, repos))
     const repo = checkouts.get(c.project)
     const sid = `tses:${c.owner}/${c.session}`
-    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project } }))
+    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }))
     for (const t of c.turns) {
       const at = iso(t.at)
       const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`
       const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {}
-      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...dead } }))
+      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead } }))
       out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} })
       if (repo) for (const p of t.paths) out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} })
     }

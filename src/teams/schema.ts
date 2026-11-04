@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 // The 0.1.5 tables. A new file starts from them too, so there is one path to the current schema.
 const V0 = `CREATE TABLE IF NOT EXISTS members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
@@ -85,6 +85,10 @@ const MIGRATIONS: ((db: DatabaseSync, now: number) => void)[] = [
   // 4 (0.1.19): the sentence of a dead end travels with its turn.
   (db) => {
     db.exec("ALTER TABLE chat_passages ADD COLUMN dead_text TEXT NOT NULL DEFAULT ''")
+  },
+  // 5 (0.2.0): the coding tool a shared chat came from, so a mixed team sees it.
+  (db) => {
+    db.exec("ALTER TABLE chats ADD COLUMN tool TEXT NOT NULL DEFAULT ''")
   },
 ]
 

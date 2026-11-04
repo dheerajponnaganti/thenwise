@@ -136,7 +136,7 @@ test('T17-H6: migration 3 keeps every note and member of a schema 2 file, and ba
   const d = openTeamDb(dir)
   t.tokens.alice = invite(d, 'alice')
   d.close()
-  assert.equal(count(dir, 'SELECT user_version n FROM pragma_user_version'), 4)
+  assert.equal(count(dir, 'SELECT user_version n FROM pragma_user_version'), 5)
   const app = createTeamServer({ dir })
   const { port } = await app.listen()
   const r = await fetch(`http://127.0.0.1:${port}/v1/chats/s1`, { method: 'PUT', headers: { authorization: `Bearer ${t.tokens.alice}`, 'if-match': '*', 'content-type': 'application/json' }, body: JSON.stringify(unit(2)) })
@@ -145,7 +145,7 @@ test('T17-H6: migration 3 keeps every note and member of a schema 2 file, and ba
   const file = join(tmp('bak'), 'backup.db')
   backupTeam(dir, file)
   const dir2 = tmp('restore')
-  assert.equal(restoreTeam(dir2, file).schema, 4)
+  assert.equal(restoreTeam(dir2, file).schema, 5)
   assert.equal(count(dir2, 'SELECT count(*) n FROM chat_passages'), 4)
   assert.equal(count(dir2, "SELECT count(*) n FROM chat_fts WHERE chat_fts MATCH 'shards'"), 4)
   assert.ok(existsSync(file))
@@ -265,6 +265,20 @@ test('GET /v1/chats mine: exclude (default) hides the caller, include adds them,
     const r = await t.req(t.tokens.alice!, '/v1/chats?mine=all')
     assert.equal(r.status, 400)
     assert.match((await r.json()).error.message, /mine/)
+  } finally {
+    await t.app.close()
+  }
+})
+
+test('a shared chat says which tool it came from; a sender that predates the field sends none', async () => {
+  const t = await team()
+  try {
+    assert.equal((await push(t, 'alice', 's1', unit(2, { tool: 'Copilot' }))).status, 200)
+    assert.equal((await push(t, 'alice', 's2', unit(2))).status, 200)
+    assert.equal((await push(t, 'alice', 's3', unit(2, { tool: 'x'.repeat(41) }))).status, 400)
+    const feed = (await (await t.req(t.tokens.bob!, '/v1/chats?since=0&full=1')).json()).chats
+    assert.deepEqual(feed.map((c: any) => [c.session, c.tool]), [['s1', 'Copilot'], ['s2', '']])
+    assert.equal((await (await t.req(t.tokens.bob!, '/v1/chats/alice/s1')).json()).tool, 'Copilot')
   } finally {
     await t.app.close()
   }

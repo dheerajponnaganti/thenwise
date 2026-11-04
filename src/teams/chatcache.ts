@@ -30,11 +30,13 @@ export interface WireChat {
   mask: number
   bytes: number
   turns: WireTurn[]
+  /** The coding tool the chat came from; missing or '' from a sender that predates it. */
+  tool?: string
 }
 
 export const chatCacheFile = (dir: string) => join(dir, 'team-chats.db')
 
-const SCHEMA = `CREATE TABLE IF NOT EXISTS chats(owner TEXT NOT NULL, session TEXT NOT NULL, project TEXT NOT NULL, rev INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER, head TEXT, mask INTEGER, bytes INTEGER, PRIMARY KEY(owner, session));
+const SCHEMA = `CREATE TABLE IF NOT EXISTS chats(owner TEXT NOT NULL, session TEXT NOT NULL, project TEXT NOT NULL, rev INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER, head TEXT, mask INTEGER, bytes INTEGER, tool TEXT DEFAULT '', PRIMARY KEY(owner, session));
 CREATE TABLE IF NOT EXISTS passages(owner TEXT NOT NULL, session TEXT NOT NULL, turn TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER, line TEXT, kind TEXT, text TEXT NOT NULL, paths TEXT, shas TEXT, prs TEXT, dead_end INTEGER, dead_kind TEXT, dead_text TEXT DEFAULT '', PRIMARY KEY(owner, session, turn, n));
 CREATE TABLE IF NOT EXISTS since(k TEXT PRIMARY KEY, v INTEGER NOT NULL);`
 
@@ -43,6 +45,7 @@ export function openChatCache(dir: string): DatabaseSync {
   const db = new DatabaseSync(f)
   db.exec(SCHEMA)
   if (!(db.prepare('PRAGMA table_info(passages)').all() as { name: string }[]).some((c) => c.name === 'dead_text')) db.exec("ALTER TABLE passages ADD COLUMN dead_text TEXT DEFAULT ''")
+  if (!(db.prepare('PRAGMA table_info(chats)').all() as { name: string }[]).some((c) => c.name === 'tool')) db.exec("ALTER TABLE chats ADD COLUMN tool TEXT DEFAULT ''")
   chmodSync(f, 0o600)
 
   return db
@@ -54,7 +57,7 @@ export const setCursor = (db: DatabaseSync, k: 'chats' | 'tombs', v: number) => 
 /** Replaces one chat in the cache (its passages go with it). */
 export function putChat(db: DatabaseSync, c: WireChat) {
   dropChat(db, c.owner, c.session)
-  db.prepare('INSERT INTO chats VALUES (?,?,?,?,?,?,?,?,?)').run(c.owner, c.session, c.project, c.rev, c.started_at, c.ended_at, c.head, c.mask, c.bytes)
+  db.prepare('INSERT INTO chats VALUES (?,?,?,?,?,?,?,?,?,?)').run(c.owner, c.session, c.project, c.rev, c.started_at, c.ended_at, c.head, c.mask, c.bytes, c.tool ?? '')
   const ins = db.prepare('INSERT INTO passages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
   for (const t of c.turns) t.passages.forEach((p, n) => ins.run(c.owner, c.session, t.id, n, t.at, n ? '' : t.line, t.kind, p, JSON.stringify(n ? [] : t.paths), JSON.stringify(n ? [] : t.shas), JSON.stringify(n ? [] : t.prs), t.dead_end ? 1 : 0, t.dead_kind, t.dead_text ?? ''))
 }

@@ -4,6 +4,7 @@
 
 - GitHub Copilot CLI. Install with `copilot plugin marketplace add dheerajponnaganti/thenwise` and `copilot plugin install thenwise@thenwise`. Copilot chats join the same memory as Claude Code chats, with the same memory tools, hooks and privacy rules, and answers say which tool a chat came from. Copilot gets its own manifest and hooks file; the Claude Code files are unchanged. The first sync after updating rebuilds the store once. If you set your own `include_entrypoints`, add `copilot-cli` to read Copilot chats.
 - Before this release, the plugin blocked every file edit in Copilot CLI, because Copilot denies an edit when a pre-edit hook fails and the released hooks could not run there. Copilot now gets no pre-edit hook at all, so a broken install can never block an edit.
+- Teams with mixed tools: a shared chat carries the tool it came from, and a teammate's results say "Copilot chat of alice" or "Claude Code chat of bob". The team server adds one column at its next start; older Thenwise versions keep working and send no tool.
 - `thenwise forget` and `thenwise uninstall` name Copilot's own chat files and the copies Copilot keeps on GitHub, which Thenwise cannot reach.
 
 ## 0.1.28

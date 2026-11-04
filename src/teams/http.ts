@@ -112,6 +112,8 @@ export interface ChatUnit {
   mask: number
   turns: ChatTurn[]
   bytes: number
+  /** The coding tool the chat came from, such as "Claude Code" or "Copilot"; '' from a sender that predates it. */
+  tool: string
 }
 
 const bad = (m: string) => new HttpError(400, 'bad_request', m)
@@ -169,6 +171,7 @@ export function chatUnit(body: Record<string, unknown>): ChatUnit {
 
   return {
     project,
+    tool: body.tool === undefined ? '' : str(body, 'tool', 40),
     head: str(body, 'head', 200),
     started_at: intField(body.started_at, 0, Number.MAX_SAFE_INTEGER, 'started_at'),
     ended_at: intField(body.ended_at, 0, Number.MAX_SAFE_INTEGER, 'ended_at'),

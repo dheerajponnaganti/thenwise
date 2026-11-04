@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.28
+
+Windows no longer flashes console windows, and resume stays on the project you are in. Memory answers point agents to the memory tools.
 
 - Windows: Thenwise no longer opens blank Node.js console windows. Every process it starts (the background sync, memory lookups, git) now runs hidden; before, windows flashed open with each hook and the sync's window stayed until you closed it.
 - Resume is about this project. Another project's to-do list no longer fills it, it shows at most three open items with where to read the rest, and in a repo with no recorded chat it says so instead of showing a chat from your home folder.

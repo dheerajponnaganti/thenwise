@@ -1,5 +1,13 @@
 // Preload for `npm test`: a data folder set by the caller is dropped, so every test uses its own temp home, as on CI.
 // (A test run inside an evaluation once inherited THENWISE_HOME and replaced a frozen store's chats with fixtures.)
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+// The home itself is a temp folder too: code that loads the config from the home (every hook) must never read or write the
+// real ~/.thenwise. It once did: the R10-H4 test wrote the real update-check.json and failed whenever a real session had
+// stamped an older version there.
+process.env.HOME = mkdtempSync(join(tmpdir(), 'tw-home-'))
 delete process.env.THENWISE_HOME
 delete process.env.MEMORY_HOME
 // Copilot chats are read from COPILOT_HOME when set: tests read only their temp home's .copilot.

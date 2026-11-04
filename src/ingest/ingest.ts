@@ -7,6 +7,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, openSync, readSync, chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+
+import { writeProgress } from '../core/progress.ts'
 import { DatabaseSync } from 'node:sqlite'
 
 import { syncTrailers } from '../capture/notes.ts'
@@ -47,6 +49,7 @@ export interface IngestResult {
 }
 export interface IngestOptions {
   db?: string
+  onProgress?: (done: number, total: number) => void // chats read so far, for the sync's progress file
   until?: string // evaluation cutoff (ISO): nothing dated after it is kept
   memoryFrom?: string // projects-style folder to read */memory/*.md from instead of ~/.claude/projects
   prs?: string // JSON file in `gh pr list --json` shape; replaces calling gh
@@ -309,6 +312,7 @@ export function ingest(cfg: Config, opts: IngestOptions = {}): IngestResult {
         if (process.env.THENWISE_DEBUG) console.error(e)
       }
     }
+    if (!r && existsSync(dbPath) && process.env.THENWISE_PROGRESS) writeProgress(cfg.memDir, { kind: 'rebuild' }) // an update (a new store version) rebuilds everything: say so
     r ??= fullBuild(cfg, opts, dbPath)
     if (failed) r.warnings.push(failed)
 
@@ -353,7 +357,8 @@ function fullBuild(cfg: Config, opts: IngestOptions, dbPath: string): IngestResu
   const counts: Record<Status, number> = { in: 0, entry: 0, marker: 0, empty: 0, out: 0 }
   const sessions: { cwd: string; dirs: string[]; key: string; file: string; part: SessionPart }[] = []
   const fileRows: unknown[][] = []
-  for (const sf of files) {
+  for (const [i, sf] of files.entries()) {
+    opts.onProgress?.(i + 1, files.length)
     const s = parseSf(sf, cfg.home, opts.until)
     const status = classify(cfg, s)
     counts[status]++

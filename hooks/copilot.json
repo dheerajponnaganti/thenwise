@@ -14,6 +14,12 @@
     "preCompact": [
       { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "compact"], "timeoutSec": 3 }
     ],
+    "agentStop": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop"], "timeoutSec": 3 }
+    ],
+    "errorOccurred": [
+      { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop-failure"], "timeoutSec": 3 }
+    ],
     "sessionEnd": [
       { "type": "command", "exec": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-end"], "timeoutSec": 3 }
     ]

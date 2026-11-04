@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '../..')
-const EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'SessionEnd'])
+const EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'SessionEnd', 'Stop', 'StopFailure'])
 const SCRIPT = '${CLAUDE_PLUGIN_ROOT}/dist/cli.js'
 // The hook names runHook answers, read from the source so a new hook needs no edit here.
 const handled = new Set([...readFileSync(join(ROOT, 'src/hooks/hook.ts'), 'utf8').matchAll(/name === '([a-z-]+)'/g)].map((m) => m[1]))
@@ -44,7 +44,7 @@ for (const [event, groups] of Object.entries(hooks)) {
 
 // Copilot CLI: camelCase events, exec plus args with no shell, timeoutSec. Copilot denies the tool call when a preToolUse hook
 // errors, so Thenwise registers none there: a broken install must never block an edit.
-const COPILOT_EVENTS = new Set(['sessionStart', 'userPromptSubmitted', 'postToolUse', 'preCompact', 'sessionEnd'])
+const COPILOT_EVENTS = new Set(['sessionStart', 'userPromptSubmitted', 'postToolUse', 'preCompact', 'sessionEnd', 'agentStop', 'errorOccurred'])
 const copilot = JSON.parse(readFileSync(join(ROOT, 'hooks/copilot.json'), 'utf8'))
 if (copilot.version !== 1) problems.push('copilot.json: version must be 1')
 for (const [event, entries] of Object.entries(copilot.hooks)) {

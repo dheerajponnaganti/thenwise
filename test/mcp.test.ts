@@ -29,16 +29,18 @@ test('S5-H1: initialize names the server and echoes the protocol version', () =>
   assert.equal(r.result.protocolVersion, '2025-06-18')
 })
 
-test('S5-H2: tools/list has seven tools, each naming its question shape; NEWER and the marker are said once, in the instructions', () => {
+test('S5-H2: tools/list has eight tools, each naming its question shape; NEWER and the marker are said once, in the instructions', () => {
   const { s } = ready('/none')
   const tools = (s.handle({ jsonrpc: '2.0', id: 9, method: 'tools/list' }) as any).result.tools
-  assert.equal(tools.length, 7)
+  assert.equal(tools.length, 8)
   for (const t of tools) assert.doesNotMatch(t.description, /Use FIRST|NEWER|\[memory:/)
   assert.match(tools.find((t: any) => t.name === 'memory_why').description, /^Why /)
   assert.match(tools.find((t: any) => t.name === 'memory_tried').description, /tried/)
   assert.match(tools.find((t: any) => t.name === 'memory_asof').description, /git show/)
   assert.deepEqual(tools.find((t: any) => t.name === 'memory_asof').inputSchema.required, ['date', 'query'])
   assert.deepEqual(tools.find((t: any) => t.name === 'memory_read').inputSchema.required, ['id'])
+  assert.deepEqual(tools.find((t: any) => t.name === 'memory_resume').inputSchema.required, [])
+  assert.match(tools.find((t: any) => t.name === 'memory_resume').description, /continue the work/)
 })
 
 test('S5-H3: every tool answers against the fixture, and read prints a full passage', () => {

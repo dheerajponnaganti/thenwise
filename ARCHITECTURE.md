@@ -13,7 +13,9 @@ team shares (optional) ───────────────────
                                                       passages)            └─> vault ──────> Markdown notes
 ```
 
-A session start and a session end run a background sync (`thenwise hook sync-run`), which archives and ingests what changed. Search only reads the store, so it stays fast and needs no network.
+A session start and a session end run a background sync (`thenwise hook sync-run`), which archives and ingests what changed, and writes its progress to `sync-progress.json`. Search only reads the store, so it stays fast and needs no network.
+
+The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the newest chat another session left in the project straight from Claude Code's or Copilot's own live file, so the next agent knows where the work stopped even before the sync has copied that chat.
 
 ## Module responsibilities
 
@@ -36,13 +38,15 @@ A session start and a session end run a background sync (`thenwise hook sync-run
 | `src/core/home.ts` | `resolveDataDir` | Finds the data folder |
 | `src/core/tokenize.ts` | `tokenize` | Splits text into search terms |
 | `src/core/log.ts` | `logger`, `logsCommand` | The local log, which holds no chat text |
+| `src/core/progress.ts` | `writeProgress`, `progressLine`, `incompleteNote` | The sync's progress, for status, the hooks and the memory tools |
 | `src/query/passages.ts` | `splitPassages`, `buildPassageIndex` | Cuts text nodes into passages and indexes them in FTS5 |
 | `src/query/language.ts` | `buildLanguage`, `similarity` | Typo fixes and word pairs mined from the store |
 | `src/query/engine.ts` | `Graph` | Retrieval: BM25 fused with title, link and exact lanes, plus scope and dates |
 | `src/query/commands.ts` | `search`, `current`, `why`, `tried`, `asof`, `trace`, `resume`, `pointers`, `get` | Store in, formatted answer out |
-| `src/server/stdio.ts` | `createServer`, `serveStdio` | The seven memory tools over MCP stdio |
+| `src/server/stdio.ts` | `createServer`, `serveStdio` | The eight memory tools over MCP stdio |
 | `src/hooks/entry.ts` | `nothingToDo`, `hookInput` | The fast path that exits before SQLite loads |
-| `src/hooks/hook.ts` | `runHook`, `syncRun` | The Claude Code hooks and the background sync |
+| `src/hooks/hook.ts` | `runHook`, `syncRun`, `syncNotice` | The Claude Code hooks and the background sync |
+| `src/hooks/handoff.ts` | `handoffBlock`, `liveChats`, `readLive` | Where another session of the project stopped, read from its live chat file |
 | `src/capture/notes.ts` | `readNotes`, `saveNote`, `accept`, `reject` | Curated notes and their inbox |
 | `src/capture/distill.ts` | `distill` | Optional: proposes notes through `claude -p`, into the inbox only |
 | `src/capture/similar.ts` | `related` | Finds duplicates and contradictions among notes |
@@ -91,11 +95,12 @@ A session start and a session end run a background sync (`thenwise hook sync-run
 
 | Event | What it does |
 | --- | --- |
-| `SessionStart` | Starts a sync, and adds a short brief, or a resume block after a compaction |
-| `UserPromptSubmit` | Adds up to three pointers when a prompt asks about the past |
+| `SessionStart` | Starts a sync, and adds the handoff from the newest other chat of the project and a short brief, or a resume block after a compaction; says when the first sync starts |
+| `UserPromptSubmit` | Adds up to three pointers when a prompt asks about the past, a teammate's chat that arrived after the start, and the first sync's progress |
 | `PreToolUse` on edits | Keeps a plan version before it changes |
 | `PostToolUse` on reads and shell commands | Adds a file's dead ends and decisions |
 | `PreCompact` | Marks a compaction, so Copilot CLI gets its resume brief on the next prompt |
+| `Stop`, `StopFailure` | For a team member: starts a sync after a reply (at most every 10 minutes) and at once after a usage limit or an error |
 | `SessionEnd` | Starts a sync |
 
 Each tool has its own thin entry and all share one code base and one data folder. Claude Code reads `.claude-plugin/plugin.json` and `hooks/hooks.json`. Copilot CLI reads `.plugin/plugin.json` first, which points it at `hooks/copilot.json`: the same hooks in Copilot's own form (`exec` plus `args`, no shell), with no pre-edit hook, because Copilot denies the edit when such a hook fails. `src/ingest/copilot.ts` turns Copilot's hook payloads and chat files into Claude Code's shapes at the door, so everything after that is shared. `.mcp.json`, `commands/` and `skills/` serve both.

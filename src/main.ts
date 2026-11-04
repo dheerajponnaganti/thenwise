@@ -77,7 +77,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
     const done = (await import('./core/log.ts')).logger('sync', cfg.memDir).time('archive')
     let r
     try {
-      r = archive(cfg, { prune: process.argv.includes('--prune-excluded') })
+      const { reporter } = await import('./core/progress.ts')
+      r = archive(cfg, { prune: process.argv.includes('--prune-excluded'), onProgress: reporter(cfg.memDir, 'copying chats') ?? undefined })
     } catch (e) {
       if ((e as Error).message !== 'archive already running') throw e
       console.log('archive already running; this run did nothing') // exit 0: a sync and a manual run meeting is not an error
@@ -95,7 +96,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
   } else {
     const { ingest, report } = await import('./ingest/ingest.ts')
     if (flag('vault')) cfg.vaults = [resolve(xp(flag('vault'))!)]
-    const r = ingest(cfg, { prs: xp(flag('prs')), db: xp(flag('db')), until: flag('until'), memoryFrom: xp(flag('memory-from')), full: process.argv.includes('--full') })
+    const { reporter } = await import('./core/progress.ts')
+    const r = ingest(cfg, { prs: xp(flag('prs')), db: xp(flag('db')), until: flag('until'), memoryFrom: xp(flag('memory-from')), full: process.argv.includes('--full'), onProgress: reporter(cfg.memDir, 'building the store') ?? undefined })
     const log = (await import('./core/log.ts')).logger('ingest', cfg.memDir)
     log.info(r.mode, { ms: r.ms, files: r.filesRead, sessions: r.sessionsIn, out: r.sessionsOut, excluded: r.excludedEval, warnings: r.warnings.length })
     for (const w of r.warnings) log.warn('warning', { msg: w })
@@ -164,6 +166,9 @@ if (cmd === 'status') {
   const { newProjectLines } = await import('./setup/projects.ts')
   const { globMatch } = await import('./ingest/config.ts')
   const cfg = loadConfig()
+  const { progressLine, readProgress } = await import('./core/progress.ts')
+  const sync = progressLine(readProgress(cfg.memDir))
+  if (sync) console.log(`sync: ${sync}`)
   for (const l of statusLines(cfg, xp(flag('db')) ?? join(cfg.memDir, 'graph.db'))) console.log(l)
   for (const l of newProjectLines(cfg.claudeDir, cfg.roots, (k) => cfg.excludeProjects.some((g) => globMatch(g, k)))) console.log(l)
   process.exit(0)
@@ -224,7 +229,15 @@ if (cmd && QUERY.includes(cmd)) {
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
   const cfg = loadConfig()
   const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
-  if (!existsSync(dbPath)) (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2))
+  // resume starts with where another session of this project stopped, read from its live chat: it needs no store.
+  let live = ''
+  if (cmd === 'resume' && !process.argv.includes('--short') && !flag('mates-since') && (flag('project') || process.argv.includes('--here'))) {
+    const { handoffBlock, insideAgent, ownChat } = await import('./hooks/handoff.ts')
+    const project = xp(flag('project')) ?? process.cwd()
+    const block = handoffBlock(cfg, project, ownChat(cfg, project, insideAgent()))
+    if (block) live = `## Live handoff (read from the chat file now)\n${block}`
+  }
+  if (!existsSync(dbPath)) (live ? (console.log(live), process.exit(0)) : (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2)))
   const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }) // lazy reads only what the command touches; --full loads the whole graph
   g.expand = process.argv.includes('--expand')
   // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
@@ -237,7 +250,8 @@ if (cmd && QUERY.includes(cmd)) {
   else if (cmd === 'why') console.log(c.why(g, q))
   else if (cmd === 'tried') console.log(c.tried(g, q))
   else if (cmd === 'trace') console.log(c.trace(g, q))
-  else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : c.resume(g, q))
+  else if (cmd === 'resume' && flag('mates-since')) console.log(c.mateLatest(g, Date.parse(flag('mates-since')!) || 0).join('\n'))
+  else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'))
   else if (cmd === 'get') console.log(c.get(g, q))
   else if (cmd === 'asof') (need(args.length > 1), console.log(c.asof(g, args[0]!, args.slice(1).join(' '))))
   else if (cmd === 'path') (need(args.length > 1), console.log(c.path(g, args[0]!, args.slice(1).join(' '))))

@@ -64,6 +64,8 @@ export interface IngestOptions {
 // 5 (0.1.25): a title word the body never says gets a passage, so existing stores rebuild to find it.
 // 6 (0.2.0): a turn the tool stopped (a usage limit) ends with its stop line, and the limit text is no longer a reply;
 //   a background subagent's launch notice and a report's agent id and usage are no reply either.
+//   A turn records its prompt's length, so results can label a passage that holds only the person's words.
+//   A commit sentence about dead ends themselves is no dead end.
 export const STATE_VERSION = 6
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.

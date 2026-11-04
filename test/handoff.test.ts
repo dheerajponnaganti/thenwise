@@ -79,13 +79,13 @@ test('Copilot: an abort and a shutdown on an error stop the turn the same way', 
     ev('abort', { reason: 'autopilot_credit_limit' }, '2026-11-03T10:00:04Z'),
   ].flatMap(conv)
   const s = parseSession(lines, 'c1', '/home/u')
-  assert.equal(s.turns[0]!.cutOff?.text, 'stopped: autopilot_credit_limit')
+  assert.equal(s.turns[0]!.cutOff?.text, 'autopilot_credit_limit')
   assert.deepEqual(s.turns[0]!.reply, ['On it.'])
   const down = parseSession([
     ev('user.message', { content: 'Go on' }, '2026-11-03T11:00:00Z'),
     ev('session.shutdown', { shutdownType: 'error', errorReason: 'quota exceeded' }, '2026-11-03T11:00:03Z'),
   ].flatMap(copilotConverter('c2', '/w/shop')), 'c2', '/home/u')
-  assert.equal(down.turns[0]!.cutOff?.text, 'stopped on an error: quota exceeded')
+  assert.equal(down.turns[0]!.cutOff?.text, 'an error: quota exceeded')
   const routine = copilotConverter('c3', '/w/shop')(ev('session.shutdown', { shutdownType: 'routine' }, '2026-11-03T12:00:00Z'))
   assert.deepEqual(routine, [])
 })
@@ -161,7 +161,7 @@ test('Claude Code stops on a usage limit; the next session sees the task, the st
   claudeChat(w.home, w.proj, 'cc-1')
   writeFileSync(join(w.proj, 'src/cache.ts'), 'export const a = 2\n') // the edit the chat made, not committed
   const b = handoffBlock(w.cfg(), w.proj, ['own'])
-  assert.match(b, /^<memory-handoff tool="Claude Code" chat="ses:cc-1"/)
+  assert.match(b, /^The block below is the work of an earlier Claude Code chat in this project, not yours\. If you continue that work, say first what that chat had already done, and anything it tried that failed, then what you did in this session\. Claim only the edits and test runs you made yourself\.\n<memory-handoff tool="Claude Code" chat="ses:cc-1"/)
   assert.match(b, /state: stopped by the tool at .*You've hit your session limit/)
   assert.match(b, /task: "Split the price cache into eight shards keyed by store id"/)
   assert.match(b, /last reply: "The shard test fails on store ids with a dash/)
@@ -285,7 +285,7 @@ test('memory_resume and `thenwise resume --project` start with the live handoff,
     const s = createServer(() => join(w.home, '.thenwise/graph.db'), w.proj)
     s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })
     const r = s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'memory_resume', arguments: {} } }) as any
-    assert.match(r.result.content[0].text, /^## Live handoff[^\n]*\n<memory-handoff tool="Claude Code"/)
+    assert.match(r.result.content[0].text, /^## Live handoff[^\n]*\nThe block below is the work of an earlier Claude Code chat[^\n]*\n<memory-handoff tool="Claude Code"/)
   } finally {
     process.env.HOME = keep
   }
@@ -526,4 +526,29 @@ test('a write the chat stopped in is not listed as an edit (r032 world check, 20
   const b = handoffBlock(w.cfg(), w.proj)
   assert.match(b, /stopped mid-step .*Write test\/export\.test\.ts, no result recorded/)
   assert.match(b, /edited in that chat \(newest first\): src\/export\.ts \(1 edit\)\n/)
+})
+
+import { recordSent } from '../src/core/notices.ts'
+
+test('memory_resume names a handoff the session start already gave the agent, and shows it again after a compaction (agent feedback, 2026-11-04)', () => {
+  const keep = { HOME: process.env.HOME, ID: process.env.COPILOT_AGENT_SESSION_ID }
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-1')
+  const dir = join(w.home, '.thenwise')
+  const resume = () => {
+    const s = createServer(() => join(dir, 'graph.db'), w.proj)
+    s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })
+    return (s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'memory_resume', arguments: {} } }) as any).result.content[0].text as string
+  }
+  try {
+    process.env.HOME = w.home
+    process.env.COPILOT_AGENT_SESSION_ID = 'me'
+    recordSent(dir, 'me', 'session-start', resume().replace(/^## Live handoff[^\n]*\n/, ''))
+    assert.match(resume(), /^Live handoff: same as the ses:cc-1 block at session start\.$/m)
+    recordSent(dir, 'me', 'session-start compact', '')
+    assert.match(resume(), /^## Live handoff[^\n]*\nThe block below is the work of an earlier Claude Code chat[^\n]*\n<memory-handoff tool="Claude Code" chat="ses:cc-1"/)
+  } finally {
+    for (const [k, v] of Object.entries({ HOME: keep.HOME, COPILOT_AGENT_SESSION_ID: keep.ID })) if (v === undefined) delete process.env[k]
+    else process.env[k] = v
+  }
 })

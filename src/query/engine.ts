@@ -5,7 +5,7 @@ import { existsSync, renameSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { projectRoot, real, repoRoot } from '../ingest/repos.ts'
+import { githubSlug, projectRoot, real, repoRoot } from '../ingest/repos.ts'
 
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from './language.ts'
 import { normPath } from '../core/vault-index.ts'
@@ -31,6 +31,7 @@ export interface Hit {
   lanes: string[]
   project: string // the project the passage's node belongs to ("global" for notes that belong to none)
   idf: (word: string) => number // weight of a word in this corpus, for choosing which part of the passage to show
+  has: string[] // the query words this passage holds itself (not by a synonym or a neighbouring turn)
 }
 export interface Search {
   terms: string[]
@@ -40,6 +41,7 @@ export interface Search {
   feedback: string[] // rare words of the first results, searched again when nothing matched well (pseudo-relevance feedback)
   hits: Hit[] // fused order
   good: Hit[] // hits whose coverage is high enough to count as a match
+  weights: Record<string, number> // idf of each query word the corpus holds
 }
 
 const STOP = new Set(
@@ -116,6 +118,7 @@ export class Graph {
   hide?: (root: string) => boolean
   private roots?: Map<string, string>
   private known: string[] = []
+  private slugs: Record<string, string> = {} // project root -> GitHub owner/name, from the store's meta
   private keyRoots = new Map<string, string>() // a chat folder's name in ~/.claude/projects -> its project folder
   private vocab?: { word: string; df: number }[]
   private idfCache = new Map<string, { set: { size: number; has(r: number): boolean }; idf: number }>()
@@ -177,6 +180,20 @@ export class Graph {
   scopeTo(folder: string) {
     const repo = repoRoot(folder)
     this.scope = repo ? normPath(real(repo)) : undefined
+    this.clones = undefined
+  }
+  private clones: { of: string; roots: Set<string> } | undefined
+  /** Whether a project root is the scope's project: the scope itself, or another checkout of the same GitHub repo
+   * (a second clone, a copy in a scratch folder), by the slugs the store recorded at ingest. */
+  ours(root: string): boolean {
+    if (this.scope === undefined || !root) return false
+    if (root === this.scope) return true
+    if (this.clones?.of !== this.scope) {
+      if (!this.roots) this.buildRoots()
+      const slug = this.slugs[this.scope] ?? githubSlug(this.scope)
+      this.clones = { of: this.scope, roots: new Set(slug ? Object.keys(this.slugs).filter((r) => this.slugs[r] === slug) : []) }
+    }
+    return this.clones.roots.has(root)
   }
   /** The project folder a node belongs to, or '' when it belongs to none (vault notes, personal rules). */
   rootOf(n: Node): string {
@@ -219,7 +236,7 @@ export class Graph {
     // Slugs come from the store's meta (written at ingest); a root it does not list falls back to the folder name, never to git.
     let slugs: Record<string, string> = {}
     try {
-      slugs = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}')
+      this.slugs = slugs = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}')
     } catch { /* older store: folder names only */ }
     for (const n of team) {
       const p = String(n.extra.project ?? n.project)
@@ -231,7 +248,7 @@ export class Graph {
     const r = this.rootOf(n)
 
     // Teammates' chats of a project this machine does not hold show only when everything is searched.
-    return !(r && this.hide?.(r)) && (this.scope === undefined || r === this.scope || (r === '' && !n.extra?.team))
+    return !(r && this.hide?.(r)) && (this.scope === undefined || this.ours(r) || (r === '' && !n.extra?.team))
   }
   projectName(n: Node): string {
     const r = this.rootOf(n)
@@ -429,7 +446,7 @@ export class Graph {
     const every = known.flatMap((s) => [s.t, ...s.alt.map((a) => a.t)])
     const exact = this.exact(q)
     const ok = (n: Node | undefined): n is Node => !!n && this.inScope(n) && (!opts.filter || opts.filter(n))
-    if (!known.length && !exact.length) return { terms, missing, expanded, fixed, feedback, hits: [], good: [] }
+    if (!known.length && !exact.length) return { terms, missing, expanded, fixed, feedback, hits: [], good: [], weights: {} }
 
     const wsum = known.reduce((a, s) => a + s.idf, 0) || 1
     // A query word absent from the passage but present elsewhere in its turn or the neighbouring turns of its session counts at half weight.
@@ -561,7 +578,7 @@ export class Graph {
       if (!found.get(pid)!.includes('exact') && prior.some((o) => [...ws].filter((w) => o.has(w)).length / Math.max(ws.size, o.size) >= DUP)) continue
       seenText.set(node.source, [...prior, ws])
       perNode.set(node.id, (perNode.get(node.id) ?? 0) + 1)
-      hits.push({ pid, node, n: r.n, text: r.text, shown: r.shown, score: sc, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w) })
+      hits.push({ pid, node, n: r.n, text: r.text, shown: r.shown, score: sc, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w), has: known.filter((k) => k.set.has(r.rowid)).map((k) => k.t) })
       if (hits.length >= (opts.limit ?? 200)) break
     }
     // Exact-lane passages without a query word are not found by the highlight join; add them plainly.
@@ -569,12 +586,12 @@ export class Graph {
       if (hits.some((h) => h.pid === pid)) continue
       const r = this.db.prepare('SELECT n, text, rowid FROM passages WHERE pid = ?').get(pid) as any
       const node = this.nodes.get(pid.replace(/#p\d+$/, ''))!
-      hits.push({ pid, node, n: r.n, text: r.text, shown: r.text, score: score.get(pid)!, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w) })
+      hits.push({ pid, node, n: r.n, text: r.text, shown: r.text, score: score.get(pid)!, cov: cov(r.rowid), lanes: found.get(pid)!, project: this.projectName(node), idf: (w) => this.wordIdf(w), has: known.filter((k) => k.set.has(r.rowid)).map((k) => k.t) })
     }
     hits.sort((a, b) => b.score - a.score || (a.pid < b.pid ? -1 : 1))
     // A passage is a match when it covers enough of the query, or the query named its node exactly.
     const good = hits.filter((h) => h.cov >= GOOD || h.lanes.includes('exact'))
-    return { terms, missing, expanded, fixed, feedback, hits, good }
+    return { terms, missing, expanded, fixed, feedback, hits, good, weights: Object.fromEntries(known.map((k) => [k.t, k.idf])) }
   }
 }
 

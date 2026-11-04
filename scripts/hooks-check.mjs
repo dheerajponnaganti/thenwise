@@ -42,8 +42,9 @@ for (const [event, groups] of Object.entries(hooks)) {
   }
 }
 
-// Codex: shell strings with $PLUGIN_ROOT and a Windows form, and no pre-edit hook, for the same reason as Copilot.
-const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd'])
+// Codex: shell strings with $PLUGIN_ROOT and a Windows form.
+// PreToolUse: checked live on Codex 0.164, a hook that fails or times out never blocks apply_patch.
+const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionEnd'])
 const codexHooks = JSON.parse(readFileSync(join(ROOT, 'hooks/codex.json'), 'utf8')).hooks
 let codexCount = 0
 for (const [event, entries] of Object.entries(codexHooks)) {

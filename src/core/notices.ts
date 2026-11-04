@@ -75,12 +75,14 @@ export const sentFile = (dir: string, session: string) => join(state(dir), `${se
 
 /** Records each Thenwise block in a context text that went to the agent. */
 export function recordSent(dir: string, session: string, event: string, context: string) {
-  if (!session || !context) return
+  if (!session || (!context && !event.endsWith(' compact'))) return
   try {
     const lines: string[] = []
     for (const t of TAGS) {
       for (const m of context.matchAll(new RegExp(`<${t}[\\s\\S]*?</${t}>`, 'g'))) lines.push(JSON.stringify({ at: new Date().toISOString(), event, kind: KIND[t], tokens: Math.ceil(m[0].length / 4), text: m[0] }))
     }
+    // A compaction takes earlier blocks out of the agent's context, so it is recorded even when it sent none.
+    if (event.endsWith(' compact')) lines.push(JSON.stringify({ at: new Date().toISOString(), event, kind: 'compaction', tokens: 0, text: '' }))
     if (!lines.length) return
     mkdirSync(state(dir), { recursive: true, mode: 0o700 })
     appendFileSync(sentFile(dir, session), `${lines.join('\n')}\n`, { mode: 0o600 })
@@ -113,6 +115,15 @@ export function readSent(dir: string, session?: string): { session: string; sent
   })
 
   return { session: file.split(/[\\/]/).pop()!.replace(/\.sent\.jsonl$/, ''), sent }
+}
+
+/** The chat (`ses:xxxx`) of the handoff this session's agent still holds: the last one sent, with no compaction after it. */
+export function heldHandoff(dir: string, session: string): string | undefined {
+  const sent = readSent(dir, session)?.sent ?? []
+  const i = sent.findLastIndex((s) => s.kind === 'handoff')
+  if (i < 0 || sent.slice(i + 1).some((s) => s.kind === 'compaction')) return undefined
+
+  return /^<memory-handoff [^>]*chat="(ses:[^"]+)"/.exec(sent[i]!.text)?.[1]
 }
 
 /** The one line for the person about what a session start gave the agent; '' when it gave nothing worth naming. */

@@ -288,6 +288,12 @@ export function capHandoff(text: string, n = HANDOFF_TOKENS): string {
   return `${body.length + close.length > n * 4 ? body.slice(0, n * 4 - close.length - 7) : body}\n(cut)\n${close}`
 }
 
+/** Thenwise's own line above a handoff (outside the data block). In r032 the next agent took credit for the earlier chat's
+ * work ("I added the test") and did not say what had failed there; this asks it to keep the two apart. It names the tool,
+ * not Thenwise (an agent credited "Thenwise" with the work), and presumes no failure (one called a plain stop a failure).
+ * It applies only when the agent continues that work: asked something else, a Copilot run reported the other chat anyway. */
+export const handoffRule = (tool: string) => `The block below is the work of an earlier ${tool} chat in this project, not yours. If you continue that work, say first what that chat had already done, and anything it tried that failed, then what you did in this session. Claim only the edits and test runs you made yourself.`
+
 /** The handoff for a session starting in `cwd`: the newest other chat of the project that the rules let through, or ''. */
 export function handoffBlock(cfg: Config, cwd: string, skip: string[] = [], now = Date.now()): string {
   if (!cwd || isOff(cfg, cwd)) return ''
@@ -296,7 +302,7 @@ export function handoffBlock(cfg: Config, cwd: string, skip: string[] = [], now 
   // A few fresh files can have no prompt yet (windows opened at once): look past them.
   for (const chat of liveChats(cfg, cwd, skip, now).slice(0, 10)) {
     const s = readLive(cfg, chat)
-    if (s) return capHandoff(handoffText(s, chat, cwd, now))
+    if (s) return `${handoffRule(chat.tool)}\n${capHandoff(handoffText(s, chat, cwd, now))}`
   }
 
   return ''

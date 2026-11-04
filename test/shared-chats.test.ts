@@ -196,7 +196,7 @@ test('T19-H1: a teammate\'s cached chat becomes tses, tturn and tsum nodes with 
     assert.equal(g.nodes.get('tturn:alice/t1')!.extra.sharedBy, 'alice')
     const out = c.search(g, 'quokka cache corrupted shards')
     assert.match(out, /\[turn\] tturn:alice\/t1/)
-    assert.match(out, /source: chat of alice, 2026-10-20 \(team\)/)
+    assert.match(out, /2026-10-20 \d\d:\d\d · \w+ · chat of alice \(team\)/)
     assert.match(c.get(g, 'tturn:alice/t1#p0'), /corrupted shards/)
     assert.match(c.pointers(g, 'what happened with the quokka cache corrupting shards'), /\(2026-10-20, alice\)/)
   } finally {

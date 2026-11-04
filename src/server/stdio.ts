@@ -13,7 +13,7 @@ import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { handoffBlock, ownChat } from '../hooks/handoff.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
-import { addNews, forHost, setClient } from '../core/notices.ts'
+import { addNews, forHost, heldHandoff, setClient } from '../core/notices.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { Graph, swapPending } from '../query/engine.ts'
 import * as c from '../query/commands.ts'
@@ -29,6 +29,9 @@ function afterPointer(): boolean {
 }
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.'
+// Codex shows the model neither server instructions nor (untrusted) hook context, and answers past-work questions from
+// its shell; this line rides on one tool description, for Codex only.
+const CODEX_LINE = 'In Codex, call memory before any shell command on a past-work question.'
 // The output budget (decision 6): 4,000 characters unless THENWISE_OUTPUT_CHARS or tools.output_chars says otherwise.
 const CAP = () => c.outputChars()
 // About 120 words: when to call, one example per question shape, and what to do with the answer. Said once here, not per tool.
@@ -45,6 +48,8 @@ const INSTRUCTIONS = [
   MARK,
 ].join('\n')
 const OFF = '\0off'
+// The tools whose answers are a ranked search, and so may carry the match gap line.
+const RANKED = new Set(['memory_search', 'memory_why', 'memory_tried', 'memory_current', 'memory_asof'])
 const NONE = 'No memory yet: nothing has been recorded. Run `thenwise archive` and `thenwise ingest` (the plugin does this at session start), then ask again.'
 
 const TOOLS: Record<string, { text: string; run: (g: Graph, a: string[]) => string }> = {
@@ -140,6 +145,9 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
   let nudged = false
   let codexClient = false // set from initialize: the client names itself
   let codexTold = false
+  // The words the last search's results lacked together. A record read before the next search repeats the gap when it
+  // lacks one of them: an agent that follows a trace to one passage otherwise reads past the line in the search.
+  let gap: { words: string[]; query: string } | undefined
   /** In Codex the memory server runs even when its hooks are not trusted: the first answer of a session says what still
    * works and what the person can do, once. */
   const codexNote = (out: string) => {
@@ -162,12 +170,17 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
         const project = here()
         // A memory server always runs inside an agent: with no session record (Codex before its hooks are trusted, the
         // Antigravity App), the newest chat written in the last minute is the asking session's own.
-        const live = cfg && project ? handoffBlock(cfg, project, ownChat(cfg, project, true)) : ''
+        const own = cfg && project ? ownChat(cfg, project, true) : []
+        let live = cfg && project ? handoffBlock(cfg, project, own) : ''
+        // The session start already gave the agent this handoff, and no compaction took it away: name it, not again.
+        const chat = /<memory-handoff [^>]*chat="(ses:[^"]+)"/.exec(live)?.[1]
+        const held = chat && own[0] ? heldHandoff(dirname(dbPath()), own[0]) === chat : false
+        if (held) live = `same as the ${chat} block at session start.`
         const brief = g ? c.resume(g, vals[0]!.slice(0, 2000)) : ''
         const p = readProgress(dirname(dbPath()))
         const none = !g && running(p) ? `No memory yet: the first sync is ${percent(p)}% done (${p.phase}). Ask again in a minute, and tell the person the memory is still filling up.` : NONE
         const note = incompleteNote(dirname(dbPath()))
-        const out = [note, live && `## Live handoff (read from the chat file now)\n${live}`, brief.startsWith('not recorded') && live ? '' : brief].filter(Boolean).join('\n\n') || none
+        const out = [note, live && (held ? `Live handoff: ${live}` : `## Live handoff (read from the chat file now)\n${live}`), brief.startsWith('not recorded') && live ? '' : brief].filter(Boolean).join('\n\n') || none
         done({ chars: out.length, found: out !== none })
 
         return text(cut(codexNote(out), CAP()))
@@ -192,6 +205,15 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
         if (!/^not recorded/.test(all)) out = `Nothing in this project; from all projects:\n${all}`
       }
 
+      if (RANKED.has(name)) {
+        const m = /^no shown passage has all of: ([^(\n]+?) \(/m.exec(out)
+        gap = m ? { words: m[1]!.split(', '), query: args[args.length - 1]!.replace(/\s+/g, ' ').slice(0, 80) } : undefined
+      }
+      if (name === 'memory_read' && gap && !/^not recorded/.test(out)) {
+        const lower = out.toLowerCase()
+        const lacks = gap.words.filter((w) => !lower.includes(w))
+        if (lacks.length) out += `\n\nThis record has no "${lacks.join('", "')}". The last search ("${gap.query}") found no passage with all of: ${gap.words.join(', ')}.`
+      }
       done({ chars: out.length, found: !/^not recorded/.test(out) })
       // While the first sync or a rebuild runs, the agent must not take "not recorded" as never recorded.
       const note = incompleteNote(dirname(dbPath()))
@@ -249,7 +271,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     }
     if (m.method === 'ping') return ok(m.id, {})
     if (!ready) return err(m.id, -32002, 'server not initialized')
-    if (m.method === 'tools/list') return ok(m.id, { tools: toolList })
+    if (m.method === 'tools/list') return ok(m.id, { tools: codexClient ? toolList.map((t) => (t.name === 'memory_search' ? { ...t, description: `${t.description} ${CODEX_LINE}` } : t)) : toolList })
     if (m.method === 'tools/call') {
       if (typeof p.name !== 'string' || !(p.name in TOOLS)) return err(m.id, -32602, `unknown tool ${String(p.name)}`)
 

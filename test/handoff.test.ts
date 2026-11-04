@@ -387,3 +387,40 @@ test('a Claude Code chat started in a subfolder of the repo is found; a sibling 
   claudeChat(w.home, sibling, 'cc-sibling')
   assert.deepEqual(liveChats(w.cfg(), w.proj).map((c) => c.id), ['cc-sub'])
 })
+
+test('Codex and Antigravity chats hand over too, named by their tool', () => {
+  const keep = process.env.CODEX_HOME
+  const w = world()
+  const t = (s: number) => new Date(Date.now() - 10 * 60_000 + s * 1000).toISOString()
+  try {
+    delete process.env.CODEX_HOME
+    // Codex: a rollout under ~/.codex/sessions, with the project in its session_meta.
+    const day = join(w.home, '.codex', 'sessions', '2026', '11', '03')
+    mkdirSync(day, { recursive: true })
+    const cx = (type: string, payload: object, s: number) => JSON.stringify({ timestamp: t(s), type, payload })
+    writeFileSync(join(day, 'rollout-cx1.jsonl'), `${[
+      cx('session_meta', { id: 'cx1', cwd: w.proj, source: 'cli', thread_source: 'user' }, 0),
+      cx('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Move the price fetch behind a retry with jitter' }] }, 1),
+      cx('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Adding jitter to src/fetch.ts next.' }] }, 2),
+    ].join('\n')}\n`)
+    const codex = handoffBlock(w.cfg(), w.proj)
+    assert.match(codex, /tool="Codex"/)
+    assert.match(codex, /task: "Move the price fetch behind a retry with jitter"/)
+    // Antigravity: a transcript in its brain folder; the project comes from the files it names.
+    const logs = join(w.home, '.gemini', 'antigravity-cli', 'brain', 'ag1', '.system_generated', 'logs')
+    mkdirSync(logs, { recursive: true })
+    let n = 0
+    const step = (type: string, more: object, s: number) => JSON.stringify({ step_index: n++, source: 'MODEL', status: 'DONE', created_at: t(s), type, ...more })
+    writeFileSync(join(logs, 'transcript_full.jsonl'), `${[
+      step('USER_INPUT', { source: 'USER_EXPLICIT', content: '<USER_REQUEST>\nShard the price cache\n</USER_REQUEST>' }, 30),
+      step('PLANNER_RESPONSE', { content: '', tool_calls: [{ name: 'read_file', args: { Path: join(w.proj, 'src/cache.ts') } }] }, 31),
+      step('GENERIC', { content: 'Showing lines 1-1' }, 32),
+      step('PLANNER_RESPONSE', { content: 'Splitting it into eight files.' }, 33),
+    ].join('\n')}\n`)
+    const agy = handoffBlock(w.cfg(), w.proj)
+    assert.match(agy, /tool="Antigravity"/)
+    assert.match(agy, /task: "Shard the price cache"/)
+  } finally {
+    keep === undefined ? delete process.env.CODEX_HOME : (process.env.CODEX_HOME = keep)
+  }
+})

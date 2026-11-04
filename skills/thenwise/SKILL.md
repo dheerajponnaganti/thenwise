@@ -12,7 +12,7 @@ Thenwise keeps a local memory of past Claude Code, Copilot CLI, Codex and Antigr
 - `memory_trace`: the whole story of a file or topic. "src/cache.ts"
 - `memory_search`: anything else from past work, by words.
 - `memory_read`: one record or passage in full, by the id a result shows (for example `turn:abc#p2`).
-- `memory_resume`: where the work in this project stopped, in Claude Code or Copilot, and what is left. Call it first when asked to continue or pick up the work.
+- `memory_resume`: where the work in this project stopped, in Claude Code, Copilot, Codex or Antigravity, and what is left. Call it first when asked to continue or pick up the work.
 
 An open question (`q-3f2a`) in a handoff or brief was left for you. When you can answer it, write `[answer q-3f2a] <the answer>` on its own line in your reply. To leave one for the next agent, write `[question] <the question>` on its own line.
 

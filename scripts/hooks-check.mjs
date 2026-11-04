@@ -43,7 +43,7 @@ for (const [event, groups] of Object.entries(hooks)) {
 }
 
 // Codex: shell strings with $PLUGIN_ROOT and a Windows form, and no pre-edit hook, for the same reason as Copilot.
-const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'SessionEnd'])
+const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd'])
 const codexHooks = JSON.parse(readFileSync(join(ROOT, 'hooks/codex.json'), 'utf8')).hooks
 for (const [event, entries] of Object.entries(codexHooks)) {
   if (!CODEX_EVENTS.has(event)) problems.push(`codex.json ${event}: not an event Thenwise uses`)

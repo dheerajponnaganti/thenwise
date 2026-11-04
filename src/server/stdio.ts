@@ -53,7 +53,7 @@ const TOOLS: Record<string, { text: string; run: (g: Graph, a: string[]) => stri
   memory_asof: { text: 'What was true on a date: an ISO date or date and time (keep the hour and zone the question gives), and words. Names the commit of that date; read a file as it was with git show <sha>:<path>.', run: (g, a) => c.asof(g, a[0]!, a[1]!) },
   memory_trace: { text: 'The whole story of a file, symbol or topic, newest first: decisions, dead ends, chats, commits and PRs. Pass offset to page to older items.', run: (g, a) => c.trace(g, a[0]!, 100, Number(a[1]) || 0, CAP() - 300) },
   memory_read: { text: 'One record or passage in full, by the id a result shows, such as turn:abc#p2.', run: (g, a) => c.get(g, a[0]!) },
-  memory_resume: { text: 'Where the work in this project stands: where the last session stopped, in Claude Code or Copilot (task, last step, edits, last test, uncommitted files), then the recent history. Call it first when asked to continue the work.', run: (g, a) => c.resume(g, a[0] ?? '') },
+  memory_resume: { text: 'Where the work in this project stands: where the last session stopped, in Claude Code, Copilot, Codex or Antigravity (task, last step, edits, last test, uncommitted files), then the recent history. Call it first when asked to continue the work.', run: (g, a) => c.resume(g, a[0] ?? '') },
 }
 const field = (name: string) => (name === 'memory_read' ? 'id' : name === 'memory_resume' ? 'topic' : 'query')
 const toolList = Object.entries(TOOLS).map(([name, t]) => {

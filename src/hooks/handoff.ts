@@ -1,5 +1,5 @@
 // The handoff: when an agent opens a project, the newest chat another session left there, read straight from its tool's own
-// file (Claude Code or Copilot CLI write it live, so a usage limit, a kill or a crash leaves it complete up to that moment).
+// file (Claude Code, Copilot CLI, Codex and Antigravity write it live, so a usage limit, a kill or a crash leaves it complete up to that moment).
 // The store may not hold that chat yet: the sync that copies it runs in the background and finishes seconds later.
 
 import { spawnSync } from 'node:child_process'
@@ -9,6 +9,8 @@ import { dirname, join } from 'node:path'
 import { maskSecrets } from '../core/secrets.ts'
 import { ago } from '../core/time.ts'
 import { type Config, globMatch, isOff } from '../ingest/config.ts'
+import { antigravityConverter, antigravitySources } from '../ingest/antigravity.ts'
+import { codexConverter, codexSources } from '../ingest/codex.ts'
 import { copilotConverter, copilotSources, projectKey } from '../ingest/copilot.ts'
 import { markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from '../ingest/deadend.ts'
 import { trigramSim } from '../capture/similar.ts'
@@ -24,11 +26,19 @@ const WHOLE = 25 << 20 // a chat up to this size is read whole (masking and pars
 const HEAD = 64 << 10 // a longer one: its start (the task) ...
 const TAIL = 8 << 20 // ... and its last part (where it stopped)
 
+export type Tool = 'Claude Code' | 'Copilot' | 'Codex' | 'Antigravity'
+// The other tools' chats, found by their own readers and turned into Claude Code's lines at the door.
+const OTHERS: { tool: Exclude<Tool, 'Claude Code'>; sources: (home: string) => { rel: string; path: string; id: string; cwd: string }[]; convert: (id: string, cwd: string) => (line: string) => string[] }[] = [
+  { tool: 'Copilot', sources: copilotSources, convert: copilotConverter },
+  { tool: 'Codex', sources: codexSources, convert: codexConverter },
+  { tool: 'Antigravity', sources: antigravitySources, convert: antigravityConverter },
+]
+
 export interface LiveChat {
   path: string
   rel: string // <project key>/<session id>.jsonl, as the archive names it
   id: string
-  tool: 'Claude Code' | 'Copilot'
+  tool: Tool
   mtimeMs: number
   cwd?: string // known up front for Copilot chats
 }
@@ -96,10 +106,16 @@ export function liveChats(cfg: Pick<Config, 'claudeDir' | 'home'>, cwd: string, 
       out.push({ path, rel: `${key}/${n}`, id, tool: 'Claude Code', mtimeMs: st.mtimeMs })
     }
   }
-  for (const c of copilotSources(cfg.home)) {
-    if (skip.includes(c.id) || !under(c.cwd, roots)) continue
-    const st = statSync(c.path, { throwIfNoEntry: false })
-    if (st?.size && fresh(st.mtimeMs)) out.push({ path: c.path, rel: c.rel, id: c.id, tool: 'Copilot', mtimeMs: st.mtimeMs, cwd: c.cwd })
+  for (const o of OTHERS) {
+    let found: ReturnType<typeof o.sources> = []
+    try {
+      found = o.sources(cfg.home)
+    } catch {} // a tool that is not installed, or a folder it left half written
+    for (const c of found) {
+      if (skip.includes(c.id) || !under(c.cwd, roots)) continue
+      const st = statSync(c.path, { throwIfNoEntry: false })
+      if (st?.size && fresh(st.mtimeMs)) out.push({ path: c.path, rel: c.rel, id: c.id, tool: o.tool, mtimeMs: st.mtimeMs, cwd: c.cwd })
+    }
   }
 
   return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
@@ -143,7 +159,8 @@ export function readLive(cfg: Config, chat: LiveChat, whole = WHOLE): (Session &
   const tombs = loadTombs(cfg.memDir)
   if (cfg.excludeProjects.some((g) => globMatch(g, key)) || isForgotten(tombs, chat.rel, chat.cwd)) return null
   const { lines, partial, tailFrom } = liveLines(chat.path, whole)
-  const s = parseSession(chat.tool === 'Copilot' ? lines.flatMap(copilotConverter(chat.id, chat.cwd ?? '')) : lines, chat.id, cfg.home)
+  const convert = OTHERS.find((o) => o.tool === chat.tool)?.convert(chat.id, chat.cwd ?? '')
+  const s = parseSession(convert ? lines.flatMap(convert) : lines, chat.id, cfg.home)
   // A long chat's middle is not read: a call from its start whose result sits there is no step the chat stopped in.
   if (partial && s.openCall && Date.parse(s.openCall.at) < firstTime(lines.slice(tailFrom))) delete s.openCall
   if (!s.turns.length || isForgotten(tombs, chat.rel, s.cwd) || isOff(cfg, s.cwd)) return null

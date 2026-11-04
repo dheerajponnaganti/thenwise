@@ -117,7 +117,6 @@ export const chatSuffix = (folder: string) => `@${folder.replace(/[^\w.-]/g, '_'
 
 /** The last passage of a turn the tool stopped: it travels with the turn (store, team wire, resume) and says why the work paused. */
 export const stoppedLine = (text: string) => `(stopped by the tool: ${text})`
-export const STOPPED = /^\(stopped by the tool: (.*)\)$/m
 
 /** Questions left for the next agent and answers to them, as a turn's extra fields; {} when there are none. */
 export function questionFields(text: string): Record<string, unknown> {

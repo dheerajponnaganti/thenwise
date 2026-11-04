@@ -2,7 +2,7 @@
 // A hook never fails the chat: every error goes to the log (logs/thenwise.log in the data folder) and the exit code stays 0.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
@@ -16,8 +16,8 @@ import { repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, stopIdle, stopStamp } from './entry.ts'
-import { factLines, handoffBlock, liveLines } from './handoff.ts'
-import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
+import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
+import { alive, progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
 
 export const TRACE_TOKENS = 600
 export const RESUME_TOKENS = 1500
@@ -103,15 +103,6 @@ export function log(env: HookEnv, msg: string, lvl: Level = 'info', ev = 'note')
   logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg })
 }
 
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0)
-
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
 /** True when this process now holds the lock. A lock whose pid is dead is taken over. */
 export function takeLock(file: string, pid = process.pid): boolean {
   for (let i = 0; i < 2; i++) {
@@ -373,10 +364,17 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     const cwd = String(input.cwd ?? '')
     const cfg = loadConfigSafe().config
     if (name !== 'status' && cfg && isOff(cfg, cwd) && !(name === 'session-start' && input.source !== 'compact')) return log(env, `memory is off for ${cwd}`) ?? ''
-    if (name === 'session-end') return startSync(env) ?? '' // copy the chat before Claude Code's cleanup can delete it
+    if (name === 'session-end') {
+      const sid = input.session_id ?? input.sessionId
+      if (typeof sid === 'string' && sid) rmSync(lateMark(env.dir, sid), { force: true })
+
+      return startSync(env) ?? '' // copy the chat before Claude Code's cleanup can delete it
+    }
     if (name === 'stop' || name === 'stop-failure') {
       // A team member's chat reaches the team while it is fresh: after a reply at most every 10 minutes, at once after a cut.
-      if (stopIdle(name)) return ''
+      // Only in a project whose chats this person shares: elsewhere there is nothing to send.
+      const root = cwd ? repoRoot(cwd) : undefined
+      if (stopIdle(name) || !root || !cfg?.shareChats.some((r) => repoRoot(r) === root)) return ''
       mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
       writeFileSync(stopStamp(env.dir), new Date().toISOString(), { mode: 0o600 })
       log(env, name === 'stop' ? 'turn ended: team sync' : `turn cut off (${String(input.error_type ?? input.error?.name ?? 'error')}): team sync`, 'info', 'stop_sync')
@@ -411,6 +409,12 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
     }
     if (name === 'session-start') {
       const first = !existsSync(graph) && !running(readProgress(env.dir)) && process.env.THENWISE_SYNC !== 'off'
+      // Which agent process runs this session, so memory_resume and /thenwise:resume inside it skip exactly its own chat.
+      try {
+        if (typeof (input.session_id ?? input.sessionId) === 'string') recordAgent(env.dir, String(input.session_id ?? input.sessionId), cwd)
+      } catch (e) {
+        log(env, `agent record failed: ${e instanceof Error ? e.message : e}`, 'warn', 'agent_record') // ownChat falls back to its guess
+      }
       if (['startup', 'resume', 'clear', 'compact', 'fork'].includes(input.source)) startSync(env)
       const fresh = input.source === 'startup' || input.source === 'resume'
       // The person sees the first sync start; the agent learns its memory fills up in the background.
@@ -420,17 +424,23 @@ export function runHook(name: string, input: Record<string, any>, env: HookEnv):
       // Where another session of this project stopped, read from its live chat file: the store may not hold it yet.
       // A team member: the start's sync may fetch a teammate's chat after this brief; the first prompts look for it.
       const sid = String(input.session_id ?? '')
-      const team = fresh && sid && existsSync(join(env.dir, 'team.json'))
+      const team = fresh && sid && cwd && repoRoot(cwd) && existsSync(join(env.dir, 'team.json'))
       const markLate = (shown: string[]) => {
         mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
         writeFileSync(lateMark(env.dir, sid), JSON.stringify({ at: new Date().toISOString(), shown }), { mode: 0o600 })
       }
       if (team) markLate([])
       const t0 = Date.now()
-      const handoff = fresh && cfg && (cfg.startupBrief ?? true) && cwd ? handoffBlock(cfg, cwd, [String(input.session_id ?? '')]) : ''
-      if (handoff) log(env, `handoff built in ${Date.now() - t0} ms`, 'info', 'handoff')
+      let handoff = ''
+      try {
+        handoff = fresh && cfg && (cfg.startupBrief ?? true) && cwd ? handoffBlock(cfg, cwd, [String(input.session_id ?? '')]) : ''
+      } catch (e) {
+        log(env, `handoff failed: ${e instanceof Error ? e.message : e}`, 'warn', 'handoff_failed') // the rest of the start still goes out
+      }
+      const slow = Date.now() - t0 > 1200
+      if (handoff || slow) log(env, `handoff built in ${Date.now() - t0} ms${slow ? '; brief skipped to stay inside the hook timeout' : ''}`, 'info', 'handoff')
       // A session in a repo with recent work opens with where it stood; the rest of the history waits to be asked.
-      if (fresh && (cfg?.startupBrief ?? true) && cwd && repoRoot(cwd) && existsSync(graph)) {
+      if (fresh && !slow && (cfg?.startupBrief ?? true) && cwd && repoRoot(cwd) && existsSync(graph)) {
         const brief = query(env, ['resume', '--short', '--project', cwd]).trim()
         if (team) markLate([...brief.matchAll(/\((tses:[^)\s]+)\)/g)].map((m) => m[1]!)) // what this brief already named
 

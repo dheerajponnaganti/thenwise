@@ -64,17 +64,18 @@ export function percent(p: Progress): number {
   return Math.min(99, Math.floor(from + (p.total ? (span * p.done) / p.total : 0)))
 }
 
-/** True while a sync is running: started, not finished, and its process still alive. */
-export function running(p: Progress | null): p is Progress {
-  if (!p || p.finished) return false
+/** Whether a process lives. EPERM means it does, under another user. */
+export const alive = (pid: number) => {
   try {
-    process.kill(p.pid, 0)
+    process.kill(pid, 0)
 
     return true
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
+/** True while a sync is running: started, not finished, and its process still alive. */
+export const running = (p: Progress | null): p is Progress => !!p && !p.finished && alive(p.pid)
 
 const n = (x: number) => x.toLocaleString('en-US')
 const secs = (ms: number) => (ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`)

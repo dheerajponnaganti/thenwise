@@ -6,7 +6,7 @@ import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { resolveDataDir } from '../core/home.ts'
-import { readProgress } from '../core/progress.ts'
+import { readProgress, running } from '../core/progress.ts'
 import { claudeHookInput } from '../ingest/copilot.ts'
 
 /** The planning-with-files plan files. */
@@ -76,7 +76,7 @@ const syncToTell = () => {
   if (process.env.COPILOT_PLUGIN_ROOT) return false
   const p = readProgress(resolveDataDir())
 
-  return !!p && p.kind !== 'auto' && (!p.finished || !p.told || p.told < p.finished)
+  return !!p && p.kind !== 'auto' && (p.finished ? !p.told || p.told < p.finished : running(p)) // a killed sync has nothing to tell
 }
 
 // After each reply, a team member's sync runs at most this often, so a teammate gets the chat while it is still fresh.
@@ -86,9 +86,9 @@ export const stopStamp = (dir: string) => join(dir, 'hook-state', 'stop-sync')
 export function stopIdle(name: string, now = Date.now()): boolean {
   const dir = resolveDataDir()
   if (!existsSync(join(dir, 'team.json'))) return true
-  if (name === 'stop-failure') return false // cut off by a limit or an error: send the chat now
   try {
-    return now - statSync(stopStamp(dir)).mtimeMs < STOP_SYNC_MS
+    // Cut off by a limit or an error: send the chat now, at most once a minute (Copilot reports every error).
+    return now - statSync(stopStamp(dir)).mtimeMs < (name === 'stop-failure' ? 60_000 : STOP_SYNC_MS)
   } catch {
     return false
   }

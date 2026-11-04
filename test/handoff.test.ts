@@ -83,12 +83,12 @@ test('Copilot: an abort and a shutdown on an error stop the turn the same way', 
 // ---- the handoff block, read from live chat files in a temp home ----
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { loadConfigSafe } from '../src/ingest/config.ts'
-import { capHandoff, handoffBlock, liveChats } from '../src/hooks/handoff.ts'
+import { capHandoff, handoffBlock, liveChats, readLive } from '../src/hooks/handoff.ts'
 import { runHook } from '../src/hooks/hook.ts'
 
 const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8' })
@@ -254,7 +254,7 @@ test('a 6 MB chat gives its handoff in time', () => {
   claudeChat(w.home, w.proj, 'cc-big')
   const file = join(w.home, '.claude/projects', key(w.proj), 'cc-big.jsonl')
   const filler = JSON.stringify({ type: 'assistant', uuid: 'f', timestamp: new Date(Date.now() - 6 * 60_000).toISOString(), cwd: w.proj, entrypoint: 'cli', message: { role: 'assistant', content: [{ type: 'text', text: 'y'.repeat(2000) }] } })
-  writeFileSync(file, `${Array(3000).fill(filler).join('\n')}\n${execFileSync('cat', [file], { encoding: 'utf8' })}`)
+  writeFileSync(file, `${Array(3000).fill(filler).join('\n')}\n${readFileSync(file, 'utf8')}`)
   const t = Date.now()
   assert.match(handoffBlock(w.cfg(), w.proj), /state: stopped by the tool/)
   const ms = Date.now() - t
@@ -266,7 +266,7 @@ import { spawnSync } from 'node:child_process'
 
 import { createServer } from '../src/server/stdio.ts'
 
-test('memory_resume and `thenwise resume --here` start with the live handoff, with no store yet', () => {
+test('memory_resume and `thenwise resume --project` start with the live handoff, with no store yet', () => {
   const keep = process.env.HOME
   const w = world()
   claudeChat(w.home, w.proj, 'cc-1')
@@ -314,4 +314,76 @@ test('after a compaction, the session gets back what it did: edited files, the l
   assert.match(out, /edited in this session \(newest first\): src\/cache\.ts \(1 edit\)/)
   assert.match(out, /last test: `npm test` at .*: failed/)
   assert.match(out, /uncommitted now \(git status --short, 1 file\): M src\/cache\.ts/)
+})
+
+test('review F1: when git status gives no answer, the block says unknown and never claims a clean tree', () => {
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-1')
+  rmSync(join(w.proj, '.git'), { recursive: true, force: true }) // no repo: git status fails
+  const b = handoffBlock(w.cfg(), w.proj)
+  assert.match(b, /uncommitted now: unknown \(git status did not answer in time\)/)
+  assert.doesNotMatch(b, /uncommitted now: nothing/)
+})
+
+test('review F9: roots chosen by hand keep other projects out of the handoff; found roots let every project in', () => {
+  const w = world({ ingest: { roots: ['/somewhere/else'] } })
+  claudeChat(w.home, w.proj, 'cc-1')
+  assert.equal(handoffBlock(w.cfg(), w.proj), '')
+  writeFileSync(join(w.home, '.thenwise/config.json'), JSON.stringify({ ingest: { roots: [w.proj] } }))
+  assert.match(handoffBlock(w.cfg(), w.proj), /memory-handoff/)
+})
+
+test('review F11: a chat too long to read whole is read from its start and its end, and a call whose result is in the unread middle is no open step', () => {
+  const w = world()
+  const id = 'cc-long'
+  const r = (o: Record<string, unknown>) => JSON.stringify({ cwd: w.proj, sessionId: id, entrypoint: 'cli', ...o })
+  const t0 = Date.now() - 60 * 60_000
+  const at = (s: number) => new Date(t0 + s * 1000).toISOString()
+  const lines = [
+    r({ type: 'user', uuid: 'u1', timestamp: at(0), message: { role: 'user', content: 'Refactor the price cache' } }),
+    r({ type: 'assistant', uuid: 'a1', timestamp: at(1), message: { role: 'assistant', content: [{ type: 'tool_use', id: 'early', name: 'Read', input: { file_path: join(w.proj, 'src/cache.ts') } }] } }),
+  ]
+  const pad = 'p'.repeat(4000)
+  for (let i = 0; i < 40; i++) lines.push(r({ type: 'assistant', uuid: `m${i}`, timestamp: at(10 + i), message: { role: 'assistant', content: [{ type: 'text', text: pad }] } }))
+  lines.push(r({ type: 'user', uuid: 'r1', timestamp: at(60), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'early', content: 'ok' }] } })) // in the middle
+  for (let i = 0; i < 2600; i++) lines.push(r({ type: 'assistant', uuid: `n${i}`, timestamp: at(100 + i), message: { role: 'assistant', content: [{ type: 'text', text: pad }] } }))
+  lines.push(r({ type: 'assistant', uuid: 'z', timestamp: at(3000), message: { role: 'assistant', content: [{ type: 'text', text: 'Shards done, tests next.' }] } }))
+  const dir = join(w.home, '.claude/projects', key(w.proj))
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${id}.jsonl`), `${lines.join('\n')}\n`)
+  const s = readLive(w.cfg(), liveChats(w.cfg(), w.proj)[0]!, 1 << 20)!
+  assert.equal(s.partial, true)
+  assert.equal(s.turns[0]!.prompt, 'Refactor the price cache')
+  assert.equal(s.openCall, undefined)
+  assert.equal(s.turns.at(-1)!.reply.at(-1), 'Shards done, tests next.')
+})
+
+import { ownChat, recordAgent } from '../src/hooks/handoff.ts'
+
+test('two sessions at once: the asking session is found by its recorded agent, not guessed from the newest chat', { skip: process.platform === 'win32' }, () => {
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-asking', new Date(Date.now() - 30_000)) // this session, its last write 30 s ago
+  claudeChat(w.home, w.proj, 'cc-busy', new Date(Date.now() - 30_000 + 25_000)) // another live session, written since
+  const cfg = w.cfg()
+  // Without the record the guess skips the newest chat, which is the other session.
+  assert.deepEqual(ownChat(cfg, w.proj, true), ['cc-busy'])
+  recordAgent(cfg.memDir, 'cc-asking', w.proj)
+  assert.deepEqual(ownChat(cfg, w.proj, true), ['cc-asking'])
+  assert.match(handoffBlock(cfg, w.proj, ownChat(cfg, w.proj, true)), /chat="ses:cc-busy"/)
+})
+
+test('a tool attached with thenwise connect matches no recorded agent and skips nothing', () => {
+  const w = world()
+  claudeChat(w.home, w.proj, 'cc-1', new Date(Date.now() - 20_000))
+  assert.deepEqual(ownChat(w.cfg(), w.proj, false), [])
+})
+
+test('a Claude Code chat started in a subfolder of the repo is found; a sibling folder with a similar name is not', () => {
+  const w = world()
+  const sub = join(w.proj, 'src')
+  claudeChat(w.home, sub, 'cc-sub')
+  const sibling = `${w.proj}-old`
+  mkdirSync(sibling, { recursive: true })
+  claudeChat(w.home, sibling, 'cc-sibling')
+  assert.deepEqual(liveChats(w.cfg(), w.proj).map((c) => c.id), ['cc-sub'])
 })

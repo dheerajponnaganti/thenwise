@@ -1,8 +1,12 @@
 // The first stop for the hooks that fire on most tool calls and prompts (read, post, prompt): decides from the hook input alone whether
-// there is anything to do, before the CLI loads SQLite and the store code. Imports nothing but node:fs and node:path.
+// there is anything to do, before the CLI loads SQLite and the store code. Imports nothing but node:fs, node:path and the
+// Copilot shape mapper (which imports only those two).
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+
+import { resolveDataDir } from '../core/home.ts'
+import { claudeHookInput } from '../ingest/copilot.ts'
 
 /** The planning-with-files plan files. */
 export const STEMS = ['task_plan', 'findings', 'progress']
@@ -40,7 +44,7 @@ export async function hookInput(): Promise<Record<string, any>> {
   let raw = ''
   for await (const d of process.stdin) raw += d
   try {
-    input = JSON.parse(raw || '{}')
+    input = claudeHookInput(JSON.parse(raw || '{}'))
   } catch {
     input = {}
   }
@@ -48,10 +52,19 @@ export async function hookInput(): Promise<Record<string, any>> {
   return input!
 }
 
+/** Copilot sends no text-carrying event after it compacts a chat, so its PreCompact hook leaves this mark and the next prompt
+ * carries the resume brief. Claude Code needs none: it starts the session again with source "compact". */
+export const compactedMark = (dir: string, session: string) => join(dir, 'compacted', session.replace(/[^\w.-]/g, '_'))
+export const resumePending = (i: Record<string, any>) => {
+  const sid = i.session_id ?? i.sessionId
+
+  return !!process.env.COPILOT_PLUGIN_ROOT && typeof sid === 'string' && !!sid && existsSync(compactedMark(resolveDataDir(), sid))
+}
+
 /** True when the hook has nothing to do: a Read hook for another tool, or a Bash command that prints no single file,
  * run in a folder with no plan files. Anything else goes on to the full hook, which decides exactly. */
 export function nothingToDo(name: string, i: Record<string, any>): boolean {
-  if (name === 'prompt') return typeof i.prompt !== 'string' || !asksAboutThePast(i.prompt)
+  if (name === 'prompt') return !resumePending(i) && (typeof i.prompt !== 'string' || !asksAboutThePast(i.prompt))
   if (name === 'read') return i.tool_name !== 'Read' || typeof i.tool_input?.file_path !== 'string'
   if (name !== 'post' || i.tool_name !== 'Bash') return false
   const cmd = i.tool_input?.command

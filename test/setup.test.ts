@@ -118,7 +118,7 @@ test('S2-B1: no ~/.claude/projects says so, exits 0 and creates no store', () =>
   const home = mkdtempSync(join(tmpdir(), 'tw-empty-'))
   const r = spawnSync(process.execPath, [CLI, 'setup', '--yes'], { env: { ...process.env, HOME: home, USERPROFILE: home, THENWISE_HOME: join(home, '.thenwise') }, encoding: 'utf8' })
   assert.equal(r.status, 0)
-  assert.match(r.stdout, /no chats yet/)
+  assert.match(r.stdout, /No chats yet/)
   assert.ok(!existsSync(join(home, '.thenwise')))
 })
 

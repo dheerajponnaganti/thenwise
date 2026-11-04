@@ -19,6 +19,9 @@ export function checkVersions(root, tag) {
   if (lock.packages?.['']?.version !== version) problems.push(`package-lock.json root package version ${lock.packages?.['']?.version} differs from package.json ${version}`)
   const plugin = json('.claude-plugin/plugin.json')
   if (plugin.version !== version) problems.push(`plugin.json version ${plugin.version} differs from package.json ${version}`)
+  // Copilot CLI reads .plugin/plugin.json first, so it must say the same version.
+  const copilot = json('.plugin/plugin.json')
+  if (copilot.version !== version) problems.push(`.plugin/plugin.json version ${copilot.version} differs from package.json ${version}`)
   // A marketplace entry that carried a version would silently lose to plugin.json.
   for (const entry of json('.claude-plugin/marketplace.json').plugins ?? []) {
     if ('version' in entry) problems.push('marketplace.json carries a version; plugin.json is the single source')

@@ -73,6 +73,18 @@ test('S6-H4: the compact hook adds a resume brief of at most 1,500 tokens', () =
   assert.ok(text.length / 4 <= 1520)
 })
 
+test('under Copilot (COPILOT_PLUGIN_ROOT set) a hook answers with top-level additionalContext', () => {
+  const env = withStore()
+  process.env.COPILOT_PLUGIN_ROOT = '/plugins/thenwise'
+  try {
+    const out = JSON.parse(runHook('session-start', { source: 'compact', cwd: '/x/p' }, env))
+    assert.equal(out.hookSpecificOutput, undefined)
+    assert.match(out.additionalContext, /memory-resume/)
+  } finally {
+    delete process.env.COPILOT_PLUGIN_ROOT
+  }
+})
+
 test('S6-H5: Read adds the file history once per file per session', () => {
   const env = withStore()
   const input = { tool_name: 'Read', tool_input: { file_path: '/x/p/src/cache.ts' }, session_id: 's1', cwd: '/x/p' }
@@ -129,12 +141,16 @@ test('S6-B10: with memory off for the project, compact and Read add nothing', ()
 // npx runs once, to fetch the old Node: running every hook through it failed now and then on CI, before Node even started.
 const oldNode = existsSync('dist/cli.js') ? spawnSync('npx', ['-y', 'node@22.15.0', '-p', 'process.execPath'], { encoding: 'utf8' }) : undefined
 test('S6-B2, #43: on a Node without FTS5 the hooks stay silent, and session start tells the user once', { skip: oldNode?.status !== 0 }, () => {
-  const old = (name: string) => spawnSync(oldNode!.stdout.trim(), [resolve('dist/cli.js'), 'hook', name], { input: '{}', encoding: 'utf8' })
+  const old = (name: string, env = {}) => spawnSync(oldNode!.stdout.trim(), [resolve('dist/cli.js'), 'hook', name], { input: '{}', encoding: 'utf8', env: { ...process.env, ...env } })
   const start = old('session-start')
   assert.equal(start.status, 0, start.stderr)
   const out = JSON.parse(start.stdout)
   assert.match(out.systemMessage, /needs Node 22.16.*nodejs\.org/)
   assert.equal(out.hookSpecificOutput.additionalContext, out.systemMessage)
+  // Copilot reads additionalContext at the top level and nothing else.
+  const copilot = JSON.parse(old('session-start', { COPILOT_PLUGIN_ROOT: '/plugin' }).stdout)
+  assert.equal(copilot.hookSpecificOutput, undefined)
+  assert.match(copilot.additionalContext, /needs Node 22.16/)
   const read = old('read')
   assert.equal(read.status, 0)
   assert.equal(read.stdout + read.stderr, '')

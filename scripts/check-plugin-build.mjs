@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '../..')
 // What decides how the plugin behaves. Docs and images may differ between main and the release branch.
-export const SHIPPED = ['src', 'hooks', 'commands', 'skills', '.claude-plugin', '.mcp.json', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json']
+export const SHIPPED = ['src', 'hooks', 'commands', 'skills', '.claude-plugin', '.plugin', '.mcp.json', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json']
 
 // Bytes as committed: a checkout must not turn LF into CRLF, or a true build would look changed.
 const git = (args, env = {}) => execFileSync('git', ['-c', 'core.autocrlf=false', ...args], { encoding: 'utf8', env: { ...process.env, ...env }, maxBuffer: 1 << 28 }).trim()

@@ -1,11 +1,11 @@
 {
   "name": "thenwise",
-  "description": "Thenwise: local memory of your past Claude Code and Copilot CLI work.",
+  "description": "Thenwise: local memory of your past Claude Code, Copilot CLI and Codex work.",
   "owner": { "name": "Dheeraj Ponnaganti" },
   "plugins": [
     {
       "name": "thenwise",
-      "description": "Memory of your past Claude Code and Copilot CLI work: search, history and a resume brief, all local.",
+      "description": "Memory of your past Claude Code, Copilot CLI and Codex work: search, history and a resume brief, all local.",
       "license": "Apache-2.0",
       "source": { "source": "url", "url": "https://github.com/dheerajponnaganti/thenwise.git", "ref": "release" }
     }

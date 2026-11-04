@@ -87,3 +87,15 @@ test('the CLI writes the entry, a dry run writes nothing, and the entry starts t
   const server = spawnSync(entry.command, ['--no-warnings', ...entry.args], { input: init, encoding: 'utf8', env: { ...env, ...entry.env }, timeout: 15000 })
   assert.match(server.stdout, /memory_why/)
 })
+
+test('connect says which tools Thenwise already remembers: Codex chats join at each sync, Cursor chats do not yet', () => {
+  const said = (tool: string) => {
+    const h = home()
+    const r = spawnSync(process.execPath, [resolve('src/cli.ts'), 'connect', tool], { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, THENWISE_HOME: join(h, '.memory') } })
+    assert.equal(r.status, 0, r.stderr)
+
+    return r.stdout
+  }
+  assert.match(said('codex'), /its own chats join this memory at each sync/)
+  assert.match(said('cursor'), /its own chats are not remembered yet/)
+})

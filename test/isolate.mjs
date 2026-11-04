@@ -12,6 +12,7 @@ delete process.env.THENWISE_HOME
 delete process.env.MEMORY_HOME
 // Copilot chats are read from COPILOT_HOME when set: tests read only their temp home's .copilot.
 delete process.env.COPILOT_HOME
+delete process.env.CODEX_HOME
 // A hook in a test must never start the background sync: it would read the real ~/.claude through HOME.
 process.env.THENWISE_SYNC = 'off'
 // Code under test logs to the default data folder, which is the real one: the log test turns logging back on.

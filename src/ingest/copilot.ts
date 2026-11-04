@@ -58,6 +58,8 @@ export function claudeHookInput(raw: Record<string, any>): Record<string, any> {
   const name = i.tool_name ?? i.toolName
   if (typeof name !== 'string') return i
   let args = i.tool_input ?? i.toolArgs
+  // Codex hands a patch as { command: <patch text> }.
+  if (name === 'apply_patch' && typeof args?.command === 'string') args = args.command
   if (typeof args === 'string' && name !== 'apply_patch') {
     try {
       args = JSON.parse(args) // Copilot sends toolArgs as JSON text

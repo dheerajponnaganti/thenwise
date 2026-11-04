@@ -6,6 +6,9 @@ import { join, resolve } from 'node:path'
 
 import { expandHome } from './core/home.ts'
 
+// Tools whose own chat folders every sync reads, connected or not.
+const READS_CHATS = new Set(['codex'])
+
 const [cmd, vaultArg, dirArg] = process.argv.slice(2)
 const xp = (p: string | undefined) => (p === undefined ? undefined : expandHome(p, homedir()))
 const flag = (name: string) => {
@@ -142,7 +145,7 @@ if (cmd === 'connect') {
   apply(p)
   console.log(`${tool}: ${p.note} in ${p.file}`)
   if (p.next === null && /left alone/.test(p.note)) console.log(p.snippet)
-  else if (p.note === 'connected') console.log(`Restart ${tool} to load the memory tools. It can read this memory and what your team shared; its own chats are not remembered yet.`)
+  else if (p.note === 'connected') console.log(`Restart ${tool} to load the memory tools. It can read this memory and what your team shared; ${READS_CHATS.has(tool) ? 'its own chats join this memory at each sync' : 'its own chats are not remembered yet'}.`)
   process.exit(0)
 }
 

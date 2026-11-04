@@ -42,6 +42,17 @@ for (const [event, groups] of Object.entries(hooks)) {
   }
 }
 
+// Codex: shell strings with $PLUGIN_ROOT and a Windows form, and no pre-edit hook, for the same reason as Copilot.
+const CODEX_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'SessionEnd'])
+const codexHooks = JSON.parse(readFileSync(join(ROOT, 'hooks/codex.json'), 'utf8')).hooks
+for (const [event, entries] of Object.entries(codexHooks)) {
+  if (!CODEX_EVENTS.has(event)) problems.push(`codex.json ${event}: not an event Thenwise uses`)
+  for (const e of entries) for (const h of e.hooks) {
+    if (!/^node "\$PLUGIN_ROOT\/dist\/cli\.js" hook [a-z-]+$/.test(h.command ?? '')) problems.push(`codex.json ${event}: command ${h.command} must run the plugin's CLI`)
+    if (!/^node "%PLUGIN_ROOT%\\dist\\cli\.js" hook [a-z-]+$/.test(h.commandWindows ?? '')) problems.push(`codex.json ${event}: commandWindows ${h.commandWindows} must run the plugin's CLI`)
+  }
+}
+
 // Copilot CLI: camelCase events, exec plus args with no shell, timeoutSec. Copilot denies the tool call when a preToolUse hook
 // errors, so Thenwise registers none there: a broken install must never block an edit.
 const COPILOT_EVENTS = new Set(['sessionStart', 'userPromptSubmitted', 'postToolUse', 'preCompact', 'sessionEnd', 'agentStop', 'errorOccurred'])

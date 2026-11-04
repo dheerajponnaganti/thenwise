@@ -5,6 +5,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
+import { fileURLToPath } from 'node:url'
 
 import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
@@ -77,6 +78,8 @@ function version(): string {
   }
 }
 
+const ROOTS_ID = 'thenwise-roots'
+
 /** Codex starts a plugin's server in the plugin folder and passes on PWD, the folder the session began in.
  * shortcut: Windows sets no PWD, so answers there fall back to all projects and say so; fix it if Codex ever passes the folder. */
 function launchFolder(): string {
@@ -88,10 +91,14 @@ function launchFolder(): string {
 
 export function createServer(dbPath: () => string, fixedProject?: string) {
   // Read at each open: Copilot may start this server before it writes the session's workspace file.
-  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (copilotSessionCwd(homedir()) || launchFolder())
+  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (root || copilotSessionCwd(homedir()) || launchFolder())
+  // A client that offers MCP roots says which folder it works in. Antigravity does, and starts plugin servers in the plugin folder.
+  let root = ''
+  let askRoots = false
   let graph: Graph | undefined
   let sig = ''
   let ready = false
+  let initialized = false // the client sent notifications/initialized
 
   function open(): Graph | undefined {
     const p = dbPath()
@@ -198,16 +205,26 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
   /** The reply to one message, or null for a notification. */
   function handle(msg: unknown) {
     if (Array.isArray(msg) || typeof msg !== 'object' || msg === null || (msg as any).jsonrpc !== '2.0') return err(null, -32600, 'not a JSON-RPC 2.0 message')
-    const m = msg as { id?: unknown; method?: unknown; params?: any }
+    const m = msg as { id?: unknown; method?: unknown; params?: any; result?: any }
+    if (m.id === ROOTS_ID && typeof m.method !== 'string') {
+      const uri = m.result?.roots?.[0]?.uri
+      if (typeof uri === 'string' && uri.startsWith('file:')) {
+        root = fileURLToPath(uri)
+        sig = '' // scope the store to this folder at the next open
+      }
+
+      return null
+    }
     if (typeof m.method !== 'string') return m.id === undefined ? null : err(m.id, -32600, 'missing method')
     if (m.id === undefined || m.id === null) {
-      if (m.method === 'notifications/initialized') ready = true
+      if (m.method === 'notifications/initialized') ready = initialized = true
 
       return null
     }
     const p = typeof m.params === 'object' && m.params !== null ? m.params : {}
     if (m.method === 'initialize') {
       ready = true
+      askRoots = !!p.capabilities?.roots
       log.info('start', { v: version() })
       const asked = typeof p.protocolVersion === 'string' ? p.protocolVersion : ''
 
@@ -225,7 +242,16 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     return err(m.id, -32601, `method not found: ${m.method}`)
   }
 
-  return { handle, close }
+  /** A request this server wants to send, once: the client's working folder. */
+  function pending() {
+    // MCP lets a server send requests only after the client's initialized notification.
+    if (!askRoots || !initialized) return null
+    askRoots = false
+
+    return { jsonrpc: '2.0', id: ROOTS_ID, method: 'roots/list' }
+  }
+
+  return { handle, close, pending }
 }
 
 /** Reads lines from `input` until it ends, writes one JSON line per reply to `output`. */
@@ -245,6 +271,8 @@ export function serveStdio(input: NodeJS.ReadableStream, output: { write(s: stri
       reply = e instanceof SyntaxError ? err(null, -32700, 'parse error') : err(null, -32603, 'internal error')
     }
     if (reply) output.write(`${JSON.stringify(reply)}\n`)
+    const ask = server.pending()
+    if (ask) output.write(`${JSON.stringify(ask)}\n`)
   }
 
   return new Promise((done) => {

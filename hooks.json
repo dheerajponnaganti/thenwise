@@ -1,0 +1,48 @@
+{
+  "thenwise": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./dist/cli.js hook session-start",
+        "timeout": 5
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./dist/cli.js hook prompt",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(read_file|view_file)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./dist/cli.js hook read",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "^(edit_file|write_file|write_to_file|replace_file_content|multi_replace_file_content|run_command)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./dist/cli.js hook post",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./dist/cli.js hook session-end",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -4,6 +4,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
 import { copilotSources } from '../ingest/copilot.ts'
 
@@ -59,7 +60,7 @@ export function discoverProjects(claudeDir: string, sample = 20): FoundProject[]
     out.push({ key: e.name, chats: files.length, folder: ranked[0] ?? null, clash: ranked.slice(1) })
   }
   // Copilot CLI chats name their folder in workspace.yaml; a folder only Copilot has worked in is a project too.
-  for (const c of [...copilotSources(dirname(claudeDir)), ...codexSources(dirname(claudeDir))]) {
+  for (const c of [...copilotSources(dirname(claudeDir)), ...codexSources(dirname(claudeDir)), ...antigravitySources(dirname(claudeDir))]) {
     if (/^([a-zA-Z]:)?[\\/]?$/.test(c.cwd)) continue
     const name = c.rel.split('/')[0]!
     const p = out.find(({ key }) => key === name)

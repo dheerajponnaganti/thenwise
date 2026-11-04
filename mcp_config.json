@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "thenwise": {
+      "command": "node",
+      "args": [
+        "./dist/cli.js",
+        "mcp"
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@ import { normPath } from '../core/vault-index.ts'
 import { parseTrailers, readNotes } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
 import { globMatch } from './config.ts'
+import { ANTIGRAVITY_ENTRYPOINT } from './antigravity.ts'
 import { CODEX_ENTRYPOINT } from './codex.ts'
 import { COPILOT_ENTRYPOINT } from './copilot.ts'
 import type { Config } from './config.ts'
@@ -138,7 +139,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   // A subagent file adds turns to its parent, whose own file gives the session node.
   const dirs = editDirs(s)
   // A chat from another coding tool says so, so answers can name where they came from.
-  const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : {}
+  const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {}
   if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } })
   const done = structural(s.turns)
   for (const t of s.turns) {

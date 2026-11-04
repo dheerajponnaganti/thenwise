@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-export const TOOLS = ['codex', 'cursor', 'gemini', 'opencode'] as const
+export const TOOLS = ['antigravity', 'codex', 'cursor', 'gemini', 'opencode'] as const
 export type Tool = (typeof TOOLS)[number]
 
 export interface Plan {
@@ -24,7 +24,8 @@ export function serverCommand(node = process.execPath, cli = realpathSync(proces
 
 const fileOf = (tool: Tool, home: string, env: NodeJS.ProcessEnv): string =>
   tool === 'codex' ? join(env.CODEX_HOME || join(home, '.codex'), 'config.toml')
-    : tool === 'cursor' ? join(home, '.cursor', 'mcp.json')
+    : tool === 'antigravity' ? join(home, '.gemini', 'config', 'mcp_config.json')
+      : tool === 'cursor' ? join(home, '.cursor', 'mcp.json')
       : tool === 'gemini' ? join(home, '.gemini', 'settings.json')
         : join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode', 'opencode.json')
 

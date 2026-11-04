@@ -97,5 +97,14 @@ test('connect says which tools Thenwise already remembers: Codex chats join at e
     return r.stdout
   }
   assert.match(said('codex'), /its own chats join this memory at each sync/)
+  assert.match(said('antigravity'), /its own chats join this memory at each sync/)
   assert.match(said('cursor'), /its own chats are not remembered yet/)
+})
+
+test('antigravity writes its own config file, shared by its CLI, app and IDE, not the Gemini one', () => {
+  const h = home()
+  const p = plan('antigravity', opts(h))
+  assert.equal(p.file, join(h, '.gemini', 'config', 'mcp_config.json'))
+  apply(p)
+  assert.deepEqual(JSON.parse(readFileSync(p.file, 'utf8')).mcpServers.thenwise.args, ['/p/cli.js', 'mcp'])
 })

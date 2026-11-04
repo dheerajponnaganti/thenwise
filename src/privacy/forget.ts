@@ -11,6 +11,7 @@ import { readNotes } from '../capture/notes.ts'
 import { expandHome, legacyDir } from '../core/home.ts'
 import { normPath } from '../core/vault-index.ts'
 import { takeLock } from '../hooks/hook.ts'
+import { antigravityDirs, antigravitySources } from '../ingest/antigravity.ts'
 import { codexDir, codexSources } from '../ingest/codex.ts'
 import { copilotDir, copilotSources } from '../ingest/copilot.ts'
 import type { Config } from '../ingest/config.ts'
@@ -76,7 +77,7 @@ function chatsOf(cfg: Config): Chat[] {
   for (const root of [join(base, 'sessions'), join(base, 'claude-projects'), join(cfg.claudeDir, 'projects')]) {
     for (const p of list(root).filter((e) => e.isDirectory())) for (const e of list(join(root, p.name))) add(p.name, e.name.replace(/\.jsonl(\.gz)?$/, ''))
   }
-  for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home)]) {
+  for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home)]) {
     cwds.set(`${c.rel.split('/')[0]}/${c.id}`, c.cwd)
     add(c.rel.split('/')[0]!, c.id)
   }
@@ -238,6 +239,7 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     out(`  Claude Code's own chat files in ${join(cfg.claudeDir, 'projects')} (never touched; a tombstone keeps them out of Thenwise)`)
     out(`  Copilot CLI's own chat files in ${join(copilotDir(cfg.home), 'session-state')} (never touched; the same tombstone applies), and the copies Copilot keeps on GitHub`)
     out(`  Codex's own chat files in ${join(codexDir(cfg.home), 'sessions')} (never touched; the same tombstone applies)`)
+    out(`  Antigravity's own chat files in ${antigravityDirs(cfg.home)[0]} and its CLI and IDE folders (never touched; the same tombstone applies)`)
     out('  git history of a backed-up vault')
     out('  iCloud or Time Machine versions of any folder above')
     out('  copies teammates already pulled')

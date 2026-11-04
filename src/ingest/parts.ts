@@ -115,6 +115,10 @@ export const workDirs = (cfg: Config, dirs: string[]) => dirs.filter((d) => cfg.
 /** What one chat file gives: its nodes (merged by id), its own edges, and the commit and PR references of its turns. */
 export const chatSuffix = (folder: string) => `@${folder.replace(/[^\w.-]/g, '_')}`
 
+/** The last passage of a turn the tool stopped: it travels with the turn (store, team wire, resume) and says why the work paused. */
+export const stoppedLine = (text: string) => `(stopped by the tool: ${text})`
+export const STOPPED = /^\(stopped by the tool: (.*)\)$/m
+
 export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   const nodes = new Map<string, GNode>()
   const edges = new Map<string, GEdge>()
@@ -137,7 +141,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
     const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
     edge(tid, sid, 'part_of', t.at)
     if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)

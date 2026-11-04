@@ -59,7 +59,8 @@ export interface IngestOptions {
 // 3 (0.1.8): git history is bounded; stores holding every branch rebuild instead of marking those commits gone.
 // 4 (0.1.24): shell commands link more files and commits (Linux and Windows paths, relative paths, `git -c`), so older chats are read again.
 // 5 (0.1.25): a title word the body never says gets a passage, so existing stores rebuild to find it.
-export const STATE_VERSION = 5
+// 6 (0.2.0): a turn the tool stopped (a usage limit) ends with its stop line, and the limit text is no longer a reply.
+export const STATE_VERSION = 6
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2

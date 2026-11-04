@@ -100,6 +100,10 @@ export function copilotConverter(sessionId: string, cwd: string): (line: string)
       return blocks.length ? [row('assistant', blocks)] : []
     }
     if (d?.type === 'session.task_complete' && typeof x.summary === 'string' && x.summary) return [row('assistant', [{ type: 'text', text: x.summary }])]
+    // Copilot stopped the turn: an abort (a credit limit, a remote stop) or a shutdown on an error. Claude Code writes such a stop
+    // as an assistant row marked isApiErrorMessage, so both reach the parser the same way.
+    const stop = d?.type === 'abort' ? `stopped: ${x.reason ?? 'abort'}` : d?.type === 'session.shutdown' && x.shutdownType === 'error' ? `stopped on an error${x.errorReason ? `: ${x.errorReason}` : ''}` : ''
+    if (stop) return [row('assistant', [{ type: 'text', text: stop }], { isApiErrorMessage: true })]
     if (d?.type === 'tool.execution_complete') {
       const out = typeof x.result?.content === 'string' ? x.result.content : ''
 

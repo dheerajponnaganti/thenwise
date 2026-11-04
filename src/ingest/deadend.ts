@@ -1,6 +1,8 @@
 // Dead ends found at ingest by fixed phrase rules, no model: a sentence that records a path being given up.
 // The flag is automatic (extra.deadEnd), apart from curated dead_end notes, which only come from accepted proposals.
 
+import { createHash } from 'node:crypto'
+
 const STRONG = /\b(?:reverted|rolled back|gave up|did not work|didn'?t work|does not work anymore|made it worse|too slow|abandoned|not wanted)\b/i
 // Common in plain design talk ("use X instead of Y"), so they count only next to a past-attempt cue.
 const WEAK = /\b(?:broke|dropped|went back to|replaced by|instead of)\b/i
@@ -75,3 +77,10 @@ export function structural(turns: { id: string; changes?: { file: string; oldHas
 
 /** A prompt line `[dead-end] text`: the person says this attempt failed. */
 export const markedDeadEnd = (prompt: string): string | undefined => /^\s*\[dead-end\]\s*(\S.*)$/im.exec(prompt)?.[1]?.trim().slice(0, 300)
+
+/** `[question] text` lines: a question one agent or person leaves for whoever picks the work up next. */
+export const markedQuestions = (text: string): string[] => [...text.matchAll(/^\s*\[question\]\s*(\S.*)$/gim)].map((m) => m[1]!.trim().slice(0, 300))
+/** `[answer q-3f2a] text` or `[answer] text` lines: they close an open question, by its id or by naming it. */
+export const markedAnswers = (text: string): { id: string; text: string }[] => [...text.matchAll(/^\s*\[answer(?:\s+(q-[0-9a-f]{4}))?\]\s*(\S.*)$/gim)].map((m) => ({ id: m[1] ?? '', text: m[2]!.trim().slice(0, 300) }))
+/** A question's short id, the same everywhere it shows: q- and four hex digits of its text. */
+export const questionId = (q: string) => `q-${createHash('sha1').update(q.toLowerCase().replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 4)}`

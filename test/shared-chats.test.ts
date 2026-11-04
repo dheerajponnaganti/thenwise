@@ -345,6 +345,58 @@ test('a teammate\'s half-finished chat: the brief, resume and a late prompt say 
   }
 })
 
+test('a teammate on a file right now goes first in its hint, with the tool and the stop; a day-old one does not', () => {
+  const w = new World()
+  try {
+    const now = Date.now()
+    const t = (id: string, msAgo: number, passages: string[]) => ({ id, at: now - msAgo, line: passages[0]!, kind: 'turn' as const, passages, paths: ['src/a.ts'], shas: [], prs: [], dead_end: false, dead_kind: '' })
+    cache(w,
+      wire({ owner: 'bob', session: 'bs1', tool: 'Copilot', started_at: now - 30 * 60e3, ended_at: now - 20 * 60e3, turns: [t('b1', 20 * 60e3, ['Rework src/a.ts', "(stopped by the tool: You've hit your session limit)"])] }),
+      wire({ owner: 'ines', session: 'is1', started_at: now - 3 * 864e5, ended_at: now - 3 * 864e5, turns: [t('i1', 3 * 864e5, ['Old work on src/a.ts'])] }))
+    w.archive()
+    w.ingest('g.db')
+    const g = new Graph(w.path('g.db'))
+    g.scopeTo(w.proj)
+    const hint = trimTrace(c.trace(g, 'src/a.ts'), 'src/a.ts')
+    assert.match(hint, /<memory-history[^\n]*\n- bob \(Copilot\) worked on this file 20 min ago \(tturn:bob\/b1\); that chat was stopped by the tool/)
+    assert.doesNotMatch(hint, /ines[^\n]*worked on this file/)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('questions left with [question] stay open in the brief and resume until an [answer] closes them, from you or a teammate', () => {
+  const w = new World()
+  try {
+    const now = Date.now()
+    const at = (minAgo: number) => new Date(now - minAgo * 60e3).toISOString()
+    w.chat('own1', { turns: [{ prompt: 'Migrate the cache\n[question] why did you skip the migration test?', reply: 'ok', at: at(120) }, { prompt: '[question] should prices.json be deleted after the move?', reply: 'noted', at: at(110) }] })
+    w.chat('own2', { turns: [{ prompt: 'carry on', reply: 'Done.\n[answer] the old prices.json should be deleted after the move, yes', at: at(60) }] })
+    const q = (text: string) => ({ id: 'q9', at: now - 30 * 60e3, line: text, kind: 'turn' as const, passages: [text], paths: [], shas: [], prs: [], dead_end: false, dead_kind: '' })
+    cache(w, wire({ owner: 'bob', session: 'bs2', tool: 'Copilot', started_at: now - 40 * 60e3, ended_at: now - 30 * 60e3, turns: [q('[question] who owns the price API keys?')] }))
+    w.archive()
+    w.ingest('g.db')
+    const g = new Graph(w.path('g.db'))
+    g.scopeTo(w.proj)
+    const open = c.openQuestions(g, now - 7 * 864e5, now)
+    assert.equal(open.length, 2) // the deleted-file question was answered by naming it
+    assert.match(open[0]!, /^q-[0-9a-f]{4} from bob \(Copilot\), 30 min ago \(tturn:bob\/q9\): who owns the price API keys\?$/)
+    assert.match(open[1]!, /from a Claude Code chat, 2 h ago .*why did you skip the migration test\?/)
+    assert.match(c.resumeShort(g, 7, now), /open question q-[0-9a-f]{4} from bob/)
+    assert.match(c.resume(g, ''), /## Open questions left for the next agent/)
+    // Answered by its id.
+    const id = /^(q-[0-9a-f]{4})/.exec(open[1]!)![1]
+    w.chat('own3', { turns: [{ prompt: 'go', reply: `[answer ${id}] it needed a fixture first`, at: at(5) }] })
+    w.archive()
+    w.ingest('g.db')
+    const g2 = new Graph(w.path('g.db'))
+    g2.scopeTo(w.proj)
+    assert.deepEqual(c.openQuestions(g2, now - 7 * 864e5, now).map((l) => /tturn:bob/.test(l)), [true])
+  } finally {
+    w.destroy()
+  }
+})
+
 test('T19-B1: a planted secret and redact word in a chat never reach a teammate\'s store through the unit', () => {
   const a = new World()
   const b = new World()

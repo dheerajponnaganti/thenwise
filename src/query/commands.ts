@@ -4,6 +4,7 @@
 import { endOf, GOOD, Graph, local, localDay, queryTerms } from './engine.ts'
 import type { Hit, Node, Search } from './engine.ts'
 import { basename } from 'node:path'
+import { trigramSim } from '../capture/similar.ts'
 
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i]
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i]
@@ -346,6 +347,24 @@ function pick(g: Graph, id: string, keys: string[]) {
 }
 
 /** `offset` skips that many of the newest items (paging); `budget` is the character budget for the items, 0 for no limit. */
+/** Teammates who worked on a file in the last day, newest first, one line each: who, which tool, when, and whether their chat
+ * was stopped by the tool (so the work there may be half done). */
+export function fileMates(g: Graph, fileId: string, now = Date.now()): string[] {
+  const newest = new Map<string, Node>()
+  for (const e of g.adj.get(fileId) ?? []) {
+    const n = g.nodes.get(e.to)
+    if (!n || n.kind !== 'turn' || !n.extra?.team || now - ms(n.at) > 864e5 || !g.inScope(n)) continue
+    if (!newest.has(owner(n)) || ms(newest.get(owner(n))!.at) < ms(n.at)) newest.set(owner(n), n)
+  }
+
+  return [...newest.values()].sort((a, b) => ms(b.at) - ms(a.at)).map((n) => {
+    const last = g.bySource(n.source).filter((t) => t.kind === 'turn').sort((a, b) => ms(b.at) - ms(a.at))[0]
+    const stopped = last && STOP_LINE.test(g.fullText(last.id))
+
+    return `now: ${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''} worked on this file ${minsAgo(n.at, now)} (${n.id})${stopped ? '; that chat was stopped by the tool, so the work may be half done' : ''}`
+  })
+}
+
 export function trace(g: Graph, target: string, cap = 100, offset = 0, budget = 0): string {
   const ex = g.exact(target)
   if (!ex.length) {
@@ -354,7 +373,7 @@ export function trace(g: Graph, target: string, cap = 100, offset = 0, budget = 
     const hits = s.good.slice(0, 8).sort((a, b) => ms(b.node.at) - ms(a.node.at))
     return [`trace "${target}": no file, PR, commit or note by that name; showing ${hits.length} topic matches, newest first, grouped by date`, `searched: ${s.terms.join(' ')}`, ...grouped(hits.map((h) => ({ date: h.node.at, text: result(0, h).replace(/^0\. /, '- ') })))].join('\n\n')
   }
-  const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, cutNote()]
+  const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), cutNote()]
   const items: { date: string; text: string }[] = []
   for (const { id } of ex.slice(0, 3)) {
     const t = g.nodes.get(id)!
@@ -451,6 +470,8 @@ export function resume(g: Graph, q = ''): string {
   // Teammates' newest chats here, so their half-finished work can be picked up: the last turns of each.
   const mates = mateLatest(g, Date.now() - 7 * 864e5)
   if (mates.length) out.push("## Teammates' newest chats here", ...mates.map((l) => `- ${l}`))
+  const qs = openQuestions(g, Date.now() - 7 * 864e5, Date.now(), 5)
+  if (qs.length) out.push('## Open questions left for the next agent (answer with [answer q-xxxx] ...)', ...qs.map((l) => `- ${l}`))
   out.push(`## Open PRs${prs.length ? '' : ': none recorded'}`, ...prs.map((n) => `- ${label(g, n.id)}, opened ${n.at}, ${n.extra.url}\n   ${cut(flat(g.passages(n.id)[0]?.text ?? ''), 400)}`))
   const cwd = String(ses.extra.cwd ?? '')
   const commits = g.ofKind('commit').filter((n) => g.inScope(n) && ms(n.at) > ms(lastAt) && (cwd.includes(n.project) || on(n))).sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 10)
@@ -476,7 +497,7 @@ export function resume(g: Graph, q = ''): string {
 
   return [out[0]!, ...groups.flat()].join('\n\n')
 }
-const ORDER = ['Next on', 'Unchecked', 'Teammates', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
+const ORDER = ['Next on', 'Unchecked', 'Open questions', 'Teammates', 'Open PRs', 'Commits after', 'Latest releases', 'Last compaction', 'Check against', 'Last ', 'Newest']
 
 const STOP_LINE = /^\(stopped by the tool: (.*)\)$/m
 const minsAgo = (at: string, now: number) => {
@@ -505,6 +526,26 @@ export function mateLatest(g: Graph, since: number, now = Date.now(), max = 2): 
   })
 }
 
+type Q = { id: string; text: string }
+type A = { id: string; text: string }
+/** Questions left with `[question]` in this project's chats (yours and your teammates') since `since`, that no later
+ * `[answer]` closed, newest first. An answer closes a question by its id, or by naming it closely. */
+export function openQuestions(g: Graph, since: number, now = Date.now(), max = 3): string[] {
+  const rows = g.db.prepare(`SELECT id, at FROM nodes WHERE kind = 'turn' AND at >= ? AND (extra LIKE '%"questions":%' OR extra LIKE '%"answers":%') ORDER BY at`).all(new Date(since).toISOString()) as { id: string; at: string }[]
+  const open: { q: Q; n: Node }[] = []
+  for (const r of rows) {
+    const n = g.nodes.get(r.id)
+    if (!n || !g.inScope(n)) continue
+    for (const a of (n.extra.answers as A[] | undefined) ?? []) {
+      const i = open.findIndex((o) => (a.id ? o.q.id === a.id : trigramSim(a.text, o.q.text) >= 0.5))
+      if (i >= 0) open.splice(i, 1)
+    }
+    for (const q of (n.extra.questions as Q[] | undefined) ?? []) if (!open.some((o) => o.q.id === q.id)) open.push({ q, n })
+  }
+
+  return open.reverse().slice(0, max).map(({ q, n }) => `${q.id} from ${n.extra?.team ? `${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''}` : n.extra?.tool === 'Copilot' ? 'a Copilot chat' : 'a Claude Code chat'}, ${minsAgo(n.at, now)} (${n.id}): ${cut(q.text, 200)}`)
+}
+
 /** The startup brief: the newest session of the scope when it ended within `days`, its first prompt, what landed since
  * (commits, merged PRs) and the open PRs, at most about 200 tokens. '' when there is no recent session. */
 export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
@@ -517,6 +558,8 @@ export function resumeShort(g: Graph, days = 7, now = Date.now()): string {
   const team = mates.size ? `teammates' chats in this project since ${recent ? 'your last session' : 'this week'}: ${[...mates.values()].reduce((a, b) => a + b, 0)} (${[...mates].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([o, k]) => `${o} ${k}`).join(', ')})` : ''
   // A teammate's unfinished work from the last day, newer than your own last session: where they stopped.
   const picks = mateLatest(g, Math.max(recent ? end : 0, now - 864e5), now).map((l) => `teammate's newest chat: ${l}`)
+  // Questions left for whoever picks the work up, from the last week, still open.
+  picks.push(...openQuestions(g, now - 7 * 864e5, now, 2).map((l) => `open question ${l} (close it with [answer ${l.slice(0, 6)}] ...)`))
   if (!recent) return cut([team, ...picks].filter(Boolean).join('\n'), 800)
   const first = g.bySource(ses!.id).filter((n) => n.kind === 'turn').sort((a, b) => ms(a.at) - ms(b.at))[0]
   const out = [`last session here: ${local(ses!.until || ses!.at)} (${ses!.id}), it began with: "${cut(flat(first ? g.fullText(first.id).split('\n\n')[0] ?? '' : ses!.title), 140)}"`]

@@ -14,7 +14,7 @@ import { globMatch } from './config.ts'
 import { COPILOT_ENTRYPOINT } from './copilot.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
-import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from './deadend.ts'
+import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from './deadend.ts'
 import { githubSlug, repoRoot } from './repos.ts'
 import { readChats } from '../teams/chatcache.ts'
 import type { WireChat } from '../teams/chatcache.ts'
@@ -119,6 +119,14 @@ export const chatSuffix = (folder: string) => `@${folder.replace(/[^\w.-]/g, '_'
 export const stoppedLine = (text: string) => `(stopped by the tool: ${text})`
 export const STOPPED = /^\(stopped by the tool: (.*)\)$/m
 
+/** Questions left for the next agent and answers to them, as a turn's extra fields; {} when there are none. */
+export function questionFields(text: string): Record<string, unknown> {
+  const qs = markedQuestions(text)
+  const as = markedAnswers(text)
+
+  return { ...(qs.length ? { questions: qs.map((q) => ({ id: questionId(q), text: q })) } : {}), ...(as.length ? { answers: as } : {}) }
+}
+
 export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   const nodes = new Map<string, GNode>()
   const edges = new Map<string, GEdge>()
@@ -141,7 +149,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
     const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), ...questionFields([t.prompt, ...t.reply].join('\n')) } })
     edge(tid, sid, 'part_of', t.at)
     if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)
@@ -569,7 +577,7 @@ export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: W
       const at = iso(t.at)
       const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`
       const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {}
-      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead } }))
+      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }))
       out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} })
       if (repo) for (const p of t.paths) out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} })
     }

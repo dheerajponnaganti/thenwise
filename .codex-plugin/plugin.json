@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.1.28",
+  "version": "0.2.0",
   "description": "Memory of your past Claude Code, Copilot CLI, Codex and Antigravity work: search, history and a resume brief, all local.",
   "license": "Apache-2.0",
   "author": {

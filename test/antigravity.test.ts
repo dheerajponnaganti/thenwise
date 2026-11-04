@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 
 import { antigravityConverter, antigravitySources } from '../src/ingest/antigravity.ts'
 import { claudeHookInput } from '../src/ingest/copilot.ts'
@@ -190,10 +190,10 @@ test("the chat's workspace comes from Antigravity's index, read without leaving 
   mkdirSync(logs, { recursive: true })
   writeFileSync(join(logs, 'transcript_full.jsonl'), `${user('hi')}\n`)
   const db = new DatabaseSync(join(dir, 'conversation_summaries.db'))
-  db.exec("PRAGMA journal_mode=WAL; CREATE TABLE conversation_summaries (conversation_id TEXT, workspace_uris TEXT); INSERT INTO conversation_summaries VALUES ('C1', '[\"file:///work/repo\"]')")
+  db.exec(`PRAGMA journal_mode=WAL; CREATE TABLE conversation_summaries (conversation_id TEXT, workspace_uris TEXT); INSERT INTO conversation_summaries VALUES ('C1', '${JSON.stringify([pathToFileURL(resolve('/work/repo')).href])}')`)
   db.close()
   const before = readdirSync(dir).sort()
-  assert.equal(antigravitySources(home)[0]?.cwd, fileURLToPath('file:///work/repo'))
+  assert.equal(antigravitySources(home)[0]?.cwd, resolve('/work/repo'))
   assert.deepEqual(readdirSync(dir).sort(), before)
 })
 

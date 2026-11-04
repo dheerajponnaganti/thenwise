@@ -111,6 +111,14 @@ test('the notice shows once per version, and never tells of an older one', () =>
   writeFileSync(join(w.data, 'update-check.json'), JSON.stringify({ latest: '0.1.26', ran: '0.1.25' }))
   assert.match(updateNotice(w.cfg, '0.1.25'), /0\.1\.26 is out, you have 0\.1\.25/)
   assert.equal(updateNotice(w.cfg, '0.1.25'), '', 'once')
+  // Under Copilot CLI the update line names Copilot's command.
+  writeFileSync(join(w.data, 'update-check.json'), JSON.stringify({ latest: '0.1.26', ran: '0.1.25' }))
+  process.env.COPILOT_PLUGIN_ROOT = '/plugin'
+  try {
+    assert.match(updateNotice(w.cfg, '0.1.25'), /copilot plugin update thenwise/)
+  } finally {
+    delete process.env.COPILOT_PLUGIN_ROOT
+  }
   writeFileSync(join(w.data, 'update-check.json'), JSON.stringify({ ...w.state(), latest: '0.1.27' }))
   assert.match(updateNotice(w.cfg, '0.1.25'), /0\.1\.27 is out/)
   const old = world()

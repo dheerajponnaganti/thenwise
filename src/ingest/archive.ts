@@ -1,4 +1,4 @@
-// `memory archive`: copy Claude Code transcripts to ~/.memory/archive/sessions as gzip, every string masked.
+// `memory archive`: copy Claude Code (and Copilot CLI) transcripts to ~/.memory/archive/sessions as gzip, every string masked.
 // Sources are only ever read. Incremental by a manifest of source size, mtime and the sha256 of the masked output.
 
 import { createHash } from 'node:crypto'
@@ -11,6 +11,7 @@ import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
+import { copilotConverter, copilotSources } from './copilot.ts'
 import { withLock } from './lock.ts'
 import { isMarked } from './parts.ts'
 import { chatLines, chatText, lastMemberSize, parseSession } from './transcript.ts'
@@ -21,6 +22,8 @@ interface Source {
   size: number
   mtimeMs: number
   ctimeMs: number
+  /** A Copilot chat: makes a fresh converter to Claude Code's line shape for each read. */
+  convert?: () => (line: string) => string[]
 }
 export interface ManifestEntry {
   source: string
@@ -99,7 +102,7 @@ function slim(line: string): string | null {
 }
 
 /** Same result as maskTranscript(readFileSync(src)), read in chunks: memory stays near the longest line. Writes the gzip to `tmp` when given. */
-function streamMask(src: string, tmp: string | null, facts: boolean) {
+function streamMask(src: string, tmp: string | null, facts: boolean, convert?: (line: string) => string[]) {
   const sha = createHash('sha256')
   const unparsed: number[] = []
   const slimmed: string[] = []
@@ -116,6 +119,10 @@ function streamMask(src: string, tmp: string | null, facts: boolean) {
     batchLen = 0
   }
   const emit = (line: string, n: number) => {
+    if (convert) for (const l of convert(line)) emitOne(l, n)
+    else emitOne(line, n)
+  }
+  const emitOne = (line: string, n: number) => {
     const m = maskLine(line)
     if (m.bad) unparsed.push(n)
     const t = `${m.text}\n`
@@ -266,6 +273,10 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   const sources = new Map<string, Source>()
   collect(join(base, 'claude-projects'), sources, false)
   collect(join(cfg.claudeDir, 'projects'), sources, true)
+  for (const c of copilotSources(cfg.home)) {
+    const st = statSync(c.path)
+    sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, convert: () => copilotConverter(c.id, c.cwd) })
+  }
   const res: ArchiveResult = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 }
   if (cfg.off) return { ...res, off: sources.size }
   mkdirSync(out, { recursive: true, mode: 0o700 })
@@ -296,7 +307,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
       if (!unchanged) {
         mkdirSync(dirname(dest), { recursive: true, mode: 0o700 })
         for (let d = dirname(dest); d !== out; d = dirname(d)) chmodSync(d, 0o700)
-        st = streamMask(src.path, tmp, parts.length === 2) // a long chat is read in chunks, never whole
+        st = streamMask(src.path, tmp, parts.length === 2, src.convert?.()) // a long chat is read in chunks, never whole
       }
       const raw = unchanged ? (old.checked === check ? null : chatText(readFileSync(dest))) : st!.slim
       let info = parents.get(parts.length === 4 ? `${parts[0]}/${parts[1]}.jsonl` : '') ?? { cwd: old?.cwd ?? '', marked: false }
@@ -332,7 +343,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
           // back); masking is idempotent, so otherwise re-mask the archived copy.
           const fromSrc = existsSync(src.path) && statSync(src.path).size === old.size
           if (fromSrc) {
-            const m = streamMask(src.path, tmp, false)
+            const m = streamMask(src.path, tmp, false, src.convert?.())
             renameSync(tmp, dest)
             manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: m.sha, mask: MASK_VERSION, unparsed: m.unparsed, pending: m.pending, lines: m.lines }
           } else {
@@ -355,6 +366,17 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
       // Touched or restored with the same bytes: note the new times, keep the archived copy as it is.
       if (old && old.sha256 === masked.sha && old.mask === MASK_VERSION && existsSync(dest)) {
         rmSync(tmp, { force: true })
+        manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, pending: masked.pending }
+        for (const line of old.unparsed) res.unparsed.push({ rel, line })
+        res.skipped++
+        res.bytes += statSync(dest).size
+        continue
+      }
+      // Copilot can replace its chat file. A /rewind withdraws turns on purpose; losing turns any other way must not lose them here too.
+      // shortcut: the archived copy is kept only until the file outgrows it, merge by event id if this log line ever shows up.
+      if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !/"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8'))) {
+        rmSync(tmp, { force: true })
+        logger('archive', cfg.memDir).warn('copilot_chat_shrank', { rel, lines: masked.lines, kept: old.lines })
         manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, pending: masked.pending }
         for (const line of old.unparsed) res.unparsed.push({ rel, line })
         res.skipped++

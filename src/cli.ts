@@ -26,7 +26,7 @@ try {
   const msg = `Thenwise needs Node 22.16 or later with built-in SQLite; you have ${process.version}. Install a newer Node from https://nodejs.org, then start a new session.`
   // Hooks stay quiet, except at session start: a system message is what the user sees, the context is what Claude sees.
   if (process.argv[2] === 'hook') {
-    if (process.argv[3] === 'session-start') console.log(JSON.stringify({ systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }))
+    if (process.argv[3] === 'session-start') console.log(JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext: msg } : { systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }))
     process.exit(0)
   }
   console.error(msg)

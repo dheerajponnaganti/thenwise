@@ -28,10 +28,10 @@ const branchNote = (n: Node) => (n.kind !== 'commit' ? '' : n.extra?.unreachable
 const owner = (n: Node) => String(n.extra?.sharedBy ?? '')
 function sourceOf(n: Node): string {
   if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `chat of ${owner(n)}, ${localDay(n.at)} (team)`
-  if (n.kind === 'turn' || n.kind === 'summary') return `session ${short(n.source)} at ${local(n.at)}`
+  if (n.kind === 'turn' || n.kind === 'summary') return `${n.extra?.tool ? `${n.extra.tool} chat, ` : ''}session ${short(n.source)} at ${local(n.at)}`
   if (n.kind === 'pr') return `PR #${n.id.split('#').pop()} ${n.extra.url ?? n.source}${n.until ? `, merged ${n.until}` : `, ${n.extra.state ?? 'open'}`}`
   if (n.kind === 'commit') return `commit ${n.id.split(':').pop()!.slice(0, 7)} in ${n.project}${branchNote(n)}`
-  if (n.kind === 'session') return `session ${short(n.id)} ${local(n.at)} to ${local(n.until)}`
+  if (n.kind === 'session') return `${n.extra?.tool ? `${n.extra.tool} chat, ` : ''}session ${short(n.id)} ${local(n.at)} to ${local(n.until)}`
   if (n.kind === 'section') return `${n.source}, section dated ${n.at}`
   if (n.kind === 'team') return `shared by ${n.extra?.sharedBy ?? n.source.replace(/^team:/, '')} (team)`
   if (n.kind === 'doc') return `${n.source}, section "${cut(n.title, 60)}"${n.extra?.dateFrom === 'git' ? `, file last committed ${local(n.at)}` : ''}`
@@ -43,7 +43,7 @@ export function label(g: Graph, id: string): string {
   const d = localDay(n.at)
   if (n.extra?.team && n.kind === 'turn') return `turn of ${owner(n)} on ${d} ("${cut(flat(n.title), 60)}")`
   if (n.extra?.team && n.kind === 'session') return `chat of ${owner(n)} (${d})`
-  if (n.kind === 'turn') return `turn on ${d} ("${cut(flat(n.title), 60)}")`
+  if (n.kind === 'turn') return `${n.extra?.tool ? `${n.extra.tool} ` : ''}turn on ${d} ("${cut(flat(n.title), 60)}")`
   if (n.kind === 'summary') return `compaction summary on ${d}`
   if (n.kind === 'session') return `session ${short(n.id)} (${d})`
   if (n.kind === 'pr') return `PR #${n.id.split('#').pop()} "${cut(n.title, 60)}"`

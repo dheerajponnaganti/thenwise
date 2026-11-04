@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline'
 
 import { cloudWarning, expandHome, resolveDataDir } from '../core/home.ts'
 import { globMatch, loadConfigSafe, readConfigFile, saveConfig } from '../ingest/config.ts'
+import { copilotDir } from '../ingest/copilot.ts'
 import { OURS } from '../vault/user.ts'
 import { ghSignedIn } from './doctor.ts'
 import { discoverProjects } from './projects.ts'
@@ -74,7 +75,7 @@ export async function setup(argv: string[], home: string = homedir()): Promise<n
     const claudeDir = join(home, '.claude')
     const found = discoverProjects(claudeDir)
     if (!found.length) {
-      out(`Claude Code has no chats yet (nothing under ${join(claudeDir, 'projects')}). Run \`thenwise setup\` again after your first session.`)
+      out(`No chats yet from Claude Code or Copilot CLI (nothing under ${join(claudeDir, 'projects')} or ${join(copilotDir(home), 'session-state')}). Run \`thenwise setup\` again after your first session.`)
 
       return 0
     }

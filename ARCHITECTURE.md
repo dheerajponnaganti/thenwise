@@ -26,6 +26,7 @@ A session start and a session end run a background sync (`thenwise hook sync-run
 | `src/ingest/parts.ts` | `sessionPart`, `prPart`, `notesPart`, `curatedPart`, `docsPart`, `memoryPart` | Pure pieces of the graph build, shared by the full and incremental paths |
 | `src/ingest/ingest.ts` | `STATE_VERSION`, `signatureOf`, `storeFormat` | Full build of `graph.db`, and the choice between rebuild and update |
 | `src/ingest/incremental.ts` | `updateGraph` | Reads only what changed, and ends with the store a rebuild would give |
+| `src/ingest/copilot.ts` | `copilotSources`, `copilotConverter`, `asClaudeTool`, `claudeHookInput` | Copilot CLI chats and hook input, turned into Claude Code's format so one reader serves both |
 | `src/ingest/plans.ts` | `snapshotPlan`, `plansPart` | Keeps every version of a plan file before it is overwritten |
 | `src/ingest/config.ts` | `loadConfig`, `loadConfigSafe`, `isOff` | Reads and validates `config.json`, and answers whether a project is paused |
 | `src/ingest/repos.ts` | `repoRoot`, `projectRoot`, `discoverRepos` | Maps folders and worktrees to the project they belong to |
@@ -93,7 +94,10 @@ A session start and a session end run a background sync (`thenwise hook sync-run
 | `UserPromptSubmit` | Adds up to three pointers when a prompt asks about the past |
 | `PreToolUse` on edits | Keeps a plan version before it changes |
 | `PostToolUse` on reads and shell commands | Adds a file's dead ends and decisions |
+| `PreCompact` | Marks a compaction, so Copilot CLI gets its resume brief on the next prompt |
 | `SessionEnd` | Starts a sync |
+
+Each tool has its own thin entry and all share one code base and one data folder. Claude Code reads `.claude-plugin/plugin.json` and `hooks/hooks.json`. Copilot CLI reads `.plugin/plugin.json` first, which points it at `hooks/copilot.json`: the same hooks in Copilot's own form (`exec` plus `args`, no shell), with no pre-edit hook, because Copilot denies the edit when such a hook fails. `src/ingest/copilot.ts` turns Copilot's hook payloads and chat files into Claude Code's shapes at the door, so everything after that is shared. `.mcp.json`, `commands/` and `skills/` serve both.
 
 ## The rules that hold it together
 

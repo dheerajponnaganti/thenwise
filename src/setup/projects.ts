@@ -1,8 +1,10 @@
-// Finds the projects in Claude Code's history. A folder name under ~/.claude/projects is a lossy mangling of the
-// real path (dots, underscores, spaces and slashes all become "-"), so the real folder comes from the `cwd` field.
+// Finds the projects in Claude Code's history, and in Copilot CLI's. A folder name under ~/.claude/projects is a lossy mangling
+// of the real path (dots, underscores, spaces and slashes all become "-"), so the real folder comes from the `cwd` field.
 
 import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+
+import { copilotSources } from '../ingest/copilot.ts'
 
 export interface FoundProject {
   key: string
@@ -41,9 +43,8 @@ export function newProjectLines(claudeDir: string, roots: string[], excluded: (k
 
 export function discoverProjects(claudeDir: string, sample = 20): FoundProject[] {
   const root = join(claudeDir, 'projects')
-  if (!existsSync(root)) return []
   const out: FoundProject[] = []
-  for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+  for (const e of (existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []).sort((a, b) => (a.name < b.name ? -1 : 1))) {
     if (!e.isDirectory()) continue
     const files = readdirSync(join(root, e.name)).filter((f) => f.endsWith('.jsonl')).sort()
     if (!files.length) continue
@@ -56,6 +57,17 @@ export function discoverProjects(claudeDir: string, sample = 20): FoundProject[]
     const ranked = [...seen.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([p]) => p)
     out.push({ key: e.name, chats: files.length, folder: ranked[0] ?? null, clash: ranked.slice(1) })
   }
+  // Copilot CLI chats name their folder in workspace.yaml; a folder only Copilot has worked in is a project too.
+  for (const c of copilotSources(dirname(claudeDir))) {
+    if (/^([a-zA-Z]:)?[\\/]?$/.test(c.cwd)) continue
+    const name = c.rel.split('/')[0]!
+    const p = out.find(({ key }) => key === name)
+    if (!p) out.push({ key: name, chats: 1, folder: c.cwd, clash: [] })
+    else {
+      p.chats++
+      p.folder ??= c.cwd
+    }
+  }
 
-  return out
+  return out.sort(({ key: a }, { key: z }) => (a < z ? -1 : 1))
 }

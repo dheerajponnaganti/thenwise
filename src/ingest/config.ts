@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { expandHome, resolveDataDir } from '../core/home.ts'
 import { normPath } from '../core/vault-index.ts'
 import { discoverProjects } from '../setup/projects.ts'
+import { COPILOT_ENTRYPOINT } from './copilot.ts'
 
 export interface Config {
   home: string
@@ -199,7 +200,7 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     vault: user.vault ? { place: 'central', layout: 'shared', commit: false, ...user.vault, path: expand(user.vault.path ?? '') } : null,
     backup: { kind: 'none', push: false, ...user.backup, folders: list(user.backup?.folders, []) },
     scope: user.scope ?? 'project',
-    includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', ''],
+    includeEntrypoints: ing.include_entrypoints ?? ['cli', 'claude-vscode', 'claude-desktop', 'sdk-cli', 'sdk-ts', '', COPILOT_ENTRYPOINT],
     ingestExcludeProjects: ing.exclude_projects ?? [],
     ingestExcludeMarkers: ing.exclude_markers ?? ['[no-memory]'],
     ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,

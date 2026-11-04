@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks hooks/hooks.json against the CLI: every entry runs `thenwise hook <name>` from the plugin folder, names a hook the
+// Checks hooks/hooks.json (Claude Code) and hooks/copilot.json (Copilot CLI) against the CLI: every entry runs `thenwise hook <name>` from the plugin folder, names a hook the
 // CLI handles, sits under a known event and keeps the 3 s timeout. Exits 1 and lists each problem.
 
 import { readFileSync } from 'node:fs'
@@ -42,8 +42,32 @@ for (const [event, groups] of Object.entries(hooks)) {
   }
 }
 
+// Copilot CLI: camelCase events, exec plus args with no shell, timeoutSec. Copilot denies the tool call when a preToolUse hook
+// errors, so Thenwise registers none there: a broken install must never block an edit.
+const COPILOT_EVENTS = new Set(['sessionStart', 'userPromptSubmitted', 'postToolUse', 'preCompact', 'sessionEnd'])
+const copilot = JSON.parse(readFileSync(join(ROOT, 'hooks/copilot.json'), 'utf8'))
+if (copilot.version !== 1) problems.push('copilot.json: version must be 1')
+for (const [event, entries] of Object.entries(copilot.hooks)) {
+  if (event === 'preToolUse') problems.push('copilot.json: a preToolUse hook denies edits when Thenwise is broken')
+  else if (!COPILOT_EVENTS.has(event)) problems.push(`copilot.json ${event}: not an event Thenwise uses`)
+  for (const h of entries) {
+    if (h.matcher !== undefined) {
+      try {
+        new RegExp(h.matcher)
+      } catch {
+        problems.push(`copilot.json ${event}: matcher ${h.matcher} is not a valid pattern`)
+      }
+    }
+    const name = h.exec === 'node' && Array.isArray(h.args) && h.args[0] === SCRIPT && h.args[1] === 'hook' && h.args.length === 3 ? h.args[2] : null
+    if (h.type !== 'command') problems.push(`copilot.json ${event}: type ${h.type}, expected command`)
+    if (!name) problems.push(`copilot.json ${event}: entry must be exec "node" with args [${SCRIPT}, "hook", <name>]`)
+    else if (!handled.has(name)) problems.push(`copilot.json ${event}: hook "${name}" is not handled in src/hooks/hook.ts`)
+    if (!(h.timeoutSec > 0 && h.timeoutSec <= 3)) problems.push(`copilot.json ${event}: timeoutSec ${h.timeoutSec}, expected 1 to 3 seconds`)
+  }
+}
+
 if (problems.length) {
   console.error(`hooks check: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n${problems.map((p) => `  ${p}`).join('\n')}`)
   process.exit(1)
 }
-console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} hooks fine`)
+console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} Claude Code hooks and ${Object.values(copilot.hooks).flat().length} Copilot CLI hooks fine`)

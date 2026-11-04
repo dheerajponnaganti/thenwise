@@ -11,6 +11,7 @@ import { normPath } from '../core/vault-index.ts'
 import { parseTrailers, readNotes } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
 import { globMatch } from './config.ts'
+import { COPILOT_ENTRYPOINT } from './copilot.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
 import { commitDeadEnd, deadEnd, markedDeadEnd, structural } from './deadend.ts'
@@ -124,7 +125,9 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   const first = s.turns[0]?.prompt ?? ''
   // A subagent file adds turns to its parent, whose own file gives the session node.
   const dirs = editDirs(s)
-  if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } })
+  // A chat from another coding tool says so, so answers can name where they came from.
+  const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : {}
+  if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } })
   const done = structural(s.turns)
   for (const t of s.turns) {
     const tid = `turn:${t.id}${sfx}`
@@ -134,7 +137,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
     const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}) } })
     edge(tid, sid, 'part_of', t.at)
     if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)
@@ -143,7 +146,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     for (const u of t.prUrls) claims.push({ node: tid, kind: 'url', val: u, at: t.at, turnAt: t.at })
   }
   for (const m of s.summaries) {
-    node({ id: `sum:${m.id}${sfx}`, kind: 'summary', title: `Compaction summary of ${s.id}`, text: m.text, at: m.at, project: key, source: sid })
+    node({ id: `sum:${m.id}${sfx}`, kind: 'summary', title: `Compaction summary of ${s.id}`, text: m.text, at: m.at, project: key, source: sid, ...('tool' in tool ? { extra: tool } : {}) })
     edge(`sum:${m.id}${sfx}`, sid, 'part_of', m.at)
     if (m.continuedFrom && m.continuedFrom !== s.id) edge(sid, `ses:${m.continuedFrom}`, 'continued_from', m.at, { summary: `sum:${m.id}${sfx}` })
   }

@@ -1,13 +1,14 @@
 // `thenwise doctor` with no argument: checks the install and gives one fix line per failure. Read only.
 
 import { spawnSync } from 'node:child_process'
-import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveDataDir } from '../core/home.ts'
 import { logger, recentErrors } from '../core/log.ts'
+import { copilotDir } from '../ingest/copilot.ts'
 import { readConfigFile } from '../ingest/config.ts'
 import { diskRoom } from '../ingest/ingest.ts'
 import { updateStatus } from './update.ts'
@@ -60,8 +61,12 @@ function pluginRegistered(home: string): boolean {
     }
   }
   const claude = join(home, '.claude')
+  if ([...names(join(claude, 'plugins', 'installed_plugins.json'), (j) => j.plugins), ...names(join(claude, 'settings.json'), (j) => j.enabledPlugins)].some((k) => /thenwise/i.test(k))) return true
+  // Copilot CLI: installed-plugins/<marketplace>/<plugin>, or _direct/<plugin>.
+  const installed = join(copilotDir(home), 'installed-plugins')
+  const dirs = (d: string) => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : [])
 
-  return [...names(join(claude, 'plugins', 'installed_plugins.json'), (j) => j.plugins), ...names(join(claude, 'settings.json'), (j) => j.enabledPlugins)].some((k) => /thenwise/i.test(k))
+  return dirs(installed).some((m) => dirs(join(installed, m)).some((p) => /thenwise/i.test(p)))
 }
 
 export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: string; gh?: () => boolean; git?: () => boolean; mcp?: () => boolean } = {}): Promise<Check[]> {
@@ -109,7 +114,7 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
     checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` })
   }
 
-  add('plugin', pluginRegistered(home), 'registered with Claude Code', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise')
+  add('plugin', pluginRegistered(home), 'registered with Claude Code or Copilot CLI', 'The Thenwise plugin is not registered. In Claude Code run: /plugin install thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise')
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
   add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
   // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.

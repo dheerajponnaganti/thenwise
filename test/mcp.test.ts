@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
-import { mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
@@ -230,6 +230,34 @@ test('another clone of the same GitHub repo is this project, with no fallback to
   try {
     assert.match(ready(file, clone).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
     assert.match(ready(file, other).textOf('memory_why', { query: 'cache shards' }), /^Nothing in this project; from all projects:/)
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+})
+
+test('a slug the store keyed by a path in another form (a symlink, or backslashes on Windows) still finds its clone', () => {
+  const repo = (name: string, url: string) => {
+    const d = join(tempDir(), name)
+    mkdirSync(d)
+    execFileSync('git', ['init', '-q', d])
+    execFileSync('git', ['-C', d, 'remote', 'add', 'origin', url])
+    return realpathSync(d)
+  }
+  const a = repo('a', 'git@github.com:o/r.git')
+  const clone = repo('r-copy', 'https://github.com/o/r')
+  const link = join(tempDir(), 'via-link')
+  symlinkSync(a, link, 'junction') // a junction needs no special rights on Windows; elsewhere the type is ignored
+  const dir = tempDir()
+  const file = writeGraph(dir, '', a)
+  const db = new DatabaseSync(file)
+  // Ingest records the repo as it found it: here through the symlink, not as the real path the engine compares.
+  db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT); INSERT INTO meta VALUES ('slugs', '${JSON.stringify({ [link]: 'o/r' })}')`)
+  db.close()
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    assert.match(ready(file, clone).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
   } finally {
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home

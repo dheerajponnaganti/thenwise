@@ -199,3 +199,18 @@ export function codexSources(home: string): { rel: string; path: string; id: str
 
   return [...newest.values()].map(({ at: _at, ...s }) => s)
 }
+
+/** Whether Codex trusts Thenwise's hooks: true or false when the plugin is in Codex's config, undefined when it is not
+ * installed there. Codex runs plugin hooks only after the person trusts them in /hooks, and asks again after each update.
+ * shortcut: reads Codex's [hooks.state] keys as seen in 0.164 (`thenwise@<marketplace>:hooks/codex.json:...`), undocumented. */
+export function codexHooksTrusted(home: string): boolean | undefined {
+  let toml = ''
+  try {
+    toml = readFileSync(join(codexDir(home), 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  if (!/^\[plugins\."thenwise@[^"]+"\]/m.test(toml)) return undefined
+
+  return /^\[hooks\.state\."thenwise@[^"]+:hooks\/codex\.json:session_start[^"]*"\]/m.test(toml)
+}

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Codex and Antigravity load no plugin commands, so there a `/thenwise:` command is shown as the line that runs it.
+- A handoff starts the other chat's last reply at a whole word, and names files that chat wrote outside the repo, next to what git shows uncommitted.
+- Codex: the note about untrusted hooks says what still works (memory tools, the live handoff) and shows once, on the first memory answer, `memory_resume` included.
+- A background subagent's launch notice, and the id and usage lines at the end of a subagent's report, are no longer stored as part of the chat.
+- You can see what Thenwise does. In Claude Code and Codex a session start says what it added for the agent, such as "Thenwise added: where a Copilot session stopped 20 min ago". Copilot and Antigravity show no plugin text, so there the agent says it in one line. `/thenwise:shown` lists exactly what went to the agent this session, block by block.
+- A failed background sync or memory call is told once at the next session start, with where to look. In Codex, Thenwise says when its hooks are not trusted, and `thenwise doctor` checks it.
+- The first run says, in every tool, how many past chats Thenwise reads from which tool, where the copy lives, that secrets are masked and nothing leaves the machine, and how to pause it.
+- `/thenwise:status` opens with six lines: memory, this session, hooks, team, inbox and errors. The full detail follows.
+- `thenwise notices all|important|off`, or `notices` in config.json, sets how much Thenwise tells you. `THENWISE_NOTICES` overrides it.
 - Google Antigravity. Install with `agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin`. Chats from its CLI and app join the same memory, labelled by tool.
 - OpenAI Codex. Install with `codex plugin marketplace add dheerajponnaganti/thenwise` and `codex plugin add thenwise@thenwise`, then trust the hooks in `/hooks`. Codex chats join the same memory, labelled by tool.
 - `thenwise connect antigravity|codex|cursor|gemini|opencode` gives those tools the memory tools, so they can read this memory and what your team shared. `--dry-run` shows the change and `--remove` takes it back.
@@ -18,8 +27,6 @@
 - Leave a question for whoever picks the work up next. A line `[question] why did you skip the migration?` in any tool's chat, shows in the next agent's handoff and session brief, and in `/thenwise:resume`, with an id such as `q-3f2a`. It stays open for a week until a later chat answers it with `[answer q-3f2a] ...` or an `[answer]` line that names it. Teammates' questions show the same way.
 - Teams: when you open a file a teammate worked on in the last day, its history hint now starts with who, in which tool, how long ago, and whether their chat was stopped by the tool, so the work there may be half done.
 - Every tool now installs the plugin from one `plugin/` folder in the repo, the way claude-mem and Ponytail ship theirs. Claude Code clones once instead of twice, so the extra clone can no longer fail with a permission error on a machine with no GitHub SSH key.
-
-
 
 ## 0.1.28
 

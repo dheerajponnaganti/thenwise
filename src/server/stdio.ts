@@ -13,6 +13,8 @@ import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { handoffBlock, ownChat } from '../hooks/handoff.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
+import { addNews, forHost, setClient } from '../core/notices.ts'
+import { codexHooksTrusted } from '../ingest/codex.ts'
 import { Graph, swapPending } from '../query/engine.ts'
 import * as c from '../query/commands.ts'
 
@@ -68,7 +70,7 @@ const toolList = Object.entries(TOOLS).map(([name, t]) => {
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).replace(/\n[^\n]*$/, '')}\n(cut)` : s)
 const ok = (id: unknown, result: unknown) => ({ jsonrpc: '2.0', id, result })
 const err = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
-const text = (t: string, isError = false) => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) })
+const text = (t: string, isError = false) => ({ content: [{ type: 'text', text: forHost(t) }], ...(isError ? { isError: true } : {}) })
 
 function version(): string {
   try {
@@ -136,6 +138,16 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
   }
 
   let nudged = false
+  let codexClient = false // set from initialize: the client names itself
+  let codexTold = false
+  /** In Codex the memory server runs even when its hooks are not trusted: the first answer of a session says what still
+   * works and what the person can do, once. */
+  const codexNote = (out: string) => {
+    if (!codexClient || codexTold || codexHooksTrusted(homedir()) !== false) return out
+    codexTold = true
+
+    return `Note for the person: Thenwise's Codex hooks aren't trusted, so automatic sync and hook context are off. Memory tools still work, and memory_resume can read a live handoff. Trust Thenwise in /hooks.\n\n${out}`
+  }
   function call(name: string, a0: Record<string, unknown>) {
     const t = TOOLS[name]!
     const need = name === 'memory_asof' ? ['date', 'query'] : [field(name)]
@@ -158,7 +170,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
         const out = [note, live && `## Live handoff (read from the chat file now)\n${live}`, brief.startsWith('not recorded') && live ? '' : brief].filter(Boolean).join('\n\n') || none
         done({ chars: out.length, found: out !== none })
 
-        return text(cut(out, CAP()))
+        return text(cut(codexNote(out), CAP()))
       }
       if (!g) {
         const p = readProgress(dirname(dbPath()))
@@ -184,6 +196,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       // While the first sync or a rebuild runs, the agent must not take "not recorded" as never recorded.
       const note = incompleteNote(dirname(dbPath()))
       if (note) out = `${note}\n\n${out}`
+      out = codexNote(out)
 
       return text(cut(out, name === 'memory_read' ? 12000 : CAP()), /^asof needs an ISO date/.test(out))
     } catch (e) {
@@ -192,6 +205,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       for (const k of ['err', 'stack'] as const) if (typeof f[k] === 'string') f[k] = redact(f[k] as string, vals)
       const code = errorCode(name, String(f.err))
       log.error('tool_failed', { tool: name, code, ...f })
+      addNews(dirname(dbPath()), 'memory-tool', `a memory tool call failed (error ${code}); /thenwise:logs shows why`)
       process.stderr.write(`thenwise mcp: ${name} failed (${code}): ${f.err}\n`)
 
       const nudge = nudged ? '' : ' To tell us, run /thenwise:report.'
@@ -225,6 +239,8 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     const p = typeof m.params === 'object' && m.params !== null ? m.params : {}
     if (m.method === 'initialize') {
       ready = true
+      codexClient = /codex/i.test(String(p.clientInfo?.name ?? ''))
+      setClient(String(p.clientInfo?.name ?? ''))
       askRoots = !!p.capabilities?.roots
       log.info('start', { v: version() })
       const asked = typeof p.protocolVersion === 'string' ? p.protocolVersion : ''

@@ -1,5 +1,6 @@
 // `thenwise doctor` with no argument: checks the install and gives one fix line per failure. Read only.
 
+import { codexHooksTrusted } from '../ingest/codex.ts'
 import { spawnSync } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -124,6 +125,9 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
   }
 
   add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI, Codex or Antigravity', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise. In Antigravity run: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin')
+  // Codex runs plugin hooks only once the person trusts them in /hooks, and asks again after every plugin update.
+  const codexTrust = codexHooksTrusted(home)
+  if (codexTrust !== undefined) add('codex hooks', codexTrust, 'trusted in Codex', "Codex has not trusted Thenwise's hooks, so automatic sync and hook context are off there; memory tools still work. In Codex, open /hooks and trust them.")
   add('mcp', (opts.mcp ?? (() => mcpStarts(home)))(), 'the memory tools server starts', 'The memory tools server did not start. Run `thenwise mcp` in a terminal to see the error.')
   add('git', (opts.git ?? (() => spawnSync('git', ['--version'], { stdio: 'ignore', timeout: 5000, windowsHide: true }).status === 0))(), 'found', 'git is not installed. Thenwise reads your commits with it, on any host. Get it from https://git-scm.com')
   // gh only reads GitHub pull requests. With those off, a GitLab or Bitbucket user has nothing to fix.

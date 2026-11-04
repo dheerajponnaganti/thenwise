@@ -58,6 +58,13 @@ const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|sys
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`)
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`)
 const AGENT_TOOLS = /^(Agent|Task)$/
+/** A subagent's report without the tool's own bookkeeping: a background launch is only an acknowledgement (no report),
+ * and neither is a pointer to a report sent as a message; a report ends with its agent id and usage, which are not what
+ * the subagent found. */
+export const agentReport = (out: string): string =>
+  /^\s*(Async agent launched successfully\b|This agent's report was delivered to you as a message\b)/.test(out)
+    ? ''
+    : out.replace(/<usage>[\s\S]*?<\/usage>/g, '').split('\n').filter((l) => !/^agentId: \S+ \(/.test(l) && !/^\s*\[Harness note\b/.test(l)).join('\n').trim()
 // `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
 const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/
 const h = (s: unknown) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '')
@@ -226,7 +233,10 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
           const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined
           if (!hit) continue
           const out = textOf(b.content)
-          if (hit.kind === 'agent') out && (hit.turn.reply.push(out.slice(0, 8000)), hit.turn.agentReports.push(out.slice(0, 8000))) // a subagent's report to the turn that asked
+          if (hit.kind === 'agent') {
+            const report = agentReport(out).slice(0, 8000) // a subagent's report to the turn that asked
+            if (report) (hit.turn.reply.push(report), hit.turn.agentReports.push(report))
+          }
           else if (hit.kind === 'test') hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, ...(hit.cmd ? { cmd: hit.cmd } : {}) })
           else if (hit.kind === 'commit') {
             for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {

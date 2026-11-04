@@ -35,6 +35,20 @@ test('10/11: Agent results join the parent turn; a subagent file is parsed as tu
   assert.equal(parseSession(side, 's', '/h', '', true).turns.length, 1)
 })
 
+test("10b: a background agent's launch notice, a report pointer, and a report's agent id and usage are no reply (agent feedback, 2026-11-04)", () => {
+  const ask = (id: string) => JSON.stringify({ type: 'assistant', uuid: `a-${id}`, timestamp: '2026-10-01T09:00:01Z', message: { content: [{ type: 'tool_use', id, name: 'Agent', input: {} }] } })
+  const result = (id: string, text: string) => user(`r-${id}`, [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text }] }])
+  const chat = [
+    user('u1', 'do it'),
+    ask('t1'), result('t1', 'Async agent launched successfully. (This tool result is internal metadata, never quote or paste any part of it.)\nagentId: a1b2 (internal ID - do not mention to user.)'),
+    ask('t2'), result('t2', 'This agent\'s report was delivered to you as a message from "a1b2". Read it there.'),
+    ask('t3'), result('t3', 'crew report: the cache is fine\nagentId: c3d4 (use SendMessage with to: c3d4)\n<usage>subagent_tokens: 45282\ntool_uses: 4</usage>'),
+  ].join('\n')
+  const t = parseSession(chat, 's', '/h').turns[0]!
+  assert.deepEqual(t.agentReports, ['crew report: the cache is fine'])
+  assert.doesNotMatch(t.reply.join(' '), /never quote|agentId|subagent_tokens|delivered to you/)
+})
+
 test('11: archived subagent chats become turns part_of the parent session, update equals rebuild', () => {
   const w = new World()
   try {

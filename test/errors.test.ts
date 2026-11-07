@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -43,4 +43,41 @@ test('--help and --version print to stdout and exit 0', () => {
   const v = run(data, '--version')
   assert.equal(v.status, 0)
   assert.match(v.stdout, /^\d+\.\d+\.\d+\n$/)
+})
+
+/** A real store, made by ingest, then cut short: SQLite reads its first page and fails further in. */
+function damagedStore(dir: string): string {
+  const home = mkdtempSync(join(tmpdir(), 'tw-dmg-'))
+  const file = join(dir, 'other.db')
+  spawnSync(process.execPath, [resolve('src/cli.ts'), 'ingest', '--db', file], { encoding: 'utf8', env: { ...process.env, HOME: home, THENWISE_HOME: join(home, '.thenwise') } })
+  truncateSync(file, 4096)
+  return file
+}
+
+test('#75: a database error names the file that cannot be read, with advice that fits it, whatever --db says', () => {
+  const data = mkdtempSync(join(tmpdir(), 'tw-db-'))
+  // A --db file that is no store at all: named, and nothing about the store in the data folder, which is fine.
+  const notes = join(data, 'notes.txt')
+  writeFileSync(notes, 'not a store')
+  let r = run(data, 'search', '--db', notes, 'walrus')
+  oneLine(r, /notes\.txt cannot be read as a Thenwise store\. If it is one, it is damaged: delete it and run thenwise ingest --db .*notes\.txt to build it again/)
+  assert.doesNotMatch(r.stderr, /delete graph\.db/)
+  // A damaged Thenwise store given with --db gets the advice to rebuild it there, not to leave --db out.
+  const other = damagedStore(data)
+  r = run(data, 'search', '--db', other, 'walrus')
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /other\.db cannot be read as a Thenwise store\. If it is one, it is damaged: delete it and run thenwise ingest --db/)
+  // A command that does not read --db, with the data folder's store damaged: the store is named, the healthy --db file is not.
+  writeFileSync(join(data, 'graph.db'), 'not a database at all')
+  r = run(data, 'deadend', 'a lock deadlocks', '--db', notes.replace('notes.txt', 'none.db'))
+  oneLine(r, /The store is damaged: delete graph\.db in .* and run: thenwise ingest\./)
+  assert.doesNotMatch(r.stderr, /none\.db/)
+})
+
+test('#75: a damaged team chat cache is named as the cache, to delete and fetch again', () => {
+  const data = mkdtempSync(join(tmpdir(), 'tw-cache-'))
+  writeFileSync(join(data, 'team-chats.db'), 'not a database at all')
+  const r = run(data, 'ingest')
+  oneLine(r, /The team chat cache .*team-chats\.db is damaged: delete it, and the next team sync fetches the chats again\./)
+  assert.doesNotMatch(r.stderr, /delete graph\.db/)
 })

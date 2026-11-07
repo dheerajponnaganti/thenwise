@@ -38,6 +38,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/core/home.ts` | `resolveDataDir` | Finds the data folder |
 | `src/core/tokenize.ts` | `tokenize` | Splits text into search terms |
 | `src/core/log.ts` | `logger`, `logsCommand` | The local log, which holds no chat text |
+| `src/core/args.ts` | `flag` | Reads a command-line flag, the same way for a command and for the error that explains it |
 | `src/core/notices.ts` | `noticeLevel`, `addNews`, `takeNews`, `recordSent`, `addedLine` | What the person sees, by one rule: the news queue, the "Thenwise added" line, and what went to the agent for `/thenwise:shown` |
 | `src/core/progress.ts` | `writeProgress`, `progressLine`, `incompleteNote` | The sync's progress, for status, the hooks and the memory tools |
 | `src/query/passages.ts` | `splitPassages`, `buildPassageIndex` | Cuts text nodes into passages and indexes them in FTS5 |

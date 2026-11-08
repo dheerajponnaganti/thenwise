@@ -58,7 +58,10 @@ export function antigravityConverter(sessionId: string, cwd: string): (line: str
     if (d?.type === 'GENERIC' && open.length) {
       const id = open.shift()!
 
-      return [row('user', [{ type: 'tool_result', tool_use_id: id, content, is_error: d.status === 'ERROR' }])]
+      // A command that ran is DONE whatever it did; its own result is the line "Command exited with code N.".
+      const failed = d.status === 'ERROR' || /^Command exited with code [1-9]\d*\./m.test(content)
+
+      return [row('user', [{ type: 'tool_result', tool_use_id: id, content, is_error: failed }])]
     }
     if (d?.type === 'CHECKPOINT' && content) return [row('user', content, { isCompactSummary: true })]
 

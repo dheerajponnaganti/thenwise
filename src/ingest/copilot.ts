@@ -120,7 +120,10 @@ export function copilotConverter(sessionId: string, cwd: string): (line: string)
     if (d?.type === 'tool.execution_complete') {
       const out = typeof x.result?.content === 'string' ? x.result.content : ''
 
-      return [row('user', [{ type: 'tool_result', tool_use_id: x.toolCallId, content: out, is_error: x.success === false }])]
+      // A shell call that ran is `success: true` whatever its command did; the command's own result is its exit code.
+      const failed = x.success === false || (typeof x.shellExecution?.exitCode === 'number' && x.shellExecution.exitCode !== 0)
+
+      return [row('user', [{ type: 'tool_result', tool_use_id: x.toolCallId, content: out, is_error: failed }])]
     }
 
     return []

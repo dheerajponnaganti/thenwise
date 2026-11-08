@@ -13,6 +13,7 @@
 - `thenwise asof <date> --checkout` puts the code as it was on that date in its own folder, next to the chats of that day, so you can read both together. Your working tree is not touched. `thenwise asof --clean` removes the folders and keeps any you changed.
 - `thenwise digest` and `/thenwise:digest` show what each chat did since a time (the last 24 hours unless `--since` says otherwise): the first prompt, files edited, commits, PRs and dead ends, newest first. No model reads anything. The vault gains a Digest note per project for the last 7 days, which names changes and never chat text.
 - `thenwise export --out <file>` writes one project's chats to a single file you can hand to a contractor or a new teammate, with no team server. It holds what Teams would share (masked, redacted, repo-relative paths, no tool output, nothing marked `[no-memory]`), shows a preview first and writes only after you type yes. `thenwise import <file>` checks every chat and adds them to another memory, where answers name them as chats of the sender, marked (imported); `thenwise import --remove <name>` takes them out.
+- A chat turn in a memory answer now says what it changed, in one line: the files it edited, the commit it made and the PR it opened (`did: edited src/cache.ts; commit 4c12308 "Split the cache"`). "What did we try" is answered by what the turn did as much as by what it said. Rankings are unchanged; answers grow about 1.4%.
 
 ## 0.2.0
 

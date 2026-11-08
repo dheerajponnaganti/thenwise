@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 import { gunzipSync, gzipSync } from 'node:zlib'
 
+import { saveNote } from '../src/capture/notes.ts'
 import { dumpHash } from '../src/ingest/ingest.ts'
 import { Graph } from '../src/query/engine.ts'
 import * as c from '../src/query/commands.ts'
@@ -74,6 +75,18 @@ test('S3-H3: a note changed and a note deleted', () => {
   const db = new DatabaseSync(w.path('inc.db'), { readOnly: true })
   assert.equal(db.prepare("SELECT count(*) n FROM nodes WHERE id = 'note:Details.md'").get()!.n, 0)
   assert.ok(db.prepare("SELECT 1 FROM edges WHERE src = 'note:Plan.md' AND dst = 'note:Newer.md' AND kind = 'links_to'").get())
+})
+
+test('a curated note about files: an update equals a rebuild, also after its files change', () => {
+  const w = seeded(2)
+  const note = { id: 'n-files', type: 'decision' as const, title: 'Keep a small', summary: 'Keep a small.', status: 'active' as const, valid_from: '2026-10-01T00:00:00Z', valid_to: '', supersedes: '', sources: [], created: '2026-10-01T00:00:00Z', project: '', path: '', files: [join(w.proj, 'src/a.ts')] }
+  saveNote(w.memDir, note)
+  same(w, 'a note about a file')
+  assert.equal(w.ingest('inc.db').mode, 'unchanged', 'a second sync finds nothing new')
+  saveNote(w.memDir, { ...note, files: [join(w.proj, 'src/b.ts')] })
+  same(w, 'the note moved to another file')
+  const db = new DatabaseSync(w.path('inc.db'), { readOnly: true })
+  assert.deepEqual(db.prepare("SELECT dst FROM edges WHERE src = 'curated:n-files' AND kind = 'touches'").all().map((r: any) => r.dst), [`file:${join(w.proj, 'src/b.ts').replace(/\\/g, '/')}`])
 })
 
 test('S3-H4: new commits are added, and chats that stated them link to them', () => {

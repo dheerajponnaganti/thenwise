@@ -37,7 +37,9 @@ export function statusLines(cfg: Config, dbPath: string): string[] {
     const open = man.filter((e) => e.pending).length
     out.push(`archive: ${man.length} chat files; ${bad} lines did not parse and were skipped${open ? `; ${open} chats end in a half-written line, read on the next run` : ''}`)
   }
-  const repos: string[] = JSON.parse((all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value as string | undefined) ?? '[]')
+  // A store frozen with --until keeps no ingest state.
+  const hasState = all("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ingest_state'").length > 0
+  const repos: string[] = hasState ? JSON.parse((all("SELECT value FROM ingest_state WHERE key = 'repos'")[0]?.value as string | undefined) ?? '[]') : []
   out.push(`git: ${repos.length ? repos.join(', ') : 'no repository found in the chats working folders'}`)
   out.push(`version: ${updateStatus(cfg).line}`)
   out.push(...prStatus(cfg, repos))

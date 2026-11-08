@@ -64,8 +64,9 @@ const under = (p: string, roots: string[]) => roots.some((r) => normPath(p) === 
 /** The folder a Claude Code chat ran in, from the `cwd` of its first lines; '' when none shows there. */
 function headCwd(path: string): string {
   const b = Buffer.alloc(16 << 10)
-  const fd = openSync(path, 'r')
+  let fd: number | undefined
   try {
+    fd = openSync(path, 'r') // a chat file gone or unreadable since it was listed is skipped
     const n = readSync(fd, b, 0, b.length, 0)
     const m = /"cwd":\s*"((?:[^"\\]|\\.)*)"/.exec(b.toString('utf8', 0, n))
 
@@ -73,7 +74,7 @@ function headCwd(path: string): string {
   } catch {
     return ''
   } finally {
-    closeSync(fd)
+    if (fd !== undefined) closeSync(fd)
   }
 }
 

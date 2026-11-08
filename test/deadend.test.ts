@@ -57,12 +57,15 @@ test('PreToolUse hint comes before the first edit and is shared with Read', () =
 
 test('Codex: the files of an apply_patch get their hint before the edit, once each (agent feedback, 2026-11-04)', async () => {
   const { patchFiles } = await import('../src/hooks/hook.ts')
-  const patch = '*** Begin Patch\n*** Update File: src/cache.ts\n@@\n-a\n+b\n*** Add File: src/new.ts\n+x\n*** End Patch'
-  assert.deepEqual(patchFiles(patch), ['src/cache.ts', 'src/new.ts'])
+  const { claudeHookInput } = await import('../src/ingest/copilot.ts')
+  // The file with history comes second: a hook that saw only the first file would say nothing.
+  const patch = '*** Begin Patch\n*** Add File: src/new.ts\n+x\n*** Update File: src/cache.ts\n@@\n-a\n+b\n*** End Patch'
+  assert.deepEqual(patchFiles(patch), ['src/new.ts', 'src/cache.ts'])
   const dir = tempDir()
   writeGraph(dir)
   const env = { dir, cli: resolve('src/cli.ts') }
-  const edit = { tool_name: 'apply_patch', tool_input: { command: patch }, session_id: 's2', cwd: resolve('/x/p') }
+  // As the hook entry reads it: Codex's payload goes through the same mapper as every tool's.
+  const edit = claudeHookInput({ tool_name: 'apply_patch', tool_input: { command: patch }, session_id: 's2', cwd: resolve('/x/p') })
   const first = JSON.parse(runHook('plan', edit, env))
   assert.equal(first.hookSpecificOutput.hookEventName, 'PreToolUse')
   assert.match(first.hookSpecificOutput.additionalContext, /memory-history file="src\/cache.ts"/)

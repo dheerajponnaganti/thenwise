@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, basename, delimiter } from 'node:path'
+import { join, basename, delimiter, dirname } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync } from 'node:zlib'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -178,6 +178,19 @@ test('S7-B5: setup, archive, ingest, search, the MCP server and hooks make no ou
   assert.match(readFileSync(log, 'utf8'), /192\.0\.2\.1/)
 })
 
+test('a paused project gets no startup brief', () => {
+  const w = world()
+  spawnSync('git', ['init', '-q', join(w.work, 'alpha')]) // the brief is for a repo with recent work
+  const now = Date.now()
+  const row = (type: string, content: string, i: number) => JSON.stringify({ type, uuid: `r${i}`, timestamp: new Date(now - (60 - i) * 60e3).toISOString(), cwd: join(w.work, 'alpha'), sessionId: 'r1', entrypoint: 'cli', message: { role: type, content } })
+  writeFileSync(join(w.proj('-work-alpha'), 'r1.jsonl'), `${[row('user', 'shard the exporter cache', 0), row('assistant', 'Sharded it in four.', 1)].join('\n')}\n`)
+  w.sync()
+  const start = (dir: string, session: string) => spawnSync(process.execPath, [CLI, 'hook', 'session-start'], { env: { ...w.env, THENWISE_SYNC: 'off' }, encoding: 'utf8', input: JSON.stringify({ source: 'startup', cwd: join(w.work, dir), session_id: session }) }).stdout
+  assert.match(start('alpha', 'x'), /memory-brief/)
+  w.cli(['off', '--project', join(w.work, 'alpha')])
+  assert.doesNotMatch(start('alpha', 'y'), /memory-brief|memory-handoff/)
+})
+
 test('S7-B6: forgetting something that does not exist says so and exits 0', () => {
   const w = world()
   w.sync()
@@ -298,6 +311,10 @@ test('S7-B10: the data folder, archive, store and team file are readable by the 
   spawnSync(process.execPath, [CLI, 'hook', 'read'], { env: w.env, input: JSON.stringify({ tool_name: 'Read', session_id: 's1', cwd: join(w.work, 'alpha'), tool_input: { file_path: join(w.work, 'alpha/x.ts') } }) })
   w.cli(['forget', 'a1', '--yes'])
   writeFileSync(join(w.data, 'team.json'), '{}', { mode: 0o644 })
+  // An asof --checkout folder holds a repo's own files: their modes stay, or git sees changes and keeps the folder.
+  const script = join(w.data, 'checkouts', 'repo-abc', 'run.sh')
+  mkdirSync(dirname(script), { recursive: true })
+  writeFileSync(script, '#!/bin/sh\n', { mode: 0o755 })
   await new Promise((r) => setTimeout(r, 800))
   spawnSync(process.execPath, [CLI, 'hook', 'sync-run'], { env: w.env }) // a sync tightens what it finds
   const bad: string[] = []
@@ -305,10 +322,11 @@ test('S7-B10: the data folder, archive, store and team file are readable by the 
     const st = lstatSync(p)
     if (st.isSymbolicLink()) return
     if ((st.mode & 0o077) !== 0) bad.push(`${p} ${(st.mode & 0o777).toString(8)}`)
-    if (st.isDirectory()) for (const e of readdirSync(p)) check(join(p, e))
+    if (st.isDirectory() && p !== join(w.data, 'checkouts')) for (const e of readdirSync(p)) check(join(p, e))
   }
   check(w.data)
   assert.deepEqual(bad, [])
+  assert.equal(lstatSync(script).mode & 0o777, 0o755, 'a checkout keeps its files\' modes')
 })
 
 test('S7b-H1: backup to git commits the vault in its own repo and pushes only when asked', () => {

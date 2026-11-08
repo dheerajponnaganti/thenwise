@@ -77,6 +77,13 @@ test('S3-H5: the command line takes --project, --here and --all', async () => {
   assert.match(await run([]), / · other\b/)
 })
 
+test('status works on a store frozen with --until, which keeps no ingest state', () => {
+  const w = seeded(2)
+  w.ingest('frozen.db', { full: true, until: '2026-12-31T00:00:00Z' })
+  const lines = statusLines(w.cfg, w.path('frozen.db')).join('\n')
+  assert.match(lines, /git: no repository found/)
+})
+
 test('S3-B1: a chat rewritten shorter is read again without duplicates', () => {
   const w = seeded(3)
   w.chat('c1', { turns: [turn(1)] })

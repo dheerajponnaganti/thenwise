@@ -82,7 +82,8 @@ export function claudeHookInput(raw: Record<string, any>): Record<string, any> {
   const a = { ...(t?.input ?? {}) } as Record<string, unknown>
   for (const [from, to] of [['path', 'file_path'], ['old_str', 'old_string'], ['new_str', 'new_string'], ['file_text', 'content']] as const) if (a[to] === undefined && a[from] !== undefined) a[to] = a[from]
 
-  return { ...i, tool_name: t?.name ?? name, tool_input: a }
+  // The patch stays beside the first file, so the pre-edit hook can hint every file it names.
+  return { ...i, tool_name: t?.name ?? name, tool_input: a, ...(name === 'apply_patch' && typeof args === 'string' ? { patch: args } : {}) }
 }
 
 /** Turns one Copilot events.jsonl line into Claude Code transcript lines: prompts, replies, tool calls and their results.

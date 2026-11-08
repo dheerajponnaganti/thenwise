@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { addedLine, addNews, forHost, noticeLevel, readSent, sentFile, setClient, takeNews } from '../src/core/notices.ts'
-import { runHook, syncRun } from '../src/hooks/hook.ts'
+import { runHook, seen, syncRun } from '../src/hooks/hook.ts'
 import { codexHooksTrusted } from '../src/ingest/codex.ts'
 import { createServer } from '../src/server/stdio.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
@@ -188,4 +188,14 @@ test('Codex gets one line on memory_search to call memory before its shell; othe
   assert.deepEqual(codex.filter((t) => /before any shell command/.test(t.description)).map((t) => t.name), ['memory_search'])
   assert.ok(tools('claude-code').every((t) => !/shell command/.test(t.description)))
   setClient('')
+})
+
+test('the weekly sweep of hook state keeps the mark of news already told, so old news is not told again', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-news-'))
+  addNews(dir, 'sync-ingest', 'the ingest step failed')
+  assert.match(takeNews(dir, 'all'), /ingest step failed/)
+  const old = new Date(Date.now() - 9 * 864e5)
+  utimesSync(join(dir, 'hook-state', 'news-told'), old, old) // told nine days ago; news.jsonl was written since
+  seen({ dir, cli: 'none' }, 's1', undefined, '/x/a.ts') // a file hint runs the sweep
+  assert.equal(takeNews(dir, 'all'), '')
 })

@@ -34,6 +34,11 @@ export const makeId = (prefix: string, key: string) => `${prefix}-${createHash('
 
 const slug = (n: CNote) => `${n.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'note'}-${n.id.slice(-4)}`
 
+const flat = (t: string) => t.replace(/\s*\n\s*/g, ' ').trim()
+/** Front matter holds the summary on one line; the body below it keeps its line breaks. The body is used when it is the
+ * same text, so a list keeps its lines; when the two differ (one was edited by hand), the front matter wins. */
+const withLines = (summary: string, body: string) => (body.trim() && flat(body) === flat(summary) ? body.trim() : summary)
+
 export function readNotes(memDir: string): CNote[] {
   const out: CNote[] = []
   const root = notesDir(memDir)
@@ -42,10 +47,11 @@ export function readNotes(memDir: string): CNote[] {
     if (!(TYPES as readonly string[]).includes(t)) continue
     for (const f of readdirSync(join(root, t)).filter((x) => x.endsWith('.md')).sort()) {
       const path = join(root, t, f)
-      const d = parseFrontMatter(readFileSync(path, 'utf8')).data
+      const fm = parseFrontMatter(readFileSync(path, 'utf8'))
+      const d = fm.data
       const s = (k: string) => (d[k] == null ? '' : String(d[k]))
       if (!s('id')) continue
-      out.push({ id: s('id'), type: t as NoteType, title: s('title'), summary: s('summary'), status: (s('status') || 'inbox') as Status, valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path })
+      out.push({ id: s('id'), type: t as NoteType, title: s('title'), summary: withLines(s('summary'), fm.body), status: (s('status') || 'inbox') as Status, valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path })
     }
   }
   return out

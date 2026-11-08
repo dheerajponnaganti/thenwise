@@ -26,7 +26,7 @@ Every answer cites its source and date. A result line reads date, project and so
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.
-- `/thenwise:inbox [accept <id...> | reject <id...>]`: review the notes Thenwise proposed from your chats, commits and PRs.
+- `/thenwise:inbox [accept <id...> | reject <id...>]`: review the notes Thenwise proposed from your chats, commits and PRs. Rule proposals appear here too: when dead ends keep happening at one file in three chats or commits (a failed test, an undone edit, a revert, a closed PR), or when you wrote the same `[dead-end]` line in two chats. The background sync looks for them after each ingest that found something new, and `thenwise mine` does it now.
 - `/thenwise:logs`: the latest log lines, errors first.
 - `/thenwise:shown`: exactly what Thenwise added to the agent in this session, block by block.
 - `/thenwise:report [what happened]`: report a problem or an idea. The agent drafts it, you read every line, nothing is sent without your yes.

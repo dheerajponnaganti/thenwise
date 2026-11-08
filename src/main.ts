@@ -32,7 +32,7 @@ const flag = (name: string) => {
 }
 // Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
 for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | mine [--db <file>] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -214,6 +214,16 @@ if (cmd === 'status') {
   process.exit(0)
 }
 
+if (cmd === 'mine') {
+  const { loadConfig } = await import('./ingest/config.ts')
+  const cfg = loadConfig()
+  const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
+  if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
+  const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
+  console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
+  process.exit(0)
+}
+
 if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject' || cmd === 'edit') {
   const { loadConfig } = await import('./ingest/config.ts')
   const notes = await import('./capture/notes.ts')
@@ -228,7 +238,7 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
     console.log(`${r.proposals} proposal(s) in the inbox, ${r.dropped} dropped, ${r.calls} model call(s)`)
   } else if (cmd === 'inbox') {
     const inbox = notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox')
-    for (const n of inbox) console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`)
+    for (const n of inbox) console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary.split('\n').join('\n   ')}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`)
     console.log(`${inbox.length} note(s) in the inbox`)
   } else if (cmd === 'accept') {
     const active = new Set(notes.readNotes(cfg.memDir).filter((n) => n.status === 'active').map((n) => n.id))

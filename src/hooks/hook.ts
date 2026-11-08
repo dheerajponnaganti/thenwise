@@ -222,12 +222,13 @@ export function syncRun(env: HookEnv) {
     const vaultStamp = join(env.dir, 'vault.json')
     // The team's notes are fetched before the ingest, so this sync already makes them searchable.
     const cfgNow = loadConfigSafe().config
-    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
+    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
       // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
       if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
         continue
       }
+      if (verb === 'mine' && !changed) continue // nothing new to mine
       const t = Date.now()
       if (verb === 'team sync') writeProgress(env.dir, { phase: 'team sync', done: 0, total: 0 })
       const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir, THENWISE_PROGRESS: '1' } })

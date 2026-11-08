@@ -136,7 +136,34 @@ function turnAround(g: Graph, h: Hit): string {
   const next = sib[sib.findIndex((x) => x.id === n.id) + 1]
   const reply = next ? flat(g.fullText(next.id).split('\n\n').slice(1).join(' ')) : ''
 
-  return `${asked}${reply ? `\n   same chat, next (${next!.id}): ${cut(reply, 100)}` : ''}`
+  return `${asked}${turnDid(g, n)}${reply ? `\n   same chat, next (${next!.id}): ${cut(reply, 100)}` : ''}`
+}
+/** What a chat turn changed, from its edges: files edited, commits made, PRs opened. "What did we try" is answered by
+ * what the turn did as much as by what it said. One line, or nothing when the turn changed nothing. */
+function turnDid(g: Graph, n: Node): string {
+  const edited = new Set<string>()
+  const did: string[] = []
+  for (const e of g.adj.get(n.id) ?? []) {
+    if (!e.out) continue
+    const to = g.nodes.get(e.to)
+    if (e.kind === 'edited') {
+      const p = e.to.slice(5)
+      const r = inRoot(g, n, p)
+      edited.add(r === p ? basename(p) : r)
+    } else if (e.kind === 'made' && to) did.push(`commit ${String(to.extra?.sha ?? to.id.split(':').pop()).slice(0, 7)} "${cut(flat(to.title), 50)}"`)
+    else if (e.kind === 'opened' && to) did.push(`opened PR #${to.id.split('#').pop()}`)
+  }
+  const files = [...edited]
+  if (files.length) did.unshift(`edited ${files.slice(0, 4).join(', ')}${files.length > 4 ? ` (+${files.length - 4} more)` : ''}`)
+  return did.length ? `\n   did: ${did.slice(0, 4).join('; ')}` : ''
+}
+/** A file as its own project names it: relative to the chat's checkout, else the project root or the chat's folder (a
+ * root may be the resolved path), whichever holds it; else as stored. A chat in a subfolder and one in a worktree name
+ * the same file the same way. */
+export const inRoot = (g: Graph, turn: Node, file: string) => {
+  const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/') // file ids use forward slashes
+  const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`))
+  return root ? file.slice(root.length + 1) : file
 }
 /** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable
  * from `tools.output_chars` in config.json). More room shows more results in full. */
@@ -454,14 +481,6 @@ function failedRuns(g: Graph, where: string, args: (string | number)[]): { turn:
   } catch {
     return []
   }
-}
-/** A file as its own project names it: relative to the chat's checkout, else the project root or the chat's folder (a
- * root may be the resolved path), whichever holds it; else as stored. A chat in a subfolder and one in a worktree name
- * the same file the same way. */
-export const inRoot = (g: Graph, turn: Node, file: string) => {
-  const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/') // file ids use forward slashes
-  const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`))
-  return root ? file.slice(root.length + 1) : file
 }
 
 /** Runs counted by `by`, most often first, then newest: the top three as [name, count, last time]. */

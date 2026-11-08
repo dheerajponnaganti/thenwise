@@ -13,7 +13,8 @@ export function tighten(dir) {
         const want = st.isDirectory() ? 0o700 : 0o600;
         if ((st.mode & 0o777) !== want)
             (chmodSync(p, want), fixed++);
-        if (st.isDirectory())
+        // asof --checkout folders hold a repo's own files: chmod would drop +x and git would then refuse to remove them.
+        if (st.isDirectory() && p !== join(dir, 'checkouts'))
             for (const e of readdirSync(p))
                 walk(join(p, e));
     };

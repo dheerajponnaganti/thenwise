@@ -2,6 +2,7 @@
 // of the real path (dots, underscores, spaces and slashes all become "-"), so the real folder comes from the `cwd` field.
 import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { normPath } from "../core/vault-index.js";
 import { antigravitySources } from "../ingest/antigravity.js";
 import { codexSources } from "../ingest/codex.js";
 import { copilotSources } from "../ingest/copilot.js";
@@ -27,7 +28,8 @@ function headCwd(file) {
 /** Reads the head of up to `sample` chats per project; counts every top-level chat. */
 /** Projects in the chat history that the config's roots leave out and no exclude rule names: they are silently out of scope. */
 export function newProjectLines(claudeDir, roots, excluded) {
-    const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !roots.some((r) => p.folder === r || p.folder.startsWith(`${r}/`)));
+    const norm = roots.map(normPath); // Windows separators and a trailing slash still match
+    const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !norm.some((r) => normPath(p.folder) === r || normPath(p.folder).startsWith(`${r}/`)));
     return out.length ? [`not remembered yet: ${out.map((p) => p.folder).join(', ')}. Run \`thenwise setup\` to add ${out.length === 1 ? 'it' : 'them'}.`] : [];
 }
 // A hook process loads the config more than once and lives under a second: it scans four tools' folders once.

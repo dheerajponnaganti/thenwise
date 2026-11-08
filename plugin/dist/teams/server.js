@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { quote } from "../core/frontmatter.js";
+import { alive } from "../core/progress.js"; // EPERM counts as alive: a server under another user
 import { maskSecrets } from "../core/secrets.js";
 import { VAULT_FORMAT } from "../vault/vault.js";
 import { CSP, serveConsole } from "./console.js";
@@ -866,12 +867,3 @@ export function restoreTeam(dir, file) {
     openTeamDb(dir).close(); // an older backup migrates now
     return { schema: at, kept };
 }
-const alive = (pid) => {
-    try {
-        process.kill(pid, 0);
-        return true;
-    }
-    catch {
-        return false;
-    }
-};

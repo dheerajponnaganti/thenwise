@@ -305,7 +305,7 @@ function update(db, cfg, opts, dbPath) {
     for (const r of prRes.removed)
         (S.keys.add(`pr\0${r.id.split('#').pop()}`), S.claimKeys.add(`url\0${JSON.parse(r.extra).url}`));
     S.applyLayer(['note:'], ['part_of', 'links_to'], notesPart(cfg));
-    S.applyLayer(['curated:'], ['derived_from', 'supersedes'], curatedPart(cfg));
+    S.applyLayer(['curated:'], ['derived_from', 'supersedes', 'touches'], curatedPart(cfg));
     S.applyLayer(['team:'], [], teamPart(cfg));
     const teamIn = teamChats(cfg);
     S.applyLayer(['tses:', 'tturn:', 'tsum:'], ['part_of', 'read'], teamChatsPart(cfg, repos, teamIn));

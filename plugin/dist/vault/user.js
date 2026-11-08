@@ -1,7 +1,8 @@
 // Rules for the notes people write in a vault: Thenwise reads them and never changes them.
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
+import { normPath } from "../core/vault-index.js";
 import { walk } from "../ingest/parts.js";
 export const OURS = '_thenwise';
 const COPY = /^(.+) (\d+)\.md$/;
@@ -39,7 +40,7 @@ export function skippedNotes(vaults) {
         const files = [];
         walk(v, (n) => n.endsWith('.md'), files);
         for (const f of files) {
-            const why = skipReason(f, f.slice(v.length + 1));
+            const why = skipReason(f, normPath(relative(v, f)));
             if (why && why !== 'generated')
                 out.push(`${why}: ${f}`);
         }

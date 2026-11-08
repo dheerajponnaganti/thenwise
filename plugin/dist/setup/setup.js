@@ -35,6 +35,12 @@ export async function setup(argv, home = homedir()) {
     const val = (n) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : undefined);
     const has = (n) => argv.includes(`--${n}`);
     const list = (n) => (val(n) === undefined ? undefined : val(n).split(',').map((x) => x.trim()).filter((x) => x && x !== 'none'));
+    // A value flag given with no value is an input error, as in every other command: `--notes --yes` must not write "--yes".
+    for (const n of ['backup', 'backup-folders', 'drop', 'layout', 'notes', 'place', 'projects', 'vault-path']) {
+        const v = val(n);
+        if (has(n) && (v === undefined || v.startsWith('--')))
+            return (console.error(`--${n} needs a value`), 2);
+    }
     const yes = has('yes') || has('y');
     const out = (s = '') => console.log(s);
     const lines = [];

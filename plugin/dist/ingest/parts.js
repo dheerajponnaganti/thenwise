@@ -2,7 +2,7 @@
 // function of its inputs, so both paths produce the same nodes and edges.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { basename, dirname, join, posix } from 'node:path';
+import { basename, dirname, join, posix, relative } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
 import { maskSecrets } from "../core/secrets.js";
 import { normPath } from "../core/vault-index.js";
@@ -208,8 +208,33 @@ export function datedSections(body) {
     out.preamble = marks.length ? body.slice(0, marks[0].at) : body;
     return out;
 }
-/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime, and which one it was. */
-function fileDated(f) {
+/** The last commit date of every file under a folder in a git repo, from one `git log` (newest first, so the first date
+ * seen for a file wins). Empty outside a repo or when git fails; those files fall back to their mtime. */
+export function gitDates(dir) {
+    const out = new Map();
+    if (!repoRoot(dir))
+        return out;
+    try {
+        const log = execFileSync('git', ['-C', dir, '-c', 'core.quotePath=false', 'log', '--format=%x1e%aI', '--name-only', '--relative', '--', '.'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000, maxBuffer: 256 << 20, windowsHide: true });
+        for (const block of log.split('\x1e')) {
+            const [date, ...names] = block.trim().split('\n');
+            if (!date || Number.isNaN(Date.parse(date)))
+                continue;
+            for (const n of names)
+                if (n.trim() && !out.has(normPath(join(dir, n.trim()))))
+                    out.set(normPath(join(dir, n.trim())), iso(Date.parse(date)));
+        }
+    }
+    catch { } // git missing or slow: the files' mtimes are the dates
+    return out;
+}
+/** No front-matter date: the file's last commit when it sits in a git repo, else its mtime, and which one it was. With
+ * `dates` (from gitDates of its folder) no git process starts for the file. */
+function fileDated(f, dates) {
+    if (dates) {
+        const at = dates.get(normPath(f));
+        return at ? { at, from: 'git' } : { at: iso(statSync(f).mtimeMs), from: 'mtime' };
+    }
     if (repoRoot(dirname(f))) {
         try {
             const out = execFileSync('git', ['-C', dirname(f), 'log', '-1', '--format=%aI', '--', f], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim();
@@ -220,7 +245,6 @@ function fileDated(f) {
     }
     return { at: iso(statSync(f).mtimeMs), from: 'mtime' };
 }
-const fileDate = (f) => fileDated(f).at;
 export function notesPart(cfg, until) {
     const nodes = [];
     const edges = [];
@@ -228,8 +252,9 @@ export function notesPart(cfg, until) {
     for (const vault of cfg.vaults) {
         const files = [];
         walk(vault, (n) => n.endsWith('.md'), files);
+        const dates = gitDates(vault); // one git process per vault, not one per note
         for (const f of files) {
-            const rel = normPath(f.slice(vault.length + 1));
+            const rel = normPath(relative(vault, f)); // a vault written with a trailing slash names its notes the same
             if (rel.startsWith(GENERATED))
                 continue; // `memory views` output: the memory never reads its own output
             const raw = readFileSync(f, 'utf8');
@@ -240,7 +265,7 @@ export function notesPart(cfg, until) {
             const title = String(fm.data.title ?? h1 ?? basename(f, '.md'));
             const date = fm.data.date ?? fm.data.created;
             // Template placeholders such as {{date}} are not dates.
-            const edited = fileDate(f);
+            const edited = fileDated(f, dates).at;
             const at = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date) ? date : edited;
             if (cut(at, until))
                 continue;
@@ -353,7 +378,7 @@ export function docsPart(cfg) {
             continue;
         seenDocs.add(content);
         const { at, from } = fileDated(f);
-        sections(content).forEach((s, n) => out.nodes.push(fullNode({ id: `doc:${f}#${n}`, kind: 'doc', title: s.title || basename(dirname(f)), text: s.text, at, source: f, extra: { dateFrom: from } })));
+        sections(content).forEach((s, n) => out.nodes.push(fullNode({ id: `doc:${normPath(f)}#${n}`, kind: 'doc', title: s.title || basename(dirname(f)), text: s.text, at, source: normPath(f), extra: { dateFrom: from } })));
     }
     return out;
 }
@@ -392,7 +417,7 @@ export function memoryPart(cfg, keys, memoryFrom) {
         for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
             const raw = readFileSync(join(dir, f), 'utf8');
             const fm = parseFrontMatter(raw);
-            out.nodes.push(fullNode({ id: `mem:${key}/${f}`, kind: 'memory', title: String(fm.data.name ?? basename(f, '.md')), text: fm.body.trim(), at: iso(statSync(join(dir, f)).mtimeMs), project: key, source: join(dir, f) }));
+            out.nodes.push(fullNode({ id: `mem:${key}/${f}`, kind: 'memory', title: String(fm.data.name ?? basename(f, '.md')), text: fm.body.trim(), at: iso(statSync(join(dir, f)).mtimeMs), project: key, source: normPath(join(dir, f)) }));
         }
     }
     return out;

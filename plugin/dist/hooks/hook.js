@@ -176,9 +176,12 @@ function startSync(env) {
     if (process.env.THENWISE_SYNC === 'off')
         return log(env, 'sync off (THENWISE_SYNC=off)');
     const lock = join(env.dir, 'sync.lock');
-    const held = existsSync(lock) ? Number(readFileSync(lock, 'utf8').trim()) : 0;
-    if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS)
-        return log(env, 'sync already running');
+    try {
+        const held = Number(readFileSync(lock, 'utf8').trim());
+        if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS)
+            return log(env, 'sync already running');
+    }
+    catch { } // no lock, or it was released just now: start one
     mkdirSync(env.dir, { recursive: true });
     // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
     spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } }).unref();
@@ -312,8 +315,9 @@ const statePath = (env, session, agent) => join(env.dir, 'hook-state', `${`${ses
 export function seen(env, session, agent, file) {
     const dir = join(env.dir, 'hook-state');
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // news-told stays: without it every line still in news.jsonl would be told again.
     for (const f of readdirSync(dir))
-        if (Date.now() - (statSync(join(dir, f), { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) > STATE_DAYS * 864e5)
+        if (f !== 'news-told' && Date.now() - (statSync(join(dir, f), { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) > STATE_DAYS * 864e5)
             rmSync(join(dir, f), { force: true });
     const path = statePath(env, session, agent);
     return existsSync(path) && readFileSync(path, 'utf8').split('\n').includes(file);
@@ -557,6 +561,8 @@ function hookReply(name, input, env) {
             }
             if (['startup', 'resume', 'clear', 'compact', 'fork'].includes(input.source))
                 startSync(env);
+            if (cfg && isOff(cfg, cwd))
+                return log(env, `memory is off for ${cwd}: sync only`) ?? ''; // no brief or handoff for a paused project
             const fresh = input.source === 'startup' || input.source === 'resume';
             const level = noticeLevel(cfg);
             // First run: the person learns what is read, where it goes and how to pause it, once per install, in every tool
@@ -615,9 +621,10 @@ function hookReply(name, input, env) {
             const block = resumeAfterCompact(env, cwd, graph, currentTail(input.transcript_path, cwd, codex ? codexConverter(sid, cwd) : undefined));
             return block === '' ? '' : send(block);
         }
-        if (name === 'plan' && input.tool_name === 'apply_patch') {
+        const patch = typeof input.patch === 'string' ? input.patch : input.tool_name === 'apply_patch' ? input.tool_input?.command : undefined;
+        if (name === 'plan' && typeof patch === 'string') {
             // Codex: one patch can touch several files; each gets its once-per-file hint before the edit, in one reply.
-            const files = typeof input.tool_input?.command === 'string' ? patchFiles(input.tool_input.command).slice(0, 3).map((f) => resolve(cwd || '.', f)) : [];
+            const files = patchFiles(patch).slice(0, 3).map((f) => resolve(cwd || '.', f));
             if (cfg)
                 for (const f of files)
                     snapshotBefore(cfg, f, cwd);

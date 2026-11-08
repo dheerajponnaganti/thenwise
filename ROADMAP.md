@@ -21,8 +21,9 @@ Thenwise 1.0 works in every major coding tool the way it works in Claude Code to
 | **0.1.26** | Far less memory for a full rebuild on long chats |
 | **0.1.27** | Pointers for more past questions and long prompts, a clear notice for a too old Node, steadier team sync |
 | **0.1.28** | No console windows on Windows, resume about this project only, answers that name the memory tools |
-| **0.2.0** | GitHub Copilot CLI |
-| **0.3.0** | OpenAI Codex |
+| **0.2.0** | GitHub Copilot CLI, OpenAI Codex and Google Antigravity, with a handoff between them |
+| **0.3.0** | A memory of what each chat did: test history before an edit and after a run, decisions rechecked when their files change, rule proposals from repeated dead ends, a digest, what the chats cost, the code of a past day, and a project handed over in one file |
+| **0.4.0** | Cursor |
 | **1.0** | Every listed tool working as well as Claude Code, one memory across them, and mixed-tool teams |
 
 ## Have a say

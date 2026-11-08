@@ -12,6 +12,7 @@ Your memory lives on your disk and nowhere else, whichever tool wrote it.
 | Commits from every branch, and pull requests if you like | Tool noise in search: file dumps, long command output and images are not indexed |
 | Your CLAUDE.md files, dated, so an old rule and its replacement are told apart | Projects you leave out in `thenwise setup` |
 | Every version of your plans, and the notes folders you list | Your own notes are read, never rewritten |
+| What each chat did: the files it edited, with short fingerprints of the changed text, its test runs (the command masked, whether it failed), and the token counts and cost its tool recorded | File contents: never kept, only those fingerprints |
 
 ## Where everything lives
 
@@ -19,6 +20,7 @@ The data folder is `~/.thenwise`, or `THENWISE_HOME`. Folders are 0700 and files
 
 - `archive/`: a masked copy of your Claude Code, Copilot CLI, Codex and Antigravity chats, and `archive/plans/` for plan versions.
 - `graph.db`: the search store, built from the archive, git history and notes.
+- `checkouts/`: code of a past day from `thenwise asof --checkout`, until `thenwise asof --clean` removes it. Uninstall reminds you to run it first.
 - `notes/`: notes you accepted from `distill`, with its state and log.
 - `prs-cache.json` (only if PRs are on), `backup.json`, `vault.json`, `team-server/` (only if you host a team), `config.json`, `logs/` (no chat text, notes or queries), `hook-state/`, `forgotten.json`, `team.json` (only if you join a team).
 

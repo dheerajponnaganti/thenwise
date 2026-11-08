@@ -12,6 +12,7 @@ import { syncTrailers } from "../capture/notes.js";
 import { errFields, logger } from "../core/log.js";
 import { buildLanguage } from "../query/language.js";
 import { buildPassageIndex } from "../query/passages.js";
+import { buildFactIndex } from "./facts.js";
 import { loadTombs, underFolder } from "../privacy/tombstones.js";
 import { globMatch, isOff } from "./config.js";
 import { updateGraph } from "./incremental.js";
@@ -31,7 +32,9 @@ export { GENERATED, datedSections } from "./parts.js";
 //   a background subagent's launch notice and a report's agent id and usage are no reply either.
 //   A turn records its prompt's length, so results can label a passage that holds only the person's words.
 //   A commit sentence about dead ends themselves is no dead end.
-export const STATE_VERSION = 6;
+// 7 (0.3.0): turns keep their edits and test runs, for the `changes` and `tests` tables.
+// 8 (0.3.0): sessions keep their cost and its running total over time; an edit whose call failed is no edit (#78).
+export const STATE_VERSION = 8;
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2;
@@ -474,6 +477,7 @@ function writeDb(path, g, meta, state) {
         db.prepare('INSERT INTO meta VALUES (?,?)').run(k, String(v));
     db.exec("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')");
     buildPassageIndex(db);
+    buildFactIndex(db);
     buildLanguage(db);
     if (state) {
         db.exec(STATE_SCHEMA);
@@ -508,7 +512,7 @@ function writeDb(path, g, meta, state) {
 export function dumpHash(path) {
     const db = new DatabaseSync(path, { readOnly: true });
     const h = createHash('sha256');
-    for (const [sql, tag] of [['SELECT * FROM nodes ORDER BY id', 'n'], ['SELECT * FROM edges ORDER BY src, dst, kind', 'e'], ['SELECT * FROM meta ORDER BY key', 'm'], ['SELECT * FROM passages ORDER BY pid', 'p'], ['SELECT * FROM synonyms ORDER BY word, syn', 's'], ['SELECT * FROM vocab ORDER BY word', 'v']])
+    for (const [sql, tag] of [['SELECT * FROM nodes ORDER BY id', 'n'], ['SELECT * FROM edges ORDER BY src, dst, kind', 'e'], ['SELECT * FROM meta ORDER BY key', 'm'], ['SELECT * FROM passages ORDER BY pid', 'p'], ['SELECT node, file, old, new, at, undone FROM changes ORDER BY node, at, file, old, new, undone', 'c'], ['SELECT node, key, at, failed, cmd, after FROM tests ORDER BY node, at, key, cmd, failed, after', 't'], ['SELECT * FROM synonyms ORDER BY word, syn', 's'], ['SELECT * FROM vocab ORDER BY word', 'v']])
         for (const row of db.prepare(sql).all())
             h.update(`${tag}${JSON.stringify(row)}\n`);
     db.close();

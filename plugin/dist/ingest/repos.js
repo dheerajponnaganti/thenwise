@@ -4,6 +4,21 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { normPath } from "../core/vault-index.js";
+const tops = new Map();
+/** The checkout a folder is in (a worktree's own folder, not its main repo), spelled as the folder is; '' when none. */
+export function checkoutTop(dir) {
+    let top = tops.get(dir);
+    if (top === undefined) {
+        top = '';
+        for (let d = dir; d && d !== dirname(d); d = dirname(d))
+            if (existsSync(join(d, '.git'))) {
+                top = d;
+                break;
+            }
+        tops.set(dir, top);
+    }
+    return top;
+}
 /** The main repository folder that holds `dir`. A linked worktree maps to its main repo (what `--git-common-dir` gives). */
 export function repoRoot(dir) {
     for (let d = resolve(dir);; d = dirname(d)) {

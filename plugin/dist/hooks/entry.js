@@ -4,6 +4,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDataDir } from "../core/home.js";
+import { isTestRun } from "../core/testrun.js";
 import { readProgress, running } from "../core/progress.js";
 import { claudeHookInput } from "../ingest/copilot.js";
 /** The planning-with-files plan files. */
@@ -100,5 +101,5 @@ export function nothingToDo(name, i) {
         return true;
     const first = cmd.trim().split(/\s+/)[0].split('/').pop();
     const mayRead = READERS.test(first) && !/[|;&<>`$()\n]/.test(cmd);
-    return !mayRead && !hasPlanFiles(String(i.cwd));
+    return !mayRead && !isTestRun(cmd) && !hasPlanFiles(String(i.cwd));
 }

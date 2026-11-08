@@ -1,6 +1,6 @@
 ---
 description: What was true on a date: give the date first, then words
-argument-hint: <date> <words>
+argument-hint: <date> <words> [--checkout]
 allowed-tools: Bash
 ---
 

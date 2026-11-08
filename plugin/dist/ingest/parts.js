@@ -13,8 +13,9 @@ import { CODEX_ENTRYPOINT } from "./codex.js";
 import { COPILOT_ENTRYPOINT } from "./copilot.js";
 import { skipReason } from "../vault/user.js";
 import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from "./deadend.js";
+import { sessionFacts } from "./facts.js";
 import { githubSlug, repoRoot } from "./repos.js";
-import { readChats } from "../teams/chatcache.js";
+import { loadImports, readChats } from "../teams/chatcache.js";
 import { normalizePath } from "./transcript.js";
 export const GENERATED = 'Memory v2/Generated/';
 export const under = (p, root) => ((p, root) => p === root || p.startsWith(`${root}/`))(normPath(p), normPath(root));
@@ -87,8 +88,9 @@ export function sessionPart(s, key, sfx = '') {
     // A chat from another coding tool says so, so answers can name where they came from.
     const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {};
     if (!s.sub)
-        node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } });
+        node({ id: sid, kind: 'session', title: first.split('\n')[0].slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}), ...(s.cost ? { cost: s.cost, costs: s.costs } : {}) } });
     const done = structural(s.turns);
+    const facts = sessionFacts(s.turns, s.cwd ?? '');
     for (const t of s.turns) {
         const tid = `turn:${t.id}${sfx}`;
         // What happened beats what was said: an undone edit or a failed test, then the person's own [dead-end] line,
@@ -97,7 +99,7 @@ export function sessionPart(s, key, sfx = '') {
         const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' } : undefined);
         const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'));
         const de = st ?? (phrase ? { text: phrase, kind: 'phrase' } : undefined);
-        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')) } });
+        node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0].slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')), ...facts.get(t.id) } });
         edge(tid, sid, 'part_of', t.at);
         if (st && 'file' in st && st.file)
             edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at);
@@ -298,6 +300,9 @@ export function curatedPart(cfg, until) {
             seen.has(src) || (seen.add(src), out.edges.push({ src: cid, dst: src, kind: 'derived_from', at, extra: {} }));
         if (n.supersedes)
             out.edges.push({ src: cid, dst: `curated:${n.supersedes}`, kind: 'supersedes', at, extra: {} });
+        // A note about files shows in their history, so the decision reaches whoever opens one.
+        for (const f of new Set((n.files ?? []).map(normPath)))
+            out.edges.push({ src: cid, dst: `file:${f}`, kind: 'touches', at, extra: {} });
     }
     return out;
 }
@@ -491,17 +496,19 @@ export const teamChats = (cfg) => {
 export function teamChatsPart(cfg, repos = cfg.repos, chats = teamChats(cfg)) {
     const out = { nodes: [], edges: [] };
     const checkouts = new Map();
+    const imports = loadImports(cfg.memDir);
     for (const c of chats) {
+        const imported = (imports[c.owner] ?? []).includes(c.session) ? { imported: true } : {};
         if (!checkouts.has(c.project))
             checkouts.set(c.project, checkoutOf(c.project, repos));
         const repo = checkouts.get(c.project);
         const sid = `tses:${c.owner}/${c.session}`;
-        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }));
+        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }));
         for (const t of c.turns) {
             const at = iso(t.at);
             const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`;
             const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {};
-            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }));
+            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }));
             out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} });
             if (repo)
                 for (const p of t.paths)

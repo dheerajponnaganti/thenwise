@@ -224,6 +224,7 @@ export function previewShare(cfg, repoPath, opts = {}) {
                 pv.left[b.skip] = (pv.left[b.skip] ?? 0) + 1;
             continue;
         }
+        opts.each?.(b);
         pv.chats++;
         pv.passages += b.passages;
         pv.bytes += b.bytes;
@@ -246,13 +247,13 @@ export function previewShare(cfg, repoPath, opts = {}) {
     return pv;
 }
 const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`);
-export function formatPreview(p, redactList) {
+export function formatPreview(p, redactList, head) {
     const left = Object.entries(p.left).map(([k, n]) => `${n} ${k === 'no-memory' ? '[no-memory]' : k === 'paused' ? 'of a paused project' : k}`);
     const out = [
-        `${LABEL}: this sends the prompts and replies of your chats in ${p.project} to the team server`,
+        head ?? `${LABEL}: this sends the prompts and replies of your chats in ${p.project} to the team server`,
         `  chats: ${p.chats}, passages: ${p.passages}, size: ${kb(p.bytes)}, from ${p.oldest || '-'} to ${p.newest || '-'}`,
         '  to send fewer, add --since <date>',
-        `  never sent: transcripts, tool output, thinking, file contents, absolute paths, subagent turns${p.subagentFiles ? ` (${p.subagentFiles} subagent files stay home)` : ''}`,
+        `  never sent: transcripts, tool output, thinking, file contents, absolute paths, subagent turns${p.subagentFiles ? ` (${p.subagentFiles} subagent files stay home)` : ''}, chats marked [no-memory]`,
         `  left out: ${left.length ? left.join(', ') : 'nothing else found'}`,
         `  redact list (${redactList.length}): ${redactList.length ? redactList.map((w) => `${w} (${p.redacted[w] ?? 0} removed)`).join(', ') : 'empty; add words under "team" > "redact" in config.json'}`,
     ];

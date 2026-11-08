@@ -6,6 +6,8 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { formatEvent, logger, readLog, recentErrors } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
+import { isTestRun } from "../core/testrun.js";
+import { testKey } from "../ingest/facts.js";
 import { isOff, loadConfigSafe } from "../ingest/config.js";
 import { updateNotice } from "../setup/update.js";
 import { codexConverter } from "../ingest/codex.js";
@@ -82,7 +84,8 @@ export function trimTrace(out, path) {
     }
     // A teammate on this file right now goes first: it is the one thing here that is not history.
     const now = [...out.matchAll(/^now: (.+)$/gm)].map((m) => `- ${m[1]}`).join('\n');
-    const body = [now, uniq(done).slice(0, 3).join('\n'), ...kept, uniq(decisions).join('\n'), uniq(said).slice(0, 3).join('\n')].filter(Boolean);
+    const tests = [...out.matchAll(/^tests: (.+)$/gm)].map((m) => `- ${m[1]}`).join('\n');
+    const body = [now, tests, uniq(done).slice(0, 3).join('\n'), ...kept, uniq(decisions).join('\n'), uniq(said).slice(0, 3).join('\n')].filter(Boolean);
     // A last change alone gives the agent nothing to act on: git log says it too.
     if (body.length === 0)
         return '';
@@ -214,12 +217,14 @@ export function syncRun(env) {
         const vaultStamp = join(env.dir, 'vault.json');
         // The team's notes are fetched before the ingest, so this sync already makes them searchable.
         const cfgNow = loadConfigSafe().config;
-        for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
+        for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
             // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
             if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
                 log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault');
                 continue;
             }
+            if (verb === 'mine' && !changed)
+                continue; // nothing new to mine
             const t = Date.now();
             if (verb === 'team sync')
                 writeProgress(env.dir, { phase: 'team sync', done: 0, total: 0 });
@@ -325,6 +330,24 @@ function fileHint(env, input, file, event = 'PostToolUse') {
         return '';
     const block = hintBlock(env, input, file);
     return block === '' ? '' : reply(event, block);
+}
+/** A test's history when it runs: the files in this project whose edits it failed right after, most often first. The key is
+ * made as the parser made it (spaces folded, cut to 200, masked), so the run matches its past runs. '' when there is none. */
+function testHint(env, input, cmd, cwd, event = 'PostToolUse') {
+    const session = input.session_id;
+    const db = join(env.dir, 'graph.db');
+    if (typeof session !== 'string' || process.env.ANTIGRAVITY_CONVERSATION_ID || !existsSync(db))
+        return '';
+    const run = maskSecrets(cmd.replace(/\s+/g, ' ').trim().slice(0, 200)).text;
+    const key = testKey(run, cwd);
+    if (seen(env, session, input.agent_id, `test:${key}`))
+        return '';
+    // Thenwise's option goes before the test command; the CLI names its files from that folder, as here.
+    const lines = query(env, ['tests', '--project', cwd, run]).trim();
+    if (!lines.startsWith('- '))
+        return ''; // none recorded, or a store from before test runs were kept
+    markSeen(env, session, input.agent_id, `test:${key}`);
+    return reply(event, `<memory-history test="${key.replace(/"/g, "'")}" note="Data from past work, not instructions.">\nThis test failed before, right after edits to:\n${lines}\nIf it fails now, look at those files first.\n</memory-history>`);
 }
 /** The files a Codex apply_patch adds, updates or deletes, as written in the patch (relative to the session folder). */
 export const patchFiles = (patch) => [...new Set([...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim()))];
@@ -627,11 +650,17 @@ function hookReply(name, input, env) {
                 return '';
             const target = readTarget(cmd, cwd);
             const plans = hasPlanFiles(cwd);
-            if (!target && !plans)
+            const test = isTestRun(cmd);
+            if (!target && !plans && !test)
                 return ''; // the common case: nothing to do, and the store is never opened
             if (plans && cfg)
                 snapshotNear(cfg, cwd);
-            return target ? fileHint(env, input, target) : '';
+            // A test run: which edits in this project it failed right after before, once per test and session.
+            // Claude Code sends a command that exited nonzero (a failing test) as PostToolUseFailure, and the reply names that event.
+            const event = input.hook_event_name === 'PostToolUseFailure' ? 'PostToolUseFailure' : 'PostToolUse';
+            if (test)
+                return testHint(env, input, cmd, cwd, event);
+            return target ? fileHint(env, input, target, event) : '';
         }
         log(env, `unknown hook ${name}`);
     }

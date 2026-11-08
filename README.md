@@ -118,11 +118,15 @@ In one session, each with its day and its source:
 
 You will not always think to ask. Thenwise brings the right history in at the right moment, and stays quiet the rest of the time.
 
-- **Open a file** and your agent learns its dead ends and decisions before it changes a line.
+- **Open a file** and your agent learns its dead ends and decisions before it changes a line, and which tests broke the last times it was edited.
+- **Run a test** and your agent hears which files' edits that same test failed right after, most often first. When it fails again, it knows where to look.
 - **Ask about the past** and it gets up to three pointers to the records that answer it. A question about the work in front of you gets nothing.
 - **Open a project you touched this week** and it starts where you left off.
 - **After a compaction**, a short resume brief carries it straight back into the work.
 - **Dead ends are found on their own.** A reverted commit, an edit that was undone, a test that failed before the work moved on, a line like "that didn't work": each is marked, with no model and nothing for you to write down.
+- **Every past attempt shows what it touched.** A chat turn in an answer carries one `did:` line: the files it edited, the commit it made, the PR it opened.
+- **Decisions are rechecked.** When a later commit changes the files a decision was about, your inbox asks whether it still holds. Accept, and the old decision is closed as superseded.
+- **Repeated dead ends become rules.** When three chats or commits hit a wall at the same file, your inbox proposes a rule for it, so the fourth never starts.
 - **Across sessions, projects and tools**, the memory follows you. A second clone of the same repo counts as the same project.
 
 Ask it to change a file with a dead end in its past, and it checks before it edits:
@@ -138,6 +142,10 @@ Ask it to change a file with a dead end in its past, and it checks before it edi
 - **Rules that changed.** Your CLAUDE.md files and plans are kept, every version dated, so an old rule and its replacement are told apart.
 - **Joining someone else's project.** With a teammate's shared chats, the reasons behind the code arrive on your first day.
 - **Running out mid-task.** Switch tools and carry on. The next one starts where the last one stopped.
+- **"What happened while I was away?"** `/thenwise:digest` lists what every chat did since yesterday: what it was asked, the files it edited, its commits, its PRs and its dead ends.
+- **"Where did the tokens go?"** `/thenwise:cost` shows what your chats spent this week, per tool and per project, and how much went into chats that hit a dead end.
+- **Seeing the code as it was.** `thenwise asof <date> --checkout` puts the code of that day in a folder of its own, beside the chats of that day. Your working tree is never touched.
+- **Handing a project over.** `thenwise export` writes one project's chats to a single masked file, with no team server; `thenwise import` gives a contractor or a new teammate every one of them, labelled as imported.
 
 ### A notebook you can open
 
@@ -238,9 +246,14 @@ Every result names its day, its project and the tool it came from. When a newer 
 | `/thenwise:why`, `/thenwise:tried`, `/thenwise:asof` | Ask the memory directly. |
 | `/thenwise:decide`, `/thenwise:deadend` | Keep a decision or a dead end on purpose. |
 | `/thenwise:shown` | Exactly what Thenwise added to this session, block by block. |
+| `/thenwise:digest` | What every chat did since yesterday, or `--since 7d`. |
+| `/thenwise:cost` | What your chats spent, per tool and per project. |
 | `/thenwise:inbox` | Review the decisions and dead ends Thenwise proposed from your chats, commits and PRs. |
 | `/thenwise:off`, `/thenwise:on` | Pause or resume memory for this project, or everywhere. |
 | `thenwise why`, `tried`, `asof`, `trace <words>` | Ask the memory from your terminal, with `--all` for every project. |
+| `thenwise tests <test command>` | The files whose edits that test failed right after. |
+| `thenwise asof <date> --checkout` | The code of that day in its own folder; `asof --clean` removes it. |
+| `thenwise export`, `thenwise import` | Hand one project's chats to someone else as one masked file. |
 | `thenwise setup`, `thenwise doctor` | Choose what to keep; check everything. |
 | `thenwise vault write` | Write the notebook of decisions, dead ends and file histories. |
 | `thenwise connect <tool>` | Give Cursor, Gemini CLI or OpenCode the memory tools. |
@@ -254,9 +267,10 @@ Slash commands run in Claude Code and Copilot CLI. In Codex and Antigravity, run
 | --- | --- | --- |
 | **Session start** | A brief of where you left off, in a project with a session in the last 7 days, and the handoff from a chat that stopped in another tool. The sync starts in the background. | 200 tokens for the brief |
 | **A prompt about the past** | Pointers to the records that answer it. Most prompts get nothing. | 3 pointers, about 300 tokens |
-| **Opening or editing a file** | Its dead ends and decisions, once per file per session. | 600 tokens |
+| **Opening or editing a file** | Its dead ends and decisions, and the tests that failed after edits to it, once per file per session. | 600 tokens |
+| **Running a test** | The files whose edits that test failed right after, once per test per session. | 3 files |
 | **After a compaction** | A resume brief: the task, the files edited, the last test and its result, open questions, and what is uncommitted. | 1,500 tokens |
-| **When a chat ends** | Nothing. Thenwise copies and masks the chat, so the next session in any tool can pick it up. | |
+| **When a chat ends** | Nothing. Thenwise copies and masks the chat, so the next session in any tool can pick it up, and checks the new work for decisions to recheck and rules to propose. | |
 
 A hook never fails your chat; errors go to the log. Turn the brief or the pointers off with `"hooks": { "prompt_map": false, "startup_brief": false }` in config.json.
 

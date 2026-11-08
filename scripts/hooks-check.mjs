@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '../..')
-const EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'SessionEnd', 'Stop', 'StopFailure'])
+const EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop', 'StopFailure'])
 const SCRIPT = '${CLAUDE_PLUGIN_ROOT}/dist/cli.js'
 // The hook names runHook answers, read from the source so a new hook needs no edit here.
 const handled = new Set([...readFileSync(join(ROOT, 'src/hooks/hook.ts'), 'utf8').matchAll(/name === '([a-z-]+)'/g)].map((m) => m[1]))

@@ -232,12 +232,12 @@ test("B2-15c: resume in a repo shows only this project's to-dos, capped, and no 
   assert.match(resume(g3, ''), /status bar/)
 })
 
-test('B2-28: the Bash hook on a non-read command is cheap and never opens the store', () => {
+test('B2-28: the Bash hook on a command that is no read and no test run is cheap and never opens the store', () => {
   const dir = tempDir()
   writeGraph(dir)
   const run = () => {
     const t = Date.now()
-    const r = spawnSync(process.execPath, [resolve('src/cli.ts'), 'hook', 'post'], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: '/x/p', session_id: 's' }), encoding: 'utf8', env: { ...process.env, THENWISE_HOME: dir, HOME: dir } })
+    const r = spawnSync(process.execPath, [resolve('src/cli.ts'), 'hook', 'post'], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm run build' }, cwd: '/x/p', session_id: 's' }), encoding: 'utf8', env: { ...process.env, THENWISE_HOME: dir, HOME: dir } })
     assert.equal(r.status, 0)
     assert.equal(r.stdout.trim(), '')
 

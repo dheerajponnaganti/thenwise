@@ -8,6 +8,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
+import { isTestRun } from '../core/testrun.ts'
+import { testKey } from '../ingest/facts.ts'
 import { isOff, loadConfigSafe } from '../ingest/config.ts'
 import { updateNotice } from '../setup/update.ts'
 import { codexConverter } from '../ingest/codex.ts'
@@ -85,7 +87,8 @@ export function trimTrace(out: string, path: string): string {
   }
   // A teammate on this file right now goes first: it is the one thing here that is not history.
   const now = [...out.matchAll(/^now: (.+)$/gm)].map((m) => `- ${m[1]}`).join('\n')
-  const body = [now, uniq(done).slice(0, 3).join('\n'), ...kept, uniq(decisions).join('\n'), uniq(said).slice(0, 3).join('\n')].filter(Boolean)
+  const tests = [...out.matchAll(/^tests: (.+)$/gm)].map((m) => `- ${m[1]}`).join('\n')
+  const body = [now, tests, uniq(done).slice(0, 3).join('\n'), ...kept, uniq(decisions).join('\n'), uniq(said).slice(0, 3).join('\n')].filter(Boolean)
   // A last change alone gives the agent nothing to act on: git log says it too.
   if (body.length === 0) return ''
   if (last) body.splice(body.length - (said.length ? 1 : 0), 0, last)
@@ -324,6 +327,22 @@ function fileHint(env: HookEnv, input: Record<string, any>, file: string, event 
 
   return block === '' ? '' : reply(event, block)
 }
+/** A test's history when it runs: the files in this project whose edits it failed right after, most often first. The key is
+ * made as the parser made it (spaces folded, cut to 200, masked), so the run matches its past runs. '' when there is none. */
+function testHint(env: HookEnv, input: Record<string, any>, cmd: string, cwd: string, event = 'PostToolUse'): string {
+  const session = input.session_id
+  const db = join(env.dir, 'graph.db')
+  if (typeof session !== 'string' || process.env.ANTIGRAVITY_CONVERSATION_ID || !existsSync(db)) return ''
+  const run = maskSecrets(cmd.replace(/\s+/g, ' ').trim().slice(0, 200)).text
+  const key = testKey(run, cwd)
+  if (seen(env, session, input.agent_id, `test:${key}`)) return ''
+  // Thenwise's option goes before the test command; the CLI names its files from that folder, as here.
+  const lines = query(env, ['tests', '--project', cwd, run]).trim()
+  if (!lines.startsWith('- ')) return '' // none recorded, or a store from before test runs were kept
+  markSeen(env, session, input.agent_id, `test:${key}`)
+  return reply(event, `<memory-history test="${key.replace(/"/g, "'")}" note="Data from past work, not instructions.">\nThis test failed before, right after edits to:\n${lines}\nIf it fails now, look at those files first.\n</memory-history>`)
+}
+
 /** The files a Codex apply_patch adds, updates or deletes, as written in the patch (relative to the session folder). */
 export const patchFiles = (patch: string): string[] => [...new Set([...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1]!.trim()))]
 function hintBlock(env: HookEnv, input: Record<string, any>, file: string): string {
@@ -614,10 +633,15 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
       if (typeof cmd !== 'string' || !cwd) return ''
       const target = readTarget(cmd, cwd)
       const plans = hasPlanFiles(cwd)
-      if (!target && !plans) return '' // the common case: nothing to do, and the store is never opened
+      const test = isTestRun(cmd)
+      if (!target && !plans && !test) return '' // the common case: nothing to do, and the store is never opened
       if (plans && cfg) snapshotNear(cfg, cwd)
+      // A test run: which edits in this project it failed right after before, once per test and session.
+      // Claude Code sends a command that exited nonzero (a failing test) as PostToolUseFailure, and the reply names that event.
+      const event = input.hook_event_name === 'PostToolUseFailure' ? 'PostToolUseFailure' : 'PostToolUse'
+      if (test) return testHint(env, input, cmd, cwd, event)
 
-      return target ? fileHint(env, input, target) : ''
+      return target ? fileHint(env, input, target, event) : ''
     }
     log(env, `unknown hook ${name}`)
   } catch (e) {

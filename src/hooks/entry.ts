@@ -6,6 +6,7 @@ import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { resolveDataDir } from '../core/home.ts'
+import { isTestRun } from '../core/testrun.ts'
 import { readProgress, running } from '../core/progress.ts'
 import { claudeHookInput } from '../ingest/copilot.ts'
 
@@ -106,5 +107,5 @@ export function nothingToDo(name: string, i: Record<string, any>): boolean {
   const first = cmd.trim().split(/\s+/)[0]!.split('/').pop()!
   const mayRead = READERS.test(first) && !/[|;&<>`$()\n]/.test(cmd)
 
-  return !mayRead && !hasPlanFiles(String(i.cwd))
+  return !mayRead && !isTestRun(cmd) && !hasPlanFiles(String(i.cwd))
 }

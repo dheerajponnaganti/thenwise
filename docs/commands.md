@@ -41,6 +41,7 @@ Codex and Antigravity load no plugin commands, so Thenwise names each of these a
 - `thenwise archive`, `thenwise ingest [--full]`.
 - `thenwise search|current|why|tried|trace <words>`, `thenwise asof <date> <words>`, `thenwise resume [words]`, with `--here`, `--project <folder>` or `--all`.
 - `thenwise tests <test command or file> [--here]`: the files whose edits that test failed right after in past chats, most often first. The hooks give the same lines when the test runs, and before an edit they name the tests that failed after edits to that file.
+- `thenwise cost [words] [--since 7d|<date>]` and `/thenwise:cost`: what the chats cost, per tool and per project, and the share spent in chats that hit a dead end. Each tool counts by its own record: Claude Code gives dollars (at API prices) and tokens, Codex gives tokens; a tool whose chat files hold no cost is named, never guessed. With words, only chats about them.
 - `thenwise off|on [--project <path>]`.
 - `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 - `thenwise notices all|important|off`: how much Thenwise tells you.

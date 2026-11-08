@@ -141,7 +141,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   const dirs = editDirs(s)
   // A chat from another coding tool says so, so answers can name where they came from.
   const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {}
-  if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } })
+  if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}), ...(s.cost ? { cost: s.cost, costs: s.costs } : {}) } })
   const done = structural(s.turns)
   const facts = sessionFacts(s.turns, s.cwd ?? '')
   for (const t of s.turns) {

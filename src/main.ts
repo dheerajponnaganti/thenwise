@@ -32,7 +32,7 @@ const flag = (name: string) => {
 }
 // Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
 for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | tests <test command or file> | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -257,7 +257,7 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
   process.exit(await teamMain(process.argv.slice(2), flag))
 }
 
-const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'path', 'get', 'tests']
+const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'path', 'get', 'tests', 'cost']
 if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
   const { loadConfig } = await import('./ingest/config.ts')
@@ -296,7 +296,7 @@ if (cmd && QUERY.includes(cmd)) {
   if (!opts.includes('--all') && (project || opts.includes('--here'))) g.scopeTo(xp(project) ?? process.cwd())
   const q = args.join(' ')
   const need = (ok: boolean) => ok || (console.error(USAGE), process.exit(2))
-  need(cmd === 'resume' || args.length > 0)
+  need(cmd === 'resume' || cmd === 'cost' || args.length > 0)
   if (cmd === 'search') console.log(process.argv.includes('--pointers') ? c.pointers(g, q) : c.search(g, q))
   else if (cmd === 'current') console.log(c.current(g, q))
   else if (cmd === 'why') console.log(c.why(g, q))
@@ -304,7 +304,14 @@ if (cmd && QUERY.includes(cmd)) {
   else if (cmd === 'trace') console.log(c.trace(g, q))
   else if (cmd === 'resume' && flag('mates-since')) console.log(c.mateLatest(g, Date.parse(flag('mates-since')!) || 0).join('\n'))
   else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'))
-  else if (cmd === 'get') console.log(c.get(g, q))
+  else if (cmd === 'cost') {
+    // A bare --since has already stopped at the flag check; a value that is no time is an input error too.
+    const { costReport, sinceMs } = await import('./query/cost.ts')
+    const raw = flag('since') ?? '7d'
+    const since = sinceMs(raw)
+    if (Number.isNaN(since)) (console.error(`--since needs 24h, 7d or a date such as 2026-11-01, found ${raw}`), process.exit(2))
+    console.log(costReport(g, since, q))
+  } else if (cmd === 'get') console.log(c.get(g, q))
   else if (cmd === 'tests') console.log(c.testHistory(g, (await import('./ingest/facts.ts')).testKey(q, resolve(xp(leadFlag('project')) ?? process.cwd()))) || `no failed run of "${q}" with an edit before it is recorded`)
   else if (cmd === 'asof') (need(args.length > 1), console.log(c.asof(g, args[0]!, args.slice(1).join(' '))))
   else if (cmd === 'path') (need(args.length > 1), console.log(c.path(g, args[0]!, args.slice(1).join(' '))))

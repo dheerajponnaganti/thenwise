@@ -47,6 +47,41 @@ export interface Session {
   sub: boolean // a subagent file: its turns belong to session `id`, which is the parent
   /** The last tool call of the last turn that never got a result: the chat stopped mid-step. */
   openCall?: { name: string; detail: string; at: string }
+  /** What the chat cost, from the tool's own running total: tokens always, dollars only where the tool gives them. */
+  cost?: Cost
+  /** The running total over time, one entry per change: [time, dollars or null, input, cached, output]. A window of time
+   * costs the last total minus the total just before it. */
+  costs?: [string, number | null, number, number, number][]
+}
+
+export interface Cost { usd?: number; input: number; cached: number; output: number }
+interface CostRun { base: Cost; last: Cost | undefined; start: unknown }
+const plus = (a: Cost, b: Cost): Cost => ({ ...(a.usd !== undefined || b.usd !== undefined ? { usd: (a.usd ?? 0) + (b.usd ?? 0) } : {}), input: a.input + b.input, cached: a.cached + b.cached, output: a.output + b.output })
+/** One running-total row into the chat's cost. A resumed chat restarts its total (a new start time, or a total that went
+ * down), so the run before it is carried as a base. Rows after the cutoff never reach here. */
+function addCost(s: Session, run: CostRun, c: Cost, start: unknown, at: string) {
+  if (run.last && (start !== run.start || c.input + c.cached + c.output < run.last.input + run.last.cached + run.last.output)) run.base = plus(run.base, run.last)
+  run.last = c
+  run.start = start
+  const total = plus(run.base, c)
+  // Dollars count only while every row was priced: one unpriced run leaves the chat without a dollar figure.
+  if (c.usd === undefined || (s.cost && s.cost.usd === undefined)) delete total.usd
+  const prev = s.costs?.at(-1)
+  if (!prev || prev[1] !== (total.usd ?? null) || prev[2] !== total.input || prev[3] !== total.cached || prev[4] !== total.output) (s.costs ??= []).push([at, total.usd ?? null, total.input, total.cached, total.output])
+  s.cost = total
+}
+/** A running-total row: Claude Code's `cost-state` (dollars and tokens per model), or the same row the Codex converter makes
+ * from its `token_count` (tokens only). Dollars are left out when Claude Code could not price a model. */
+export function costOf(d: Record<string, any>): Cost | undefined {
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
+  if (d.modelUsage && typeof d.modelUsage === 'object') {
+    const m = Object.values(d.modelUsage) as Record<string, unknown>[]
+    const sum = (k: string) => m.reduce((a, x) => a + n(x?.[k]), 0)
+    // Thinking is counted inside outputTokens (on 2,820 real entries it never exceeded it), so it is not added again.
+    return { ...(typeof d.totalCostUSD === 'number' && !d.hasUnknownModelCost ? { usd: d.totalCostUSD } : {}), input: sum('inputTokens') + sum('cacheCreationInputTokens'), cached: sum('cacheReadInputTokens'), output: sum('outputTokens') }
+  }
+  if (d.tokens && typeof d.tokens === 'object') return { input: n(d.tokens.input), cached: n(d.tokens.cached), output: n(d.tokens.output) }
+  return undefined
 }
 
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users|\/home|\/root)\/[^\s"'`;|&)<>]+|[A-Za-z]:[\\/][^\s"'`;|&)<>]+)/g
@@ -198,6 +233,9 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
   const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity
   const cut = until ? Date.parse(until) : Infinity
   const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub }
+  let lastAt = ''
+  let pastCut = false
+  const run: CostRun = { base: { input: 0, cached: 0, output: 0 }, last: undefined, start: undefined }
   const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; file?: string; changes?: Turn['changes'] }>()
   // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
   const editCalls = new Map<Turn, Map<string, number>>()
@@ -208,6 +246,14 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
     try {
       d = JSON.parse(line)
     } catch {
+      continue
+    }
+    // A line's time dates the cost row after it, which carries none of its own; once a line is past the cutoff, so is
+    // every cost row after it.
+    if (typeof d?.timestamp === 'string') Date.parse(d.timestamp) > cut ? (pastCut = true) : (lastAt = d.timestamp)
+    if (d?.type === 'cost-state') {
+      const c = costOf(d)
+      if (c && lastAt && !pastCut) addCost(s, run, c, d.startTime, lastAt)
       continue
     }
     if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || (d.isSidechain && !sub)) continue

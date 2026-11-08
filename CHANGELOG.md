@@ -11,6 +11,7 @@
 - The memory keeps what each chat did, not only what it said: every edit (the file, and whether a later turn put it back) and every test run (when, whether it failed, the file edited just before, the command with secrets masked). Nothing of a file's contents is kept, only short fingerprints of the edited text. The first sync after updating rebuilds the store once.
 - `thenwise asof` with a date it cannot read now exits 2 and says so on stderr. Before, it printed the message as an answer and exited 0, so a script or agent could not tell it from a result.
 - `thenwise asof <date> --checkout` puts the code as it was on that date in its own folder, next to the chats of that day, so you can read both together. Your working tree is not touched. `thenwise asof --clean` removes the folders and keeps any you changed.
+- `thenwise digest` and `/thenwise:digest` show what each chat did since a time (the last 24 hours unless `--since` says otherwise): the first prompt, files edited, commits, PRs and dead ends, newest first. No model reads anything. The vault gains a Digest note per project for the last 7 days, which names changes and never chat text.
 
 ## 0.2.0
 

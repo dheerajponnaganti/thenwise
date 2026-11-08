@@ -40,12 +40,6 @@ const tokens = (s: Sum) => `${TOKENS(s.input)} tokens in, ${TOKENS(s.cached)} fr
 /** Dollars with what they cover, so a figure for 7 of 10 chats never reads as all 10. */
 const dollars = (s: Sum) => (s.priced === s.chats ? USD(s.usd) : `${USD(s.usd)} for ${s.priced} of ${s.chats} chats`)
 
-/** `24h`, `7d` or an ISO date or time, to milliseconds; NaN when it is none of these. */
-export const sinceMs = (s: string, now = Date.now()) => {
-  const m = /^(\d+)([hd])$/.exec(s)
-  return m ? now - Number(m[1]) * (m[2] === 'h' ? 36e5 : 864e5) : Date.parse(s)
-}
-
 /** Own chats in scope that were active since `since` (optionally only those whose turns in that time match `q`): what they
  * spent in that time, per tool and per project, and the share spent in chats that hit a dead end. */
 export function costReport(g: Graph, since: number, q = ''): string {

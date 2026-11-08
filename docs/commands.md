@@ -40,6 +40,7 @@ Codex and Antigravity load no plugin commands, so Thenwise names each of these a
 - `thenwise report [--what <text>] [--send | --open | --copy]`: an issue report with versions, doctor and recent errors, never chat text. Shown in full first; sent only when you say yes.
 - `thenwise archive`, `thenwise ingest [--full]`.
 - `thenwise search|current|why|tried|trace <words>`, `thenwise asof <date> <words>`, `thenwise resume [words]`, with `--here`, `--project <folder>` or `--all`.
+- `thenwise tests <test command or file> [--here]`: the files whose edits that test failed right after in past chats, most often first. The hooks give the same lines when the test runs, and before an edit they name the tests that failed after edits to that file.
 - `thenwise off|on [--project <path>]`.
 - `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 - `thenwise notices all|important|off`: how much Thenwise tells you.

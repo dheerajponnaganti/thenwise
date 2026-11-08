@@ -1,6 +1,7 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
 
 import { createHash } from 'node:crypto'
+import { isTestRun } from '../core/testrun.ts'
 import { posix } from 'node:path'
 import { crc32, gunzipSync, inflateRawSync } from 'node:zlib'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
@@ -65,8 +66,7 @@ export const agentReport = (out: string): string =>
   /^\s*(Async agent launched successfully\b|This agent's report was delivered to you as a message\b)/.test(out)
     ? ''
     : out.replace(/<usage>[\s\S]*?<\/usage>/g, '').split('\n').filter((l) => !/^agentId: \S+ \(/.test(l) && !/^\s*\[Harness note\b/.test(l)).join('\n').trim()
-// `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
-const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/
+// A short fingerprint of edited text: an edit that puts back an earlier one's old text is found by it. It protects nothing.
 const h = (s: unknown) => (typeof s === 'string' ? createHash('sha256').update(s).digest('hex').slice(0, 16) : '')
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i
 
@@ -305,7 +305,7 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             s.paths.add(p)
             turn?.ran.add(p)
           }
-          if (turn && TEST_RUN.test(inp.command)) pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) })
+          if (turn && isTestRun(inp.command)) pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) })
           if (turn && GIT_COMMIT.test(inp.command)) {
             const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command)
             const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n')

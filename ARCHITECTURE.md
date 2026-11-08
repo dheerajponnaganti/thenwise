@@ -38,6 +38,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/core/secrets.ts` | `maskSecrets`, `maskDeep`, `MASK_VERSION` | Removes secrets from text before anything is stored |
 | `src/core/home.ts` | `resolveDataDir` | Finds the data folder |
 | `src/core/tokenize.ts` | `tokenize` | Splits text into search terms |
+| `src/core/testrun.ts` | `isTestRun` | The one rule for a command that runs tests, shared by the parser and the hooks |
 | `src/core/log.ts` | `logger`, `logsCommand` | The local log, which holds no chat text |
 | `src/core/args.ts` | `flag` | Reads a command-line flag, the same way for a command and for the error that explains it |
 | `src/core/notices.ts` | `noticeLevel`, `addNews`, `takeNews`, `recordSent`, `addedLine` | What the person sees, by one rule: the news queue, the "Thenwise added" line, and what went to the agent for `/thenwise:shown` |
@@ -104,6 +105,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `UserPromptSubmit` | Adds up to three pointers when a prompt asks about the past, a teammate's chat that arrived after the start, and the first sync's progress |
 | `PreToolUse` on edits | Keeps a plan version before it changes |
 | `PostToolUse` on reads and shell commands | Adds a file's dead ends and decisions, led by a teammate who worked on it in the last day |
+| `PostToolUseFailure` on shell commands | A command that exited nonzero, such as a failing test: the same hints as `PostToolUse`, under this event |
 | `PreCompact` | Marks a compaction, so Copilot CLI gets its resume brief on the next prompt |
 | `Stop`, `StopFailure` | In Antigravity, `PreInvocation` is the prompt hook and `Stop` (after each model loop) is session end. For a team member: starts a sync after a reply (at most every 10 minutes) and at once after a usage limit or an error |
 | `SessionEnd` | Starts a sync |

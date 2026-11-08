@@ -45,6 +45,14 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 3 }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "^Read$",

@@ -3,13 +3,15 @@
 // command masked, the file edited just before). Two indexed tables are derived from the nodes for fast lookups by the
 // hooks, the way the passage index is: `changes` (by file and new text) and `tests` (by test).
 
+import { isAbsolute, resolve } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 
 import { maskSecrets } from '../core/secrets.ts'
 import { normPath } from '../core/vault-index.ts'
+import { checkoutTop } from './repos.ts'
 
 export interface EditFact { file: string; old: string; new: string; at: string; undone?: true }
-export interface TestFact { at: string; failed: boolean; cmd: string; after?: string }
+export interface TestFact { at: string; failed: boolean; cmd: string; key: string; after?: string }
 export interface TurnFacts { changes?: EditFact[]; tests?: TestFact[] }
 
 interface TurnIn {
@@ -20,7 +22,7 @@ interface TurnIn {
 
 /** The facts of each turn of one session. An edit is undone when a later edit of another turn puts its old text back,
  * the same rule `structural` uses for an undone dead end. Sessions do not cross. */
-export function sessionFacts(turns: TurnIn[]): Map<string, TurnFacts> {
+export function sessionFacts(turns: TurnIn[], cwd = ''): Map<string, TurnFacts> {
   const out = new Map<string, TurnFacts>()
   const made: { turn: string; fact: EditFact }[] = []
   const events = turns.flatMap((t) => [...(t.changes ?? []).map((c) => ({ at: c.at, t, c })), ...(t.tests ?? []).map((x) => ({ at: x.at, t, x }))]).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
@@ -28,7 +30,8 @@ export function sessionFacts(turns: TurnIn[]): Map<string, TurnFacts> {
   for (const e of events) {
     const f = out.get(e.t.id) ?? out.set(e.t.id, {}).get(e.t.id)!
     if ('x' in e) {
-      ;(f.tests ??= []).push({ at: e.x.at, failed: e.x.failed, cmd: maskSecrets(e.x.cmd ?? '').text, ...(lastEdited ? { after: lastEdited } : {}) })
+      const cmd = maskSecrets(e.x.cmd ?? '').text
+      ;(f.tests ??= []).push({ at: e.x.at, failed: e.x.failed, cmd, key: testKey(cmd, cwd), ...(lastEdited ? { after: lastEdited } : {}) })
       continue
     }
     const c = e.c
@@ -43,9 +46,21 @@ export function sessionFacts(turns: TurnIn[]): Map<string, TurnFacts> {
   return out
 }
 
-/** The test a command runs: the test files it names, else the command without its flags. */
-export function testKey(cmd: string): string {
-  const files = [...cmd.matchAll(/[\w./*-]*(?:\.(?:test|spec)\.[cm]?[jt]sx?|_test\.go|test_[\w-]+\.py|[\w-]+_test\.py)\b/g)].map((m) => m[0].replace(/^\.\//, ''))
+/** A test file name (or a glob of them) in a command: the one rule for keys and for matching keys. */
+export const TEST_FILE = /[\w./*-]*(?:\.(?:test|spec)\.[cm]?[jt]sx?|_test\.go|test_[\w-]+\.py|[\w-]+_test\.py)\b/g
+export const isTestFile = (w: string) => new RegExp(`^(?:${TEST_FILE.source})$`).test(w)
+/** The test a command runs: the test files it names, else the command without its flags. A file is named from the top of
+ * the checkout the command ran in (`cwd`), so `../test/a.test.ts` run from `src` and `test/a.test.ts` run from the top
+ * are one test. A file outside the checkout, or with no folder to go by, stays as written. */
+export function testKey(cmd: string, cwd = ''): string {
+  const dir = cwd.replace(/\\/g, '/')
+  const top = dir && checkoutTop(dir)
+  const name = (w: string) => {
+    if (!top) return w.replace(/^\.\//, '')
+    const abs = normPath(isAbsolute(w) ? w : resolve(dir, w))
+    return abs.startsWith(`${top}/`) ? abs.slice(top.length + 1) : w.replace(/^\.\//, '')
+  }
+  const files = [...cmd.matchAll(TEST_FILE)].map((m) => name(m[0]))
   return files.length ? [...new Set(files)].sort().join(' ') : cmd.split(/\s+/).filter((w) => w && !w.startsWith('-') && !/^\w+=/.test(w)).join(' ').slice(0, 200)
 }
 
@@ -63,7 +78,7 @@ export function putFacts(db: DatabaseSync, id: string, kind: string, extra: stri
   const ci = db.prepare('INSERT INTO changes VALUES (?,?,?,?,?,?)')
   for (const c of x.changes ?? []) ci.run(id, c.file, c.old, c.new, c.at, c.undone ? 1 : 0)
   const ti = db.prepare('INSERT INTO tests VALUES (?,?,?,?,?,?)')
-  for (const t of x.tests ?? []) ti.run(id, testKey(t.cmd), t.at, t.failed ? 1 : 0, t.cmd, t.after ?? null)
+  for (const t of x.tests ?? []) ti.run(id, t.key ?? testKey(t.cmd), t.at, t.failed ? 1 : 0, t.cmd, t.after ?? null)
 }
 export function dropFacts(db: DatabaseSync, id: string): void {
   db.prepare('DELETE FROM changes WHERE node = ?').run(id)

@@ -5,6 +5,8 @@ import { endOf, GOOD, Graph, local, localDay, queryTerms } from './engine.ts'
 import type { Hit, Node, Search } from './engine.ts'
 import { basename } from 'node:path'
 import { trigramSim } from '../capture/similar.ts'
+import { isTestFile } from '../ingest/facts.ts'
+import { checkoutTop } from '../ingest/repos.ts'
 import { ago } from '../core/time.ts'
 
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i]
@@ -434,6 +436,61 @@ export function fileMates(g: Graph, fileId: string, now = Date.now()): string[] 
   })
 }
 
+/** Failed runs of the tests table, in scope, as [turn node, file edited just before, time]. Empty for a store from before
+ * test runs were kept. Scope goes through the turn, so another clone of the same repo counts as this project. */
+function failedRuns(g: Graph, where: string, args: (string | number)[]): { turn: Node; after: string; at: string; key: string }[] {
+  try {
+    const rows = g.db.prepare(`SELECT node, after, at, key FROM tests WHERE failed = 1 AND after IS NOT NULL AND ${where}`).all(...args) as { node: string; after: string; at: string; key: string }[]
+    return rows.flatMap((r) => {
+      const turn = g.nodes.get(r.node)
+      return turn && g.inScope(turn) ? [{ turn, after: r.after, at: r.at, key: r.key }] : []
+    })
+  } catch {
+    return []
+  }
+}
+/** A file as its own project names it: relative to the chat's checkout, else the project root or the chat's folder (a
+ * root may be the resolved path), whichever holds it; else as stored. A chat in a subfolder and one in a worktree name
+ * the same file the same way. */
+export const inRoot = (g: Graph, turn: Node, file: string) => {
+  const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/') // file ids use forward slashes
+  const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`))
+  return root ? file.slice(root.length + 1) : file
+}
+
+/** Runs counted by `by`, most often first, then newest: the top three as [name, count, last time]. */
+function tally<T extends { at: string }>(runs: T[], by: (r: T) => string): [string, number, string][] {
+  const m = new Map<string, { n: number; last: string }>()
+  for (const r of runs) {
+    const b = m.get(by(r)) ?? m.set(by(r), { n: 0, last: '' }).get(by(r))!
+    b.n++
+    if (r.at > b.last) b.last = r.at
+  }
+  return [...m].sort((a, b) => b[1].n - a[1].n || (a[1].last < b[1].last ? 1 : -1)).slice(0, 3).map(([k, b]) => [k, b.n, b.last])
+}
+
+/** Tests that failed in past chats right after an edit to this file, most often first: `tests:` lines for trace and the
+ * file hint. The file is matched by its path inside its project, so an edit in another clone or worktree counts. */
+export function fileTests(g: Graph, fileIds: string[], asked = ''): string[] {
+  // The path inside the project: the file's alias, else its path under the scope folder.
+  const within = (id: string) => (g.nodes.get(id)?.extra?.aliases as string[] | undefined)?.[0] ?? (g.scope && id.slice(5).startsWith(`${g.scope}/`) ? id.slice(5 + g.scope.length + 1) : '')
+  // A path asked as relative (the hook asks with the file's path inside the project) is one too.
+  const rels = [...new Set([...fileIds.map(within), /^(?:[/\\~]|[A-Za-z]:)/.test(asked) ? '' : asked.replace(/\\/g, '/')].filter(Boolean))]
+  if (!rels.length) return []
+  const runs = failedRuns(g, rels.map(() => 'substr(after, -?) = ?').join(' OR '), rels.flatMap((r) => [r.length + 1, `/${r}`])).filter((r) => rels.includes(inRoot(g, r.turn, r.after)))
+  return tally(runs, (r) => r.key).map(([key, n, last]) => `tests: \`${cut(key, 80)}\` failed ${n} time${n === 1 ? '' : 's'} right after an edit to this file, last on ${localDay(last)}; check it after editing here`)
+}
+
+/** One test's history: the files in this project whose edits it failed right after, most often first. '' when none.
+ * A key of test files matches any past run that named one of them, so a run of two suites counts for each. */
+export function testHistory(g: Graph, key: string): string {
+  const files = key.split(' ').filter(isTestFile)
+  const runs = files.length === key.split(' ').length
+    ? failedRuns(g, files.map(() => "instr(' ' || key || ' ', ?) > 0").join(' OR '), files.map((f) => ` ${f} `)).filter((r) => r.key.split(' ').some((w) => files.includes(w)))
+    : failedRuns(g, 'key = ?', [key])
+  return tally(runs, (r) => inRoot(g, r.turn, r.after)).map(([f, n, last]) => `- \`${f}\` (${n} time${n === 1 ? '' : 's'}, last on ${localDay(last)})`).join('\n')
+}
+
 export function trace(g: Graph, target: string, cap = 100, offset = 0, budget = 0): string {
   const ex = g.exact(target)
   if (!ex.length) {
@@ -442,7 +499,7 @@ export function trace(g: Graph, target: string, cap = 100, offset = 0, budget = 
     const hits = s.good.slice(0, 8).sort((a, b) => ms(b.node.at) - ms(a.node.at))
     return [`trace "${target}": no file, PR, commit or note by that name; showing ${hits.length} topic matches, newest first, grouped by date`, `searched: ${s.terms.join(' ')}`, ...grouped(hits.map((h) => ({ date: h.node.at, text: result(0, h).replace(/^0\. /, '- ') })))].join('\n\n')
   }
-  const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), cutNote()]
+  const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), ...fileTests(g, ex.filter((e) => e.id.startsWith('file:')).slice(0, 3).map((e) => e.id), target), cutNote()]
   const items: { date: string; text: string }[] = []
   for (const { id } of ex.slice(0, 3)) {
     const t = g.nodes.get(id)!

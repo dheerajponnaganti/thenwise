@@ -31,7 +31,7 @@ const branchNote = (n: Node) => (n.kind !== 'commit' ? '' : n.extra?.unreachable
 
 const owner = (n: Node) => String(n.extra?.sharedBy ?? '')
 function sourceOf(n: Node): string {
-  if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)}, ${localDay(n.at)} (team)`
+  if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)}, ${localDay(n.at)} ${n.extra?.imported ? '(imported)' : '(team)'}`
   if (n.kind === 'turn' || n.kind === 'summary') return `${n.extra?.tool ? `${n.extra.tool} chat, ` : ''}session ${short(n.source)} at ${local(n.at)}`
   if (n.kind === 'pr') return `PR #${n.id.split('#').pop()} ${n.extra.url ?? n.source}${n.until ? `, merged ${n.until}` : `, ${n.extra.state ?? 'open'}`}`
   if (n.kind === 'commit') return `commit ${n.id.split(':').pop()!.slice(0, 7)} in ${n.project}${branchNote(n)}`
@@ -91,7 +91,7 @@ export const deadWeight = (n: Node) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEnd
 
 /** The short source on a result line; the date, project and id are on the line already. */
 function where(n: Node): string {
-  if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)} (team)`
+  if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session')) return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)} ${n.extra?.imported ? '(imported)' : '(team)'}`
   if (n.kind === 'turn' || n.kind === 'summary') return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat ${short(n.source)}`
   if (n.kind === 'session') return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat to ${when(n.until)}`
   if (n.kind === 'pr') return n.until ? `merged ${n.until}` : String(n.extra.state ?? 'open')

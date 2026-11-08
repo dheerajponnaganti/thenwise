@@ -283,7 +283,7 @@ export interface Preview {
 }
 
 /** What sharing a project would send. `pick` chooses which of n passages are shown (random by default; a test passes its own). */
-export function previewShare(cfg: Config, repoPath: string, opts: { since?: string; pick?: (n: number) => number } = {}): Preview {
+export function previewShare(cfg: Config, repoPath: string, opts: { since?: string; pick?: (n: number) => number; each?: (b: Built) => void } = {}): Preview {
   const root = repoRoot(resolve(repoPath))
   if (!root) throw new Error(`${repoPath} is not inside a git repository`)
   const repo = real(root)
@@ -300,6 +300,7 @@ export function previewShare(cfg: Config, repoPath: string, opts: { since?: stri
       if (b.skip !== 'other' && b.skip !== 'empty') pv.left[b.skip] = (pv.left[b.skip] ?? 0) + 1
       continue
     }
+    opts.each?.(b)
     pv.chats++
     pv.passages += b.passages
     pv.bytes += b.bytes
@@ -319,13 +320,13 @@ export function previewShare(cfg: Config, repoPath: string, opts: { since?: stri
 }
 
 const kb = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`)
-export function formatPreview(p: Preview, redactList: string[]): string {
+export function formatPreview(p: Preview, redactList: string[], head?: string): string {
   const left = Object.entries(p.left).map(([k, n]) => `${n} ${k === 'no-memory' ? '[no-memory]' : k === 'paused' ? 'of a paused project' : k}`)
   const out = [
-    `${LABEL}: this sends the prompts and replies of your chats in ${p.project} to the team server`,
+    head ?? `${LABEL}: this sends the prompts and replies of your chats in ${p.project} to the team server`,
     `  chats: ${p.chats}, passages: ${p.passages}, size: ${kb(p.bytes)}, from ${p.oldest || '-'} to ${p.newest || '-'}`,
     '  to send fewer, add --since <date>',
-    `  never sent: transcripts, tool output, thinking, file contents, absolute paths, subagent turns${p.subagentFiles ? ` (${p.subagentFiles} subagent files stay home)` : ''}`,
+    `  never sent: transcripts, tool output, thinking, file contents, absolute paths, subagent turns${p.subagentFiles ? ` (${p.subagentFiles} subagent files stay home)` : ''}, chats marked [no-memory]`,
     `  left out: ${left.length ? left.join(', ') : 'nothing else found'}`,
     `  redact list (${redactList.length}): ${redactList.length ? redactList.map((w) => `${w} (${p.redacted[w] ?? 0} removed)`).join(', ') : 'empty; add words under "team" > "redact" in config.json'}`,
   ]

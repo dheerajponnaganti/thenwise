@@ -30,7 +30,9 @@ Keys and tokens become `[secret masked]` before a single byte is written. Maskin
 
 ## What leaves the machine
 
-None of your work, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes and project chats you share), and an issue report you approve line by line.
+None of your work, until you switch on one of these: PR lookups through `gh`, `distill` (through `claude -p`), Teams (only the notes and project chats you share), an export file you write, and an issue report you approve line by line.
+
+`thenwise export` writes one project's chats to a file you can hand to someone. It holds exactly what Teams would share: the prompts and replies, masked, with the redact list applied and paths made relative to the repo. It never holds tool output, thinking, file contents, absolute paths, or chats marked `[no-memory]`, paused or forgotten. You see a preview first and nothing is written until you type yes. Anyone with the file can read it, so send it the way you would send the chats themselves. On the other side, `thenwise import` checks every chat the way the team server does, answers mark them (imported), and `thenwise import --remove <name>` takes them out again.
 
 The one request on by default is the daily version check: the background sync makes one GET to npm for the newest Thenwise version, sending no version, id or project data, so npm sees only an IP address. Turn it off with `thenwise update-check off`, `"update_check": false` in config.json, or `THENWISE_NO_UPDATE_CHECK=1`.
 

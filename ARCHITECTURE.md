@@ -78,6 +78,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/teams/schema.ts` | `openTeamDb`, `migrateTeamDb` | The team database and its migrations |
 | `src/teams/client.ts` | `joinTeam`, `share`, `fetchShared` | Sharing notes and pulling teammates' notes |
 | `src/teams/chats.ts` | `buildChat`, `pushShared`, `previewShare` | Sharing a project's chats, masked again, with a preview first |
+| `src/teams/export.ts` | `writeExport`, `readExport`, `importChats`, `removeImported` | One project's chats as a file to hand over, and checked import into the team chat cache |
 | `src/teams/chatcache.ts` | `openChatCache`, `readChats` | Teammates' chats on this machine |
 | `src/teams/cli.ts` | `teamMain` | `thenwise team` commands |
 

@@ -6,6 +6,7 @@
 - A flag that takes a value, given without one (`thenwise status --db`, `thenwise distill --since`), is an input error that names the flag, with exit code 2. Before, the command ran with its default and said nothing, so a typo could work on data you did not mean.
 - In a Copilot or Antigravity chat, a shell command that fails (a test that exits 1) now counts as failed. Before, the tool's mark that the call ran was read as the command passing, so the handoff said the last test passed and no dead end was kept. The first sync after updating reads those chats again.
 - An edit that failed (its text was not in the file, or the tool denied it) no longer counts as an edit of that file in its history, hints and handoffs. The first sync after updating rebuilds the store once.
+- The memory keeps what each chat did, not only what it said: every edit (the file, and whether a later turn put it back) and every test run (when, whether it failed, the file edited just before, the command with secrets masked). Nothing of a file's contents is kept, only short fingerprints of the edited text. The first sync after updating rebuilds the store once.
 
 ## 0.2.0
 

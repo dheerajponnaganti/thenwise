@@ -26,6 +26,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/ingest/archive.ts` | `archive`, `maskTranscript` | Claude Code chat files to a masked copy in the data folder |
 | `src/ingest/transcript.ts` | `parseSession`, `chatLines`, `bashPaths` | One masked chat to sessions, turns, summaries and tool facts |
 | `src/ingest/parts.ts` | `sessionPart`, `prPart`, `notesPart`, `curatedPart`, `docsPart`, `memoryPart` | Pure pieces of the graph build, shared by the full and incremental paths |
+| `src/ingest/facts.ts` | `sessionFacts`, `buildFactIndex`, `putFacts` | Each turn's edits (marked when a later turn puts them back) and test runs, with the `changes` and `tests` tables derived from them |
 | `src/ingest/ingest.ts` | `STATE_VERSION`, `signatureOf`, `storeFormat` | Full build of `graph.db`, and the choice between rebuild and update |
 | `src/ingest/incremental.ts` | `updateGraph` | Reads only what changed, and ends with the store a rebuild would give |
 | `src/ingest/copilot.ts` | `copilotSources`, `copilotConverter`, `asClaudeTool`, `claudeHookInput` | Copilot CLI chats and hook input, turned into Claude Code's format so one reader serves both |

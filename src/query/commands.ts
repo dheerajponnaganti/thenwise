@@ -400,8 +400,8 @@ export function asof(g: Graph, date: string, q: string, limit = 5): string {
   return [out.join('\n'), ...blocks].join('\n\n')
 }
 
-/** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
-function commitsAt(g: Graph, end: number): string[] {
+/** The newest commit on or before `end` in each repository in scope (at most four repos, newest first). */
+export function newestCommits(g: Graph, end: number): Node[] {
   const best = new Map<string, Node>()
   for (const n of g.ofKind('commit')) {
     if (isStash(n) || !(ms(n.at) <= end) || !g.inScope(n)) continue
@@ -409,7 +409,13 @@ function commitsAt(g: Graph, end: number): string[] {
     // On-main commits beat the rest; among equals the newest wins.
     if (!b || +offMain(b) > +offMain(n) || (offMain(b) === offMain(n) && ms(n.at) > ms(b.at))) best.set(n.source, n)
   }
-  return [...best.values()].sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4).map((n) => `- ${n.project}: ${label(g, n.id)}, ${local(n.at)}: git -C ${n.source} show ${String(n.extra.sha ?? n.id.split(':').pop()).slice(0, 7)}:<path>`)
+  return [...best.values()].sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4)
+}
+export const shaOf = (n: Node) => String(n.extra.sha ?? n.id.split(':').pop())
+
+/** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
+function commitsAt(g: Graph, end: number): string[] {
+  return newestCommits(g, end).map((n) => `- ${n.project}: ${label(g, n.id)}, ${local(n.at)}: git -C ${n.source} show ${shaOf(n).slice(0, 7)}:<path>`)
 }
 
 function pick(g: Graph, id: string, keys: string[]) {

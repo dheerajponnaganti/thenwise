@@ -32,7 +32,7 @@ const flag = (name: string) => {
 }
 // Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
 for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -261,12 +261,11 @@ const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', '
 if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
   const { loadConfig } = await import('./ingest/config.ts')
-  const { Graph } = await import('./query/engine.ts')
+  const { Graph, endOf } = await import('./query/engine.ts')
   const c = await import('./query/commands.ts')
   // Positional words are everything after the command that is not a flag or a flag value.
   const args: string[] = []
   const rest = process.argv.slice(3)
-  // `tests` takes a test command, whose own flags (`--test`, `--`) are part of it: only Thenwise's scope options are taken out.
   // `tests` takes a test command, whose own flags (`--test`, `--project`, `--all`) are part of it: Thenwise's options count
   // only before it, as in `thenwise tests --here vitest --project unit`.
   const lead: string[] = []
@@ -275,8 +274,9 @@ if (cmd && QUERY.includes(cmd)) {
     for (; i < rest.length && ['--here', '--all', '--project', '--db'].includes(rest[i]!); i++) lead.push(rest[i]!, ...(['--project', '--db'].includes(rest[i]!) ? [rest[++i]!] : []))
     args.push(...rest.slice(i))
   }
-  else for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
+  else for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short', '--checkout', '--clean'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
   const cfg = loadConfig()
+  if (cmd === 'asof' && process.argv.includes('--clean')) (console.log((await import('./query/checkout.ts')).cleanCheckouts(cfg.memDir)), process.exit(0))
   const leadFlag = (n: string) => (lead.includes(`--${n}`) ? lead[lead.indexOf(`--${n}`) + 1] : undefined)
   const dbPath = xp(cmd === 'tests' ? leadFlag('db') : flag('db')) ?? join(cfg.memDir, 'graph.db')
   // resume starts with where another session of this project stopped, read from its live chat: it needs no store.
@@ -293,10 +293,12 @@ if (cmd && QUERY.includes(cmd)) {
   // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
   const opts = cmd === 'tests' ? lead : process.argv
   const project = cmd === 'tests' ? leadFlag('project') : flag('project')
-  if (!opts.includes('--all') && (project || opts.includes('--here'))) g.scopeTo(xp(project) ?? process.cwd())
+  if (!opts.includes('--all') && (project || opts.includes('--here') || opts.includes('--checkout'))) g.scopeTo(xp(project) ?? process.cwd())
   const q = args.join(' ')
   const need = (ok: boolean) => ok || (console.error(USAGE), process.exit(2))
   need(cmd === 'resume' || cmd === 'cost' || args.length > 0)
+  // A date that does not parse is an input error: say so on stderr and exit 2, so a script or agent never reads it as an answer.
+  if (cmd === 'asof' && Number.isNaN(Date.parse(endOf(args[0]!)))) (console.error(`asof needs an ISO date or date and time first, such as 2026-10-19 or 2026-10-19T06:50:00Z; got "${args[0]}".`), process.exit(2))
   if (cmd === 'search') console.log(process.argv.includes('--pointers') ? c.pointers(g, q) : c.search(g, q))
   else if (cmd === 'current') console.log(c.current(g, q))
   else if (cmd === 'why') console.log(c.why(g, q))
@@ -313,7 +315,10 @@ if (cmd && QUERY.includes(cmd)) {
     console.log(costReport(g, since, q))
   } else if (cmd === 'get') console.log(c.get(g, q))
   else if (cmd === 'tests') console.log(c.testHistory(g, (await import('./ingest/facts.ts')).testKey(q, resolve(xp(leadFlag('project')) ?? process.cwd()))) || `no failed run of "${q}" with an edit before it is recorded`)
-  else if (cmd === 'asof') (need(args.length > 1), console.log(c.asof(g, args[0]!, args.slice(1).join(' '))))
+  else if (cmd === 'asof' && process.argv.includes('--checkout')) {
+    console.log((await import('./query/checkout.ts')).checkout(g, args[0]!, cfg.memDir))
+    if (args.length > 1) console.log(`\n${c.asof(g, args[0]!, args.slice(1).join(' '))}`)
+  } else if (cmd === 'asof') (need(args.length > 1), console.log(c.asof(g, args[0]!, args.slice(1).join(' '))))
   else if (cmd === 'path') (need(args.length > 1), console.log(c.path(g, args[0]!, args.slice(1).join(' '))))
   process.exit(0)
 }

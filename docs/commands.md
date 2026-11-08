@@ -22,7 +22,7 @@ Every answer cites its source and date. A result line reads date, project and so
 - `/thenwise:status`: what is stored and when it last synced.
 - `/thenwise:resume [topic]`: brief the agent on past work.
 - `/thenwise:why <words>`, `/thenwise:tried <words>`, `/thenwise:asof <date> <words>`: ask the memory directly.
-- `/thenwise:deadend <what failed>` and `/thenwise:decide <what was decided>`: keep a dead end or a decision on purpose.
+- `/thenwise:deadend <what failed>` and `/thenwise:decide <what was decided>`: keep a dead end or a decision on purpose. The note records the files its chat edited in the last 30 minutes (up to ten), and any you name with `--file <path>`, so it shows in those files' history. A path that does not exist yet is kept and named in the reply, so a typo shows. When a later commit changes a decision's files, the inbox asks whether the decision still holds; accepting closes it as superseded. `Decision:` lines in commits are watched the same way, with the commit's files.
 - `/thenwise:off [all]` and `/thenwise:on [all]`: pause or resume memory for this project, or everywhere.
 - `/thenwise:forget <session id or project folder>`: remove a chat or a project from memory.
 - `/thenwise:backup`: back up the vault now.

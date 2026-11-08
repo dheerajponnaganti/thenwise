@@ -91,3 +91,18 @@ console.log(JSON.stringify({ n, grew: (process.resourceUsage().maxRSS - before) 
   assert.equal(n, 400000)
   assert.ok(grew < 150, `peak memory grew ${grew.toFixed(0)} MB for a 400 MB chat`)
 })
+
+test('#78: an edit whose call failed is no edit; a patch that failed undoes every file it named', async () => {
+  const { parseSession } = await import('../src/ingest/transcript.ts')
+  const base = { cwd: '/w', sessionId: 's', entrypoint: 'cli', timestamp: '2026-11-08T10:00:00Z' }
+  const use = (id: string, name: string, input: object) => ({ type: 'tool_use', id, name, input })
+  const result = (id: string, err: boolean) => ({ type: 'tool_result', tool_use_id: id, content: err ? 'String to replace not found in file.' : 'ok', is_error: err })
+  const rows = [
+    { type: 'user', uuid: 'u0', ...base, message: { role: 'user', content: 'tidy the files' } },
+    { type: 'assistant', uuid: 'a0', ...base, message: { role: 'assistant', content: [use('e1', 'Edit', { file_path: '/w/a.ts', old_string: 'x', new_string: 'y' }), use('e2', 'Edit', { file_path: '/w/b.ts', old_string: 'gone', new_string: 'z' }), use('p', 'Edit', { file_path: '/w/c.ts', old_string: '1', new_string: '2' }), use('p#1', 'Write', { file_path: '/w/d.ts', content: 'new' }), use('e3', 'Edit', { file_path: '/w/a.ts', old_string: 'nope', new_string: 'q' })] } },
+    { type: 'user', uuid: 'r0', ...base, message: { role: 'user', content: [result('e1', false), result('e2', true), result('p', true), result('e3', true)] } },
+  ]
+  const t = parseSession(rows.map((r) => JSON.stringify(r)).join('\n'), 's', '/h').turns[0]!
+  assert.deepEqual([...t.edits].sort(), ['/w/a.ts'], 'only the edit that worked counts; a second, failed edit of a.ts keeps the first')
+  assert.deepEqual(t.changes.map((c) => c.file), ['/w/a.ts'])
+})

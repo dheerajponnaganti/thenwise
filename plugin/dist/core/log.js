@@ -2,6 +2,7 @@
 // The level comes from THENWISE_LOG, else `log.level` in config.json, else info.
 // Callers pass event names, counts, ids and errors, never chat text, note text or queries. Writing never throws.
 import { createHash } from 'node:crypto';
+import { flag as argFlag } from "./args.js";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -127,7 +128,7 @@ export function recentErrors(dir, now = Date.now()) {
 }
 /** `thenwise logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]`. */
 export function logsCommand(argv, dir) {
-    const flag = (n) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : undefined);
+    const flag = (n) => argFlag(n, argv);
     let cut;
     try {
         cut = flag('since') ? since(flag('since')) : undefined;

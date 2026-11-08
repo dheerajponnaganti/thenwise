@@ -49,7 +49,7 @@ function fileTools(item) {
     });
 }
 /** Turns one rollout line into Claude Code transcript lines: prompts, replies, tool calls and their results. The model's
- * reasoning (encrypted), token counts and settings are left out. Current files report tools as `item_completed` events;
+ * reasoning (encrypted) and settings are left out; token counts become cost rows. Current files report tools as `item_completed` events;
  * older ones as `function_call` items, so both are read and neither appears twice in one file.
  * shortcut: a rollback inside a file (`thread_rolled_back`) keeps the withdrawn turns; no file here has one, drop them when one shows up. */
 export function codexConverter(sessionId, cwd) {
@@ -74,6 +74,12 @@ export function codexConverter(sessionId, cwd) {
             }
             const text = p.role === 'assistant' ? textOf(p.content, 'output_text') : '';
             return text ? [row('assistant', [{ type: 'text', text }])] : [];
+        }
+        // Codex's running token total, as the cost row the parser reads (Codex records tokens, not dollars).
+        if (d?.type === 'event_msg' && p.type === 'token_count' && p.info?.total_token_usage) {
+            const t = p.info.total_token_usage;
+            const num = (v) => (typeof v === 'number' ? v : 0);
+            return [JSON.stringify({ type: 'cost-state', sessionId, timestamp: d.timestamp, tokens: { input: Math.max(0, num(t.input_tokens) - num(t.cached_input_tokens)), cached: num(t.cached_input_tokens), output: num(t.output_tokens) } })];
         }
         if (d?.type === 'compacted')
             return typeof p.message === 'string' && p.message ? [row('user', p.message, { isCompactSummary: true })] : []; // remote compaction is encrypted

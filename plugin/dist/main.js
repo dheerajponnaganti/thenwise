@@ -1,17 +1,37 @@
 // The `thenwise` command (also installed as `memory`). The usage line below lists every command.
 import { existsSync, readFileSync } from 'node:fs';
+import { flag as argFlag } from "./core/args.js";
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { expandHome } from "./core/home.js";
 // Tools whose own chat folders every sync reads, connected or not.
 const READS_CHATS = new Set(['antigravity', 'codex']);
 const [cmd, vaultArg, dirArg] = process.argv.slice(2);
 const xp = (p) => (p === undefined ? undefined : expandHome(p, homedir()));
+// `thenwise tests` takes a test command whose own flags (`--project`, `--since`) are not Thenwise's: only the options
+// before it (`--here`, `--all`, `--project <folder>`, `--db <file>`) are, so only they are read as Thenwise's flags.
+const testsLead = (() => {
+    const r = process.argv.slice(3);
+    let i = 0;
+    while (i < r.length && ['--here', '--all', '--project', '--db'].includes(r[i]))
+        i += ['--project', '--db'].includes(r[i]) ? 2 : 1;
+    return i;
+})();
+const own = cmd === 'tests' ? process.argv.slice(0, 3 + testsLead) : process.argv;
+/** The value after `--<name>`, or undefined when the flag is not given. A flag given with no value is an input error:
+ * running with the default instead would work on data the person did not mean. */
 const flag = (name) => {
-    const i = process.argv.indexOf(`--${name}`);
-    return i > 0 ? process.argv[i + 1] : undefined;
+    if (!own.includes(`--${name}`))
+        return undefined;
+    const v = argFlag(name, own);
+    if (!v || v.startsWith('--'))
+        (console.error(`--${name} needs a value`), process.exit(2));
+    return v;
 };
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
+// Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
+for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since'])
+    flag(f);
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | mine [--db <file>] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] [--file <path>]... | decide "<what was decided>" [--here] [--file <path>]...\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)';
 if (cmd === '--help' || cmd === '-h' || cmd === 'help')
     (console.log(USAGE), process.exit(0));
 if (cmd === '--version' || cmd === '-v')
@@ -20,9 +40,22 @@ if (cmd === 'setup' || cmd === 'init')
     process.exit(await (await import("./setup/setup.js")).setup(process.argv.slice(3)));
 if (cmd === 'deadend' || cmd === 'decide') {
     // A note the person writes on purpose: active at once, tied to the newest chat in scope and its project.
-    const text = process.argv.slice(3).filter((a) => !a.startsWith('--')).join(' ').trim();
+    const { normPath } = await import("./core/vault-index.js"); // stored paths use forward slashes on every system
+    const words = [];
+    const given = [];
+    const rest = process.argv.slice(3);
+    for (let i = 0; i < rest.length; i++) {
+        if (rest[i] !== '--file')
+            rest[i].startsWith('--') || words.push(rest[i]);
+        // A --file with no path after it is an input error: the person meant to name a file, so nothing is saved without it.
+        else if (!rest[i + 1] || rest[i + 1].startsWith('--'))
+            (console.error('--file needs a path, such as --file src/cache.ts'), process.exit(2));
+        else
+            given.push(normPath(resolve(rest[++i])));
+    }
+    const text = words.join(' ').trim();
     if (!text)
-        (console.error(`usage: thenwise ${cmd} "<what>" [--here]`), process.exit(2));
+        (console.error(`usage: thenwise ${cmd} "<what>" [--here] [--file <path>]...`), process.exit(2));
     const { loadConfig } = await import("./ingest/config.js");
     const { makeId, readNotes, saveNote } = await import("./capture/notes.js");
     const { related } = await import("./capture/similar.js");
@@ -41,11 +74,35 @@ if (cmd === 'deadend' || cmd === 'decide') {
     }
     const type = cmd === 'deadend' ? 'dead_end' : 'decision';
     const now = new Date().toISOString();
+    // The note is about the files named with --file and the files this agent's own chat edited lately (the work the note
+    // is about, not all a long chat touched), so it reaches whoever opens them next, and a later commit to them asks
+    // whether a decision still holds. Never a reason to fail.
+    const files = new Set(given);
+    try {
+        const { insideAgent, liveChats, ownChat, readLive } = await import("./hooks/handoff.js");
+        const mine = ownChat(cfg, process.cwd(), insideAgent())[0];
+        const chat = mine ? liveChats(cfg, process.cwd()).find((c) => c.id === mine) : undefined;
+        const s = chat ? readLive(cfg, chat) : null;
+        const since = Date.now() - 30 * 60e3;
+        const recent = new Set();
+        for (const t of [...(s?.turns ?? [])].reverse())
+            if (Date.parse(t.at) >= since)
+                for (const f of t.edits)
+                    if (recent.size < 10)
+                        recent.add(f);
+        for (const f of recent)
+            files.add(normPath(f));
+    }
+    catch { /* no chat to read: the --file paths stand alone */ }
+    // A file that does not exist is kept (a decision may be about a file still to come), and said, so a typo shows.
+    const missing = given.filter((f) => !existsSync(f));
     const active = readNotes(cfg.memDir).filter((x) => x.status === 'active');
     const near = related({ type, title: text.slice(0, 80), summary: text }, active, active);
     const like = near.dup ?? near.candidate;
-    const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '' });
-    console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}The next sync adds it to the memory.`);
+    const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '', files: [...files].sort() });
+    console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}${files.size ? `About ${files.size} file${files.size === 1 ? '' : 's'}: ${[...files].slice(0, 5).map((f) => basename(f)).join(', ')}${files.size > 5 ? ', ...' : ''}. ` : ''}The next sync adds it to the memory.`);
+    if (missing.length)
+        console.log(`Not found on disk, kept as given: ${missing.map((f) => normPath(relative(process.cwd(), f)) || f).join(', ')}. Check the path if that is a typo.`);
     if (like)
         console.log(`Similar note: ${like.id}: ${like.title}. Check that the two agree.`);
     process.exit(0);
@@ -225,6 +282,18 @@ if (cmd === 'status') {
         console.log(l);
     process.exit(0);
 }
+if (cmd === 'mine') {
+    const { loadConfig } = await import("./ingest/config.js");
+    const cfg = loadConfig();
+    const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
+    if (!existsSync(db))
+        (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2));
+    const n = (await import("./capture/mine.js")).mineRules(cfg.memDir, db);
+    console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`);
+    const e = (await import("./capture/expire.js")).proposeExpiry(cfg.memDir, db);
+    console.log(`${e} decision${e === 1 ? '' : 's'} to recheck added to the inbox${e ? '; `thenwise inbox` lists them' : ''}`);
+    process.exit(0);
+}
 if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject' || cmd === 'edit') {
     const { loadConfig } = await import("./ingest/config.js");
     const notes = await import("./capture/notes.js");
@@ -243,7 +312,7 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
     else if (cmd === 'inbox') {
         const inbox = notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox');
         for (const n of inbox)
-            console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`);
+            console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary.split('\n').join('\n   ')}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`);
         console.log(`${inbox.length} note(s) in the inbox`);
     }
     else if (cmd === 'accept') {
@@ -274,23 +343,44 @@ if (cmd === 'vault') {
     console.log(r.stopped ?? `${r.notes} notes in ${r.dir}: ${r.written} written, ${r.unchanged} unchanged, ${r.removed} removed`);
     process.exit(r.stopped && !r.stopped.startsWith('no vault') ? 1 : 0);
 }
+if (cmd === 'export' || cmd === 'import') {
+    const { loadConfig } = await import("./ingest/config.js");
+    const words = [];
+    const rest = process.argv.slice(3);
+    for (let i = 0; i < rest.length; i++)
+        rest[i].startsWith('--') ? (rest[i] === '--yes' ? 0 : i++) : words.push(rest[i]);
+    process.exit(await (await import("./teams/export.js")).exportMain(cmd, loadConfig(), words, flag));
+}
 if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
     const { teamMain } = await import("./teams/cli.js");
     process.exit(await teamMain(process.argv.slice(2), flag));
 }
-const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'path', 'get'];
+const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'digest', 'path', 'get', 'tests', 'cost'];
 if (cmd && QUERY.includes(cmd)) {
     process.env.THENWISE_CLI_VERBS = '1'; // a person reads this: name the CLI commands, not the MCP tools
     const { loadConfig } = await import("./ingest/config.js");
-    const { Graph } = await import("./query/engine.js");
+    const { Graph, endOf, sinceOf } = await import("./query/engine.js");
     const c = await import("./query/commands.js");
     // Positional words are everything after the command that is not a flag or a flag value.
     const args = [];
     const rest = process.argv.slice(3);
-    for (let i = 0; i < rest.length; i++)
-        rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
+    // `tests` takes a test command, whose own flags (`--test`, `--project`, `--all`) are part of it: Thenwise's options count
+    // only before it, as in `thenwise tests --here vitest --project unit`.
+    const lead = [];
+    if (cmd === 'tests') {
+        let i = 0;
+        for (; i < rest.length && ['--here', '--all', '--project', '--db'].includes(rest[i]); i++)
+            lead.push(rest[i], ...(['--project', '--db'].includes(rest[i]) ? [rest[++i]] : []));
+        args.push(...rest.slice(i));
+    }
+    else
+        for (let i = 0; i < rest.length; i++)
+            rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short', '--checkout', '--clean'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
     const cfg = loadConfig();
-    const dbPath = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
+    if (cmd === 'asof' && process.argv.includes('--clean'))
+        (console.log((await import("./query/checkout.js")).cleanCheckouts(cfg.memDir)), process.exit(0));
+    const leadFlag = (n) => (lead.includes(`--${n}`) ? lead[lead.indexOf(`--${n}`) + 1] : undefined);
+    const dbPath = xp(cmd === 'tests' ? leadFlag('db') : flag('db')) ?? join(cfg.memDir, 'graph.db');
     // resume starts with where another session of this project stopped, read from its live chat: it needs no store.
     let live = '';
     if (cmd === 'resume' && !process.argv.includes('--short') && !flag('mates-since') && (flag('project') || process.argv.includes('--here'))) {
@@ -305,11 +395,16 @@ if (cmd && QUERY.includes(cmd)) {
     const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }); // lazy reads only what the command touches; --full loads the whole graph
     g.expand = process.argv.includes('--expand');
     // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
-    if (!process.argv.includes('--all') && (flag('project') || process.argv.includes('--here')))
-        g.scopeTo(xp(flag('project')) ?? process.cwd());
+    const opts = cmd === 'tests' ? lead : process.argv;
+    const project = cmd === 'tests' ? leadFlag('project') : flag('project');
+    if (!opts.includes('--all') && (project || opts.includes('--here') || opts.includes('--checkout')))
+        g.scopeTo(xp(project) ?? process.cwd());
     const q = args.join(' ');
     const need = (ok) => ok || (console.error(USAGE), process.exit(2));
-    need(cmd === 'resume' || args.length > 0);
+    need(cmd === 'resume' || cmd === 'digest' || cmd === 'cost' || args.length > 0);
+    // A date that does not parse is an input error: say so on stderr and exit 2, so a script or agent never reads it as an answer.
+    if (cmd === 'asof' && Number.isNaN(Date.parse(endOf(args[0]))))
+        (console.error(`asof needs an ISO date or date and time first, such as 2026-10-19 or 2026-10-19T06:50:00Z; got "${args[0]}".`), process.exit(2));
     if (cmd === 'search')
         console.log(process.argv.includes('--pointers') ? c.pointers(g, q) : c.search(g, q));
     else if (cmd === 'current')
@@ -324,8 +419,23 @@ if (cmd && QUERY.includes(cmd)) {
         console.log(c.mateLatest(g, Date.parse(flag('mates-since')) || 0).join('\n'));
     else if (cmd === 'resume')
         console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'));
+    else if (cmd === 'digest' || cmd === 'cost') {
+        // A bare --since has already stopped at the flag check; a value that is no time is an input error too.
+        const raw = flag('since') ?? (cmd === 'digest' ? '24h' : '7d');
+        const since = sinceOf(raw);
+        if (Number.isNaN(since))
+            (console.error(`--since needs 24h, 7d or a date such as 2026-11-01, found ${raw}`), process.exit(2));
+        console.log(cmd === 'digest' ? (await import("./query/digest.js")).digest(g, since) : (await import("./query/cost.js")).costReport(g, since, q));
+    }
     else if (cmd === 'get')
         console.log(c.get(g, q));
+    else if (cmd === 'tests')
+        console.log(c.testHistory(g, (await import("./ingest/facts.js")).testKey(q, resolve(xp(leadFlag('project')) ?? process.cwd()))) || `no failed run of "${q}" with an edit before it is recorded`);
+    else if (cmd === 'asof' && process.argv.includes('--checkout')) {
+        console.log((await import("./query/checkout.js")).checkout(g, args[0], cfg.memDir));
+        if (args.length > 1)
+            console.log(`\n${c.asof(g, args[0], args.slice(1).join(' '))}`);
+    }
     else if (cmd === 'asof')
         (need(args.length > 1), console.log(c.asof(g, args[0], args.slice(1).join(' '))));
     else if (cmd === 'path')

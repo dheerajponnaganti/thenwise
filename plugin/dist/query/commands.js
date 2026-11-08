@@ -3,6 +3,8 @@
 import { endOf, GOOD, local, localDay, queryTerms } from "./engine.js";
 import { basename } from 'node:path';
 import { trigramSim } from "../capture/similar.js";
+import { isTestFile } from "../ingest/facts.js";
+import { checkoutTop } from "../ingest/repos.js";
 import { ago } from "../core/time.js";
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i];
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i];
@@ -24,7 +26,7 @@ const branchNote = (n) => (n.kind !== 'commit' ? '' : n.extra?.unreachable ? ' (
 const owner = (n) => String(n.extra?.sharedBy ?? '');
 function sourceOf(n) {
     if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session'))
-        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)}, ${localDay(n.at)} (team)`;
+        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)}, ${localDay(n.at)} ${n.extra?.imported ? '(imported)' : '(team)'}`;
     if (n.kind === 'turn' || n.kind === 'summary')
         return `${n.extra?.tool ? `${n.extra.tool} chat, ` : ''}session ${short(n.source)} at ${local(n.at)}`;
     if (n.kind === 'pr')
@@ -104,7 +106,7 @@ export const deadWeight = (n) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?
 /** The short source on a result line; the date, project and id are on the line already. */
 function where(n) {
     if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session'))
-        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)} (team)`;
+        return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat of ${owner(n)} ${n.extra?.imported ? '(imported)' : '(team)'}`;
     if (n.kind === 'turn' || n.kind === 'summary')
         return `${n.extra?.tool ? `${n.extra.tool} ` : ''}chat ${short(n.source)}`;
     if (n.kind === 'session')
@@ -154,8 +156,40 @@ function turnAround(g, h) {
     const sib = g.bySource(n.source).filter((x) => x.kind === 'turn').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1));
     const next = sib[sib.findIndex((x) => x.id === n.id) + 1];
     const reply = next ? flat(g.fullText(next.id).split('\n\n').slice(1).join(' ')) : '';
-    return `${asked}${reply ? `\n   same chat, next (${next.id}): ${cut(reply, 100)}` : ''}`;
+    return `${asked}${turnDid(g, n)}${reply ? `\n   same chat, next (${next.id}): ${cut(reply, 100)}` : ''}`;
 }
+/** What a chat turn changed, from its edges: files edited, commits made, PRs opened. "What did we try" is answered by
+ * what the turn did as much as by what it said. One line, or nothing when the turn changed nothing. */
+function turnDid(g, n) {
+    const edited = new Set();
+    const did = [];
+    for (const e of g.adj.get(n.id) ?? []) {
+        if (!e.out)
+            continue;
+        const to = g.nodes.get(e.to);
+        if (e.kind === 'edited') {
+            const p = e.to.slice(5);
+            const r = inRoot(g, n, p);
+            edited.add(r === p ? basename(p) : r);
+        }
+        else if (e.kind === 'made' && to)
+            did.push(`commit ${String(to.extra?.sha ?? to.id.split(':').pop()).slice(0, 7)} "${cut(flat(to.title), 50)}"`);
+        else if (e.kind === 'opened' && to)
+            did.push(`opened PR #${to.id.split('#').pop()}`);
+    }
+    const files = [...edited];
+    if (files.length)
+        did.unshift(`edited ${files.slice(0, 4).join(', ')}${files.length > 4 ? ` (+${files.length - 4} more)` : ''}`);
+    return did.length ? `\n   did: ${did.slice(0, 4).join('; ')}` : '';
+}
+/** A file as its own project names it: relative to the chat's checkout, else the project root or the chat's folder (a
+ * root may be the resolved path), whichever holds it; else as stored. A chat in a subfolder and one in a worktree name
+ * the same file the same way. */
+export const inRoot = (g, turn, file) => {
+    const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/'); // file ids use forward slashes
+    const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`));
+    return root ? file.slice(root.length + 1) : file;
+};
 /** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable
  * from `tools.output_chars` in config.json). More room shows more results in full. */
 export const outputChars = () => Math.max(2000, Math.min(Number(process.env.THENWISE_OUTPUT_CHARS) || 4000, 20000));
@@ -426,8 +460,8 @@ export function asof(g, date, q, limit = 5) {
     });
     return [out.join('\n'), ...blocks].join('\n\n');
 }
-/** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
-function commitsAt(g, end) {
+/** The newest commit on or before `end` in each repository in scope (at most four repos, newest first). */
+export function newestCommits(g, end) {
     const best = new Map();
     for (const n of g.ofKind('commit')) {
         if (isStash(n) || !(ms(n.at) <= end) || !g.inScope(n))
@@ -437,7 +471,12 @@ function commitsAt(g, end) {
         if (!b || +offMain(b) > +offMain(n) || (offMain(b) === offMain(n) && ms(n.at) > ms(b.at)))
             best.set(n.source, n);
     }
-    return [...best.values()].sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4).map((n) => `- ${n.project}: ${label(g, n.id)}, ${local(n.at)}: git -C ${n.source} show ${String(n.extra.sha ?? n.id.split(':').pop()).slice(0, 7)}:<path>`);
+    return [...best.values()].sort((a, b) => ms(b.at) - ms(a.at)).slice(0, 4);
+}
+export const shaOf = (n) => String(n.extra.sha ?? n.id.split(':').pop());
+/** The newest commit on or before `end` in each repository, so a file can be read as it was then. */
+function commitsAt(g, end) {
+    return newestCommits(g, end).map((n) => `- ${n.project}: ${label(g, n.id)}, ${local(n.at)}: git -C ${n.source} show ${shaOf(n).slice(0, 7)}:<path>`);
 }
 function pick(g, id, keys) {
     const ps = g.passages(id);
@@ -461,6 +500,52 @@ export function fileMates(g, fileId, now = Date.now()) {
         return `now: ${owner(n)}${n.extra.tool ? ` (${n.extra.tool})` : ''} worked on this file ${ago(n.at, now)} (${n.id})${stopped ? '; that chat was stopped by the tool, so the work may be half done' : ''}`;
     });
 }
+/** Failed runs of the tests table, in scope, as [turn node, file edited just before, time]. Empty for a store from before
+ * test runs were kept. Scope goes through the turn, so another clone of the same repo counts as this project. */
+function failedRuns(g, where, args) {
+    try {
+        const rows = g.db.prepare(`SELECT node, after, at, key FROM tests WHERE failed = 1 AND after IS NOT NULL AND ${where}`).all(...args);
+        return rows.flatMap((r) => {
+            const turn = g.nodes.get(r.node);
+            return turn && g.inScope(turn) ? [{ turn, after: r.after, at: r.at, key: r.key }] : [];
+        });
+    }
+    catch {
+        return [];
+    }
+}
+/** Runs counted by `by`, most often first, then newest: the top three as [name, count, last time]. */
+function tally(runs, by) {
+    const m = new Map();
+    for (const r of runs) {
+        const b = m.get(by(r)) ?? m.set(by(r), { n: 0, last: '' }).get(by(r));
+        b.n++;
+        if (r.at > b.last)
+            b.last = r.at;
+    }
+    return [...m].sort((a, b) => b[1].n - a[1].n || (a[1].last < b[1].last ? 1 : -1)).slice(0, 3).map(([k, b]) => [k, b.n, b.last]);
+}
+/** Tests that failed in past chats right after an edit to this file, most often first: `tests:` lines for trace and the
+ * file hint. The file is matched by its path inside its project, so an edit in another clone or worktree counts. */
+export function fileTests(g, fileIds, asked = '') {
+    // The path inside the project: the file's alias, else its path under the scope folder.
+    const within = (id) => g.nodes.get(id)?.extra?.aliases?.[0] ?? (g.scope && id.slice(5).startsWith(`${g.scope}/`) ? id.slice(5 + g.scope.length + 1) : '');
+    // A path asked as relative (the hook asks with the file's path inside the project) is one too.
+    const rels = [...new Set([...fileIds.map(within), /^(?:[/\\~]|[A-Za-z]:)/.test(asked) ? '' : asked.replace(/\\/g, '/')].filter(Boolean))];
+    if (!rels.length)
+        return [];
+    const runs = failedRuns(g, rels.map(() => 'substr(after, -?) = ?').join(' OR '), rels.flatMap((r) => [r.length + 1, `/${r}`])).filter((r) => rels.includes(inRoot(g, r.turn, r.after)));
+    return tally(runs, (r) => r.key).map(([key, n, last]) => `tests: \`${cut(key, 80)}\` failed ${n} time${n === 1 ? '' : 's'} right after an edit to this file, last on ${localDay(last)}; check it after editing here`);
+}
+/** One test's history: the files in this project whose edits it failed right after, most often first. '' when none.
+ * A key of test files matches any past run that named one of them, so a run of two suites counts for each. */
+export function testHistory(g, key) {
+    const files = key.split(' ').filter(isTestFile);
+    const runs = files.length === key.split(' ').length
+        ? failedRuns(g, files.map(() => "instr(' ' || key || ' ', ?) > 0").join(' OR '), files.map((f) => ` ${f} `)).filter((r) => r.key.split(' ').some((w) => files.includes(w)))
+        : failedRuns(g, 'key = ?', [key]);
+    return tally(runs, (r) => inRoot(g, r.turn, r.after)).map(([f, n, last]) => `- \`${f}\` (${n} time${n === 1 ? '' : 's'}, last on ${localDay(last)})`).join('\n');
+}
 export function trace(g, target, cap = 100, offset = 0, budget = 0) {
     const ex = g.exact(target);
     if (!ex.length) {
@@ -470,7 +555,7 @@ export function trace(g, target, cap = 100, offset = 0, budget = 0) {
         const hits = s.good.slice(0, 8).sort((a, b) => ms(b.node.at) - ms(a.node.at));
         return [`trace "${target}": no file, PR, commit or note by that name; showing ${hits.length} topic matches, newest first, grouped by date`, `searched: ${s.terms.join(' ')}`, ...grouped(hits.map((h) => ({ date: h.node.at, text: result(0, h).replace(/^0\. /, '- ') })))].join('\n\n');
     }
-    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), cutNote()];
+    const out = [`trace "${target}": ${ex.map((e) => `${e.why} -> ${label(g, e.id)}`).join('; ')}`, ...ex.filter((e) => e.id.startsWith('file:')).slice(0, 1).flatMap((e) => fileMates(g, e.id)), ...fileTests(g, ex.filter((e) => e.id.startsWith('file:')).slice(0, 3).map((e) => e.id), target), cutNote()];
     const items = [];
     for (const { id } of ex.slice(0, 3)) {
         const t = g.nodes.get(id);

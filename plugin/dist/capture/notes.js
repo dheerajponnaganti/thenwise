@@ -6,10 +6,14 @@ import { join } from 'node:path';
 import { parseFrontMatter, yamlValue } from "../core/frontmatter.js";
 export const TYPES = ['decision', 'dead_end', 'finding', 'rule', 'now'];
 export const EXPIRY_DAYS = 14;
-const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project'];
+const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project', 'files'];
 export const notesDir = (memDir) => join(memDir, 'notes');
 export const makeId = (prefix, key) => `${prefix}-${createHash('sha1').update(key).digest('hex').slice(0, 10)}`;
 const slug = (n) => `${n.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'note'}-${n.id.slice(-4)}`;
+const flat = (t) => t.replace(/\s*\n\s*/g, ' ').trim();
+/** Front matter holds the summary on one line; the body below it keeps its line breaks. The body is used when it is the
+ * same text, so a list keeps its lines; when the two differ (one was edited by hand), the front matter wins. */
+const withLines = (summary, body) => (body.trim() && flat(body) === flat(summary) ? body.trim() : summary);
 export function readNotes(memDir) {
     const out = [];
     const root = notesDir(memDir);
@@ -20,11 +24,12 @@ export function readNotes(memDir) {
             continue;
         for (const f of readdirSync(join(root, t)).filter((x) => x.endsWith('.md')).sort()) {
             const path = join(root, t, f);
-            const d = parseFrontMatter(readFileSync(path, 'utf8')).data;
+            const fm = parseFrontMatter(readFileSync(path, 'utf8'));
+            const d = fm.data;
             const s = (k) => (d[k] == null ? '' : String(d[k]));
             if (!s('id'))
                 continue;
-            out.push({ id: s('id'), type: t, title: s('title'), summary: s('summary'), status: (s('status') || 'inbox'), valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path });
+            out.push({ id: s('id'), type: t, title: s('title'), summary: withLines(s('summary'), fm.body), status: (s('status') || 'inbox'), valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path, files: Array.isArray(d.files) ? d.files.map(String) : [] });
         }
     }
     return out;
@@ -34,7 +39,8 @@ export function saveNote(memDir, n) {
         mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 });
         n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`);
     }
-    const fm = FIELDS.map((k) => {
+    // `files` is written only when there are some, so notes without files keep their old form.
+    const fm = FIELDS.filter((k) => k !== 'files' || n.files?.length).map((k) => {
         const v = n[k];
         return `${k}: ${yamlValue(v === '' ? null : v)}`;
     });

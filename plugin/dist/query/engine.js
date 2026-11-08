@@ -40,6 +40,20 @@ export const local = (at) => {
 };
 /** The local calendar day of a timestamp. */
 export const localDay = (at) => local(at).slice(0, 10);
+/** The start of a local day (local midnight), in ms. The offset is read at that midnight, so a day with a clock
+ * change starts at the right hour. */
+export const startOf = (d) => {
+    const guess = Date.parse(`${d}T00:00:00.000Z`);
+    return guess - offsetMs(guess - offsetMs(guess));
+};
+/** `24h`, `7d` or an ISO date or time, to milliseconds; NaN when it is none of these. A plain date is the start of
+ * that local day, as asof reads a plain date as its end. */
+export function sinceOf(s, now = Date.now()) {
+    const m = /^(\d+)([hd])$/.exec(s);
+    if (m)
+        return now - Number(m[1]) * (m[2] === 'h' ? 36e5 : 864e5);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? startOf(s) : Date.parse(s);
+}
 /** The end of a local day, as a UTC instant; a full timestamp is used as given. */
 export const endOf = (d) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d))

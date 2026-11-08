@@ -1,14 +1,25 @@
 // The teammates' shared chats this machine holds: <data folder>/team-chats.db (SQLite, mode 0600). Written by
 // `team sync`, read by the ingest layer. It imports nothing from the ingest, so both can use it.
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 export const chatCacheFile = (dir) => join(dir, 'team-chats.db');
+/** Which cached chats came from `thenwise import`, by owner: they read as imported, not as the team's. */
+export const importsFile = (dir) => join(dir, 'imports.json');
+export function loadImports(dir) {
+    try {
+        return JSON.parse(readFileSync(importsFile(dir), 'utf8'));
+    }
+    catch {
+        return {};
+    }
+}
 const SCHEMA = `CREATE TABLE IF NOT EXISTS chats(owner TEXT NOT NULL, session TEXT NOT NULL, project TEXT NOT NULL, rev INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER, head TEXT, mask INTEGER, bytes INTEGER, tool TEXT DEFAULT '', PRIMARY KEY(owner, session));
 CREATE TABLE IF NOT EXISTS passages(owner TEXT NOT NULL, session TEXT NOT NULL, turn TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER, line TEXT, kind TEXT, text TEXT NOT NULL, paths TEXT, shas TEXT, prs TEXT, dead_end INTEGER, dead_kind TEXT, dead_text TEXT DEFAULT '', PRIMARY KEY(owner, session, turn, n));
 CREATE TABLE IF NOT EXISTS since(k TEXT PRIMARY KEY, v INTEGER NOT NULL);`;
-export function openChatCache(dir) {
-    const f = chatCacheFile(dir);
+export const openChatCache = (dir) => openChatFile(chatCacheFile(dir));
+/** Any file in the chat cache's schema (an export file too), mode 0600. */
+export function openChatFile(f) {
     const db = new DatabaseSync(f);
     db.exec(SCHEMA);
     if (!db.prepare('PRAGMA table_info(passages)').all().some((c) => c.name === 'dead_text'))
@@ -38,23 +49,27 @@ export function readChats(dir) {
         return [];
     const db = openChatCache(dir);
     try {
-        const out = [];
-        const rows = db.prepare('SELECT * FROM passages ORDER BY owner, session, rowid').all();
-        let i = 0;
-        for (const c of db.prepare('SELECT * FROM chats ORDER BY owner, session').all()) {
-            const turns = [];
-            for (; i < rows.length && rows[i].owner === c.owner && rows[i].session === c.session; i++) {
-                const r = rows[i];
-                if (r.n === 0)
-                    turns.push({ id: r.turn, at: r.at, line: r.line, kind: r.kind, passages: [r.text], paths: JSON.parse(r.paths), shas: JSON.parse(r.shas), prs: JSON.parse(r.prs), dead_end: !!r.dead_end, dead_kind: r.dead_kind, dead_text: r.dead_text ?? '' });
-                else
-                    turns.at(-1).passages.push(r.text);
-            }
-            out.push({ ...c, turns });
-        }
-        return out;
+        return chatsIn(db);
     }
     finally {
         db.close();
     }
+}
+/** Every chat in an open file of the cache's schema, in a fixed order, turns rebuilt from their passages. */
+export function chatsIn(db) {
+    const out = [];
+    const rows = db.prepare('SELECT * FROM passages ORDER BY owner, session, rowid').all();
+    let i = 0;
+    for (const c of db.prepare('SELECT * FROM chats ORDER BY owner, session').all()) {
+        const turns = [];
+        for (; i < rows.length && rows[i].owner === c.owner && rows[i].session === c.session; i++) {
+            const r = rows[i];
+            if (r.n === 0)
+                turns.push({ id: r.turn, at: r.at, line: r.line, kind: r.kind, passages: [r.text], paths: JSON.parse(r.paths), shas: JSON.parse(r.shas), prs: JSON.parse(r.prs), dead_end: !!r.dead_end, dead_kind: r.dead_kind, dead_text: r.dead_text ?? '' });
+            else
+                turns.at(-1).passages.push(r.text);
+        }
+        out.push({ ...c, turns });
+    }
+    return out;
 }

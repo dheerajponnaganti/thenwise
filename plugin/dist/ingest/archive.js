@@ -14,6 +14,11 @@ import { copilotConverter, copilotSources } from "./copilot.js";
 import { withLock } from "./lock.js";
 import { isMarked } from "./parts.js";
 import { chatLines, chatText, lastMemberSize, parseSession } from "./transcript.js";
+/** Bumped when a converter for another tool learns to read more of its lines, with the tools whose chats it changes (2:
+ * Codex token counts; 3: Copilot and Antigravity shell exit codes, #77). Such a chat archived by an older converter is
+ * converted again from its source, while the source is still there; Claude Code's own chats are not touched. */
+export const CONVERT_VERSION = 3;
+const CONVERTED_AGAIN = new Set(['codex', 'copilot', 'antigravity']);
 function maskLine(line) {
     try {
         return { text: JSON.stringify(maskDeep(JSON.parse(line))), bad: false };
@@ -328,14 +333,20 @@ function archiveLocked(cfg, opts) {
             res.seen++;
             if (unchanged) {
                 const cur = (manifest[rel] = { ...old, cwd: info.cwd, checked: check });
-                if (old.mask !== MASK_VERSION) {
+                const reconvert = !!src.convert && CONVERTED_AGAIN.has(src.tool ?? '') && (old.conv ?? 1) !== CONVERT_VERSION && existsSync(src.path) && statSync(src.path).size === old.size;
+                if (old.mask !== MASK_VERSION || reconvert) {
                     // Newer patterns reach old files. Re-read Claude Code's own file when it still exists (words an older mask ate come
                     // back); masking is idempotent, so otherwise re-mask the archived copy.
                     const fromSrc = existsSync(src.path) && statSync(src.path).size === old.size;
                     if (fromSrc) {
                         const m = streamMask(src.path, tmp, false, src.convert?.());
-                        renameSync(tmp, dest);
-                        manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: m.sha, mask: MASK_VERSION, unparsed: m.unparsed, pending: m.pending, lines: m.lines };
+                        // Converting again only adds lines: a shorter result means the archived copy holds turns the source lost, so it stays.
+                        if (reconvert && old.mask === MASK_VERSION && m.lines < old.lines)
+                            (rmSync(tmp, { force: true }), (manifest[rel] = { ...cur, conv: CONVERT_VERSION }));
+                        else {
+                            renameSync(tmp, dest);
+                            manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: m.sha, mask: MASK_VERSION, ...(src.convert ? { conv: CONVERT_VERSION } : {}), unparsed: m.unparsed, pending: m.pending, lines: m.lines };
+                        }
                     }
                     else {
                         // shortcut: the archived copy is gunzipped whole here (no sync streaming gunzip), only when the source is gone and the mask version moved
@@ -380,7 +391,7 @@ function archiveLocked(cfg, opts) {
             }
             renameSync(tmp, dest);
             chmodSync(dest, 0o600);
-            manifest[rel] = { source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, sha256: masked.sha, mask: MASK_VERSION, cwd: info.cwd, checked: check, lines: masked.lines, unparsed: masked.unparsed, pending: masked.pending };
+            manifest[rel] = { source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, sha256: masked.sha, mask: MASK_VERSION, ...(src.convert ? { conv: CONVERT_VERSION } : {}), cwd: info.cwd, checked: check, lines: masked.lines, unparsed: masked.unparsed, pending: masked.pending };
             for (const line of masked.unparsed)
                 res.unparsed.push({ rel, line });
             res.archived++;

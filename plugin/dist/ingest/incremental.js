@@ -13,6 +13,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { parseTrailers, syncTrailers } from "../capture/notes.js";
 import { fillSynonyms, keepWord, toks } from "../query/language.js";
 import { noteKeys, passagesOf } from "../query/passages.js";
+import { dropFacts, putFacts } from "./facts.js";
 import { DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, shaOfFile, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, signatureOf } from "./ingest.js";
 import { plansPart } from "./plans.js";
 import { LOG_FORMAT, MENTION_KINDS, aliasesOf, workDirs, classify, commitEdges, curatedPart, docsPart, edgeKey, extractRefs, fileNode, memoryPart, notesPart, parseLog, prPart, resolveClaims, resolveRefs, sessionPart, sortKeys, teamChats, teamChatsPart, teamClaims, teamPart } from "./parts.js";
@@ -67,9 +68,11 @@ class Store {
             this.bump('vocab_b', p.text, -1);
         }
         this.run('DELETE FROM passages WHERE node = ?', old.id);
+        dropFacts(this.db, old.id);
         this.bump('vocab_t', old.title, -1);
     }
     index(rowid, n, extra) {
+        putFacts(this.db, n.id, n.kind, extra);
         this.run('INSERT INTO nodes_fts(rowid, title, text) VALUES (?, ?, ?)', rowid, n.title, n.text);
         this.run('INSERT INTO titles_fts(rowid, title) VALUES (?, ?)', rowid, [n.title, ...noteKeys(n.kind, extra)].join(' '));
         if (n.kind !== 'file') {

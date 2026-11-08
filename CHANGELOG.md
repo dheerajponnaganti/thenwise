@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Test history. When a test runs, the agent hears once per session which files' edits it failed right after in past chats of this project (another clone of the same repo counts), most often first. Before an edit, the file's hint names the tests that failed after edits to it. `thenwise tests <test>` shows the same. A run of several test files counts for each, and a test command is now recognised with any spacing.
 - `thenwise cost` and `/thenwise:cost`: what the chats spent lately (only the part spent in the window, also for a chat that began earlier or was resumed), per tool and per project, and how much went into chats that hit a dead end. Claude Code gives dollars (at API prices, which a subscription does not bill) and tokens; Codex gives tokens; a tool whose chat files hold no cost is named as such. The first sync after updating reads the token counts of Codex chats archived earlier again from their files, once.

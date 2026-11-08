@@ -1,9 +1,41 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
 import { createHash } from 'node:crypto';
+import { isTestRun } from "../core/testrun.js";
 import { posix } from 'node:path';
 import { crc32, gunzipSync, inflateRawSync } from 'node:zlib';
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import { normPath } from "../core/vault-index.js";
+const plus = (a, b) => ({ ...(a.usd !== undefined || b.usd !== undefined ? { usd: (a.usd ?? 0) + (b.usd ?? 0) } : {}), input: a.input + b.input, cached: a.cached + b.cached, output: a.output + b.output });
+/** One running-total row into the chat's cost. A resumed chat restarts its total (a new start time, or a total that went
+ * down), so the run before it is carried as a base. Rows after the cutoff never reach here. */
+function addCost(s, run, c, start, at) {
+    if (run.last && (start !== run.start || c.input + c.cached + c.output < run.last.input + run.last.cached + run.last.output))
+        run.base = plus(run.base, run.last);
+    run.last = c;
+    run.start = start;
+    const total = plus(run.base, c);
+    // Dollars count only while every row was priced: one unpriced run leaves the chat without a dollar figure.
+    if (c.usd === undefined || (s.cost && s.cost.usd === undefined))
+        delete total.usd;
+    const prev = s.costs?.at(-1);
+    if (!prev || prev[1] !== (total.usd ?? null) || prev[2] !== total.input || prev[3] !== total.cached || prev[4] !== total.output)
+        (s.costs ??= []).push([at, total.usd ?? null, total.input, total.cached, total.output]);
+    s.cost = total;
+}
+/** A running-total row: Claude Code's `cost-state` (dollars and tokens per model), or the same row the Codex converter makes
+ * from its `token_count` (tokens only). Dollars are left out when Claude Code could not price a model. */
+export function costOf(d) {
+    const n = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+    if (d.modelUsage && typeof d.modelUsage === 'object') {
+        const m = Object.values(d.modelUsage);
+        const sum = (k) => m.reduce((a, x) => a + n(x?.[k]), 0);
+        // Thinking is counted inside outputTokens (on 2,820 real entries it never exceeded it), so it is not added again.
+        return { ...(typeof d.totalCostUSD === 'number' && !d.hasUnknownModelCost ? { usd: d.totalCostUSD } : {}), input: sum('inputTokens') + sum('cacheCreationInputTokens'), cached: sum('cacheReadInputTokens'), output: sum('outputTokens') };
+    }
+    if (d.tokens && typeof d.tokens === 'object')
+        return { input: n(d.tokens.input), cached: n(d.tokens.cached), output: n(d.tokens.output) };
+    return undefined;
+}
 const BASH_PATH = /(?:^|[\s"'=:(])((?:~|\/Users|\/home|\/root)\/[^\s"'`;|&)<>]+|[A-Za-z]:[\\/][^\s"'`;|&)<>]+)/g;
 const BASH_ABS = /(?:^|[\s"'=(])(\/[^\s"'`;|&)<>]+)/g;
 // src/a.ts or ./a/b.py: a folder and a file with an extension. github.com/x/y.git is a site, not a folder.
@@ -20,9 +52,8 @@ const AGENT_TOOLS = /^(Agent|Task)$/;
 export const agentReport = (out) => /^\s*(Async agent launched successfully\b|This agent's report was delivered to you as a message\b)/.test(out)
     ? ''
     : out.replace(/<usage>[\s\S]*?<\/usage>/g, '').split('\n').filter((l) => !/^agentId: \S+ \(/.test(l) && !/^\s*\[Harness note\b/.test(l)).join('\n').trim();
-// `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
-const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/;
-const h = (s) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '');
+// A short fingerprint of edited text: an edit that puts back an earlier one's old text is found by it. It protects nothing.
+const h = (s) => (typeof s === 'string' ? createHash('sha256').update(s).digest('hex').slice(0, 16) : '');
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i;
 export function normalizePath(path, home, cwd = '/') {
     const p = normPath(path);
@@ -156,7 +187,12 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
     const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity;
     const cut = until ? Date.parse(until) : Infinity;
     const s = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub };
+    let lastAt = '';
+    let pastCut = false;
+    const run = { base: { input: 0, cached: 0, output: 0 }, last: undefined, start: undefined };
     const pending = new Map();
+    // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
+    const editCalls = new Map();
     const open = new Map(); // tool calls with no result yet
     let turn = null;
     for (const line of typeof text === 'string' ? text.split('\n') : text) {
@@ -165,6 +201,16 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
             d = JSON.parse(line);
         }
         catch {
+            continue;
+        }
+        // A line's time dates the cost row after it, which carries none of its own; once a line is past the cutoff, so is
+        // every cost row after it.
+        if (typeof d?.timestamp === 'string')
+            Date.parse(d.timestamp) > cut ? (pastCut = true) : (lastAt = d.timestamp);
+        if (d?.type === 'cost-state') {
+            const c = costOf(d);
+            if (c && lastAt && !pastCut)
+                addCost(s, run, c, d.startTime, lastAt);
             continue;
         }
         if (!d || typeof d !== 'object' || (d.type !== 'user' && d.type !== 'assistant') || (d.isSidechain && !sub))
@@ -199,6 +245,24 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                     const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined;
                     if (!hit)
                         continue;
+                    if (hit.kind === 'edit') {
+                        // One result answers a patch that became one edit per file (ids <call>, <call>#1, ...).
+                        for (let j = 0;; j++) {
+                            const id = j ? `${b.tool_use_id}#${j}` : b.tool_use_id;
+                            const e = pending.get(id);
+                            if (e?.kind !== 'edit')
+                                break;
+                            pending.delete(id);
+                            if (b.is_error !== true)
+                                continue;
+                            const n = (editCalls.get(e.turn)?.get(e.file) ?? 1) - 1;
+                            editCalls.get(e.turn)?.set(e.file, n);
+                            if (n <= 0)
+                                e.turn.edits.delete(e.file);
+                            e.turn.changes = e.turn.changes.filter((c) => !e.changes.includes(c));
+                        }
+                        continue;
+                    }
                     const out = textOf(b.content);
                     if (hit.kind === 'agent') {
                         const report = agentReport(out).slice(0, 8000); // a subagent's report to the turn that asked
@@ -249,16 +313,25 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                 if (typeof file === 'string') {
                     const p = normalizePath(file, home, s.cwd || '/');
                     s.paths.add(p);
+                    const edit = /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name);
                     if (turn)
-                        (b.name === 'Read' ? turn.reads : /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name) ? turn.edits : turn.reads).add(p);
+                        (b.name === 'Read' ? turn.reads : edit ? turn.edits : turn.reads).add(p);
                     const at = d.timestamp ?? turn?.at ?? '';
+                    const made = [];
                     if (turn && b.name === 'Edit')
-                        turn.changes.push({ file: p, oldHash: h(inp.old_string), newHash: h(inp.new_string), at });
+                        made.push({ file: p, oldHash: h(inp.old_string), newHash: h(inp.new_string), at });
                     if (turn && b.name === 'MultiEdit' && Array.isArray(inp.edits))
                         for (const e of inp.edits)
-                            turn.changes.push({ file: p, oldHash: h(e?.old_string), newHash: h(e?.new_string), at });
+                            made.push({ file: p, oldHash: h(e?.old_string), newHash: h(e?.new_string), at });
                     if (turn && b.name === 'Write')
-                        turn.changes.push({ file: p, oldHash: '', newHash: h(inp.content), at });
+                        made.push({ file: p, oldHash: '', newHash: h(inp.content), at });
+                    if (turn)
+                        turn.changes.push(...made);
+                    if (turn && edit && typeof b.id === 'string') {
+                        const calls = editCalls.get(turn) ?? editCalls.set(turn, new Map()).get(turn);
+                        calls.set(p, (calls.get(p) ?? 0) + 1);
+                        pending.set(b.id, { turn, kind: 'edit', file: p, changes: made });
+                    }
                 }
                 if (turn && AGENT_TOOLS.test(b.name))
                     pending.set(b.id, { turn, kind: 'agent' });
@@ -267,7 +340,7 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                         s.paths.add(p);
                         turn?.ran.add(p);
                     }
-                    if (turn && TEST_RUN.test(inp.command))
+                    if (turn && isTestRun(inp.command))
                         pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) });
                     if (turn && GIT_COMMIT.test(inp.command)) {
                         const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command);

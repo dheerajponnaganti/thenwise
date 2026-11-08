@@ -12,7 +12,7 @@ thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes |
 thenwise team join <url> <token> | search <words> | sync | pull
 thenwise team share-chats <repo path> [--since <date>] [--yes] | unshare-chats <project or session id> [--pause] | shares
 thenwise share <note id or file.md> [--yes] | unshare <note id or file.md>`;
-async function confirm(q) {
+export async function confirm(q) {
     if (!process.stdin.isTTY)
         return false;
     const rl = createInterface({ input: process.stdin, output: process.stdout });

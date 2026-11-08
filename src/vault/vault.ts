@@ -1,5 +1,5 @@
 // `thenwise vault write`: curated Markdown notes in <vault>/_thenwise/ for people to read in Obsidian.
-// Decisions, dead ends, a timeline and file histories per project. Short lines with source ids and dates; no chat text.
+// Decisions, dead ends, a timeline, a digest of the last 7 days and file histories per project. Short lines with source ids and dates; no chat text.
 // A note is rewritten only when its text changed. A note a person edited is saved to .edited/ first. No model.
 
 import { createHash } from 'node:crypto'
@@ -12,6 +12,7 @@ import type { Config } from '../ingest/config.ts'
 import { Graph, local } from '../query/engine.ts'
 import type { Node } from '../query/engine.ts'
 import { cut, repo, sessionProjects, sourceOf } from '../views/views.ts'
+import { sessionFacts } from '../query/digest.ts'
 import { OURS, skippedNotes } from './user.ts'
 
 export const VAULT_FORMAT = 1
@@ -62,18 +63,25 @@ interface Item {
 }
 interface Draft {
   group: string
-  kind: 'Decisions' | 'Dead ends' | 'Timeline' | 'File'
+  kind: 'Decisions' | 'Dead ends' | 'Timeline' | 'Digest' | 'File'
   name: string
   title: string
   items: Item[]
   rank: number
 }
 
-function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean): { drafts: Draft[]; groups: Map<string, string> } {
+/** A chat's digest line for the vault: what it changed, never what was said (vault notes hold no chat text). */
+function digestLine(g: Graph, n: Node, turns: Node[]): string {
+  const f = sessionFacts(g, n, turns)
+  const parts = [f.edited.length ? `edited ${f.edited.length} file${f.edited.length === 1 ? '' : 's'} (${f.edited.slice(0, 5).join(', ')}${f.edited.length > 5 ? ', ...' : ''})` : '', ...f.commits.slice(0, 3).map((c) => `commit ${String(c.extra?.sha ?? c.id.split(':').pop()).slice(0, 7)} ${cut(c.title, 80)}`), ...f.prs.slice(0, 3).map((x) => `opened PR #${x.id.split('#').pop()}`), f.deadEnds.length ? `${f.deadEnds.length} dead end${f.deadEnds.length === 1 ? '' : 's'}` : ''].filter(Boolean)
+  return `${n.extra?.tool ?? 'Claude Code'} chat: ${parts.length ? parts.join('; ') : 'no edits or commits recorded'}`
+}
+
+function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean, now: number): { drafts: Draft[]; groups: Map<string, string> } {
   const { projectOf, touchedBy } = sessionProjects(g, projects)
   const projOf = (n: Node) => (n.kind === 'session' ? projectOf.get(n.id) : n.kind === 'summary' ? projectOf.get(n.source) : n.kind === 'pr' || n.kind === 'commit' ? repo(n.project) : n.project) || n.project || 'general'
-  const sets = new Map<string, { decisions: Item[]; dead: Item[]; time: Item[] }>()
-  const of = (p: string) => sets.get(p) ?? sets.set(p, { decisions: [], dead: [], time: [] }).get(p)!
+  const sets = new Map<string, { decisions: Item[]; dead: Item[]; time: Item[]; digest: Item[] }>()
+  const of = (p: string) => sets.get(p) ?? sets.set(p, { decisions: [], dead: [], time: [], digest: [] }).get(p)!
   const gname = (p: string) => (perProject ? p : '')
   for (const n of g.nodes.values()) {
     const p = gname(projOf(n))
@@ -86,6 +94,11 @@ function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean)
     if (n.extra.curated && n.kind === 'decision') of(p).decisions.push({ n, text: cut(n.title, 160) })
     if (n.extra.curated && n.kind === 'dead_end') of(p).dead.push({ n, text: cut(n.title, 160) })
   }
+  // The digest of the last 7 days, with each chat's turns gathered in one pass (bySource would scan the graph per chat).
+  const recent = [...g.nodes.values()].filter((n) => n.kind === 'session' && !n.extra.team && Date.parse(n.until || n.at) >= now - 7 * 864e5)
+  const turnsOf = new Map<string, Node[]>(recent.map((n) => [n.id, []]))
+  for (const n of g.nodes.values()) if (n.kind === 'turn') turnsOf.get(n.source)?.push(n)
+  for (const n of recent) of(gname(projOf(n))).digest.push({ n, text: digestLine(g, n, turnsOf.get(n.id)!) })
   const histories = new Map<string, Map<string, Node>>()
   const touch = (file: string, n: Node) => (histories.get(file) ?? histories.set(file, new Map()).get(file)!).set(n.id, n)
   for (const [file, ids] of touchedBy) for (const id of ids) touch(file, g.nodes.get(id)!)
@@ -105,6 +118,7 @@ function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean)
     out.push({ group: p, kind: 'Decisions', name: 'Decisions', title: `Decisions: ${label}`, items: sorted(s.decisions), rank: 0 })
     out.push({ group: p, kind: 'Dead ends', name: 'Dead ends', title: `Dead ends: ${label}`, items: sorted(s.dead), rank: 0 })
     out.push({ group: p, kind: 'Timeline', name: 'Timeline', title: `Timeline: ${label}`, items: sorted(s.time), rank: 0 })
+    out.push({ group: p, kind: 'Digest', name: 'Digest', title: `Digest: ${label}, the last 7 days`, items: sorted(s.digest), rank: 0 })
   }
   const top = [...histories].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1))
   const perGroup = new Map<string, number>()
@@ -135,9 +149,9 @@ function render(project: string, title: string, ids: string[], body: string[]): 
 }
 
 /** The notes to write: relative path (inside _thenwise) to text. */
-export function buildNotes(g: Graph, cfg: Pick<Config, 'viewProjects'>, layout: string): { notes: Map<string, string>; capped: number } {
+export function buildNotes(g: Graph, cfg: Pick<Config, 'viewProjects'>, layout: string, now = Date.now()): { notes: Map<string, string>; capped: number } {
   const perProject = layout === 'per-project'
-  const { drafts: all, groups } = drafts(g, cfg.viewProjects, perProject)
+  const { drafts: all, groups } = drafts(g, cfg.viewProjects, perProject, now)
   const core = all.filter((d) => d.kind !== 'File' && (d.items.length || d.kind === 'Timeline'))
   const files = all.filter((d) => d.kind === 'File').sort((a, b) => b.rank - a.rank || (a.group + a.name < b.group + b.name ? -1 : 1))
   // shortcut: decisions, dead ends and timelines are never cut, so more than 100 projects can pass the cap; cap them then.
@@ -196,7 +210,7 @@ export function writeVault(cfg: Config, opts: { db?: string; now?: Date } = {}):
   if (newer) return { ...res, stopped: `${dir} was written by a newer Thenwise (note format above ${VAULT_FORMAT}). Update Thenwise; nothing was written.` }
 
   const g = new Graph(dbPath)
-  const { notes, capped } = buildNotes(g, cfg, cfg.vault.layout)
+  const { notes, capped } = buildNotes(g, cfg, cfg.vault.layout, (opts.now ?? new Date()).getTime())
   g.db.close()
 
   const day = (opts.now ?? new Date()).toISOString().slice(0, 10)

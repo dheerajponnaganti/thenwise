@@ -47,6 +47,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/query/language.ts` | `buildLanguage`, `similarity` | Typo fixes and word pairs mined from the store |
 | `src/query/engine.ts` | `Graph` | Retrieval: BM25 fused with title, link and exact lanes, plus scope and dates |
 | `src/query/checkout.ts` | `checkout`, `cleanCheckouts` | `asof --checkout`: the code of a date in a git worktree beside the store, with that day's chats |
+| `src/query/digest.ts` | `digest`, `sessionFacts` | What each chat did: first prompt, files edited, commits, PRs and dead ends |
 | `src/query/commands.ts` | `search`, `current`, `why`, `tried`, `asof`, `trace`, `resume`, `pointers`, `get` | Store in, formatted answer out |
 | `src/query/cost.ts` | `costReport` | What the chats cost, by each tool's own running total: tokens where recorded, dollars where given |
 | `src/server/stdio.ts` | `createServer`, `serveStdio` | The eight memory tools over MCP stdio |
@@ -56,7 +57,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/capture/notes.ts` | `readNotes`, `saveNote`, `accept`, `reject` | Curated notes and their inbox |
 | `src/capture/distill.ts` | `distill` | Optional: proposes notes through `claude -p`, into the inbox only |
 | `src/capture/similar.ts` | `related` | Finds duplicates and contradictions among notes |
-| `src/vault/vault.ts` | `buildNotes`, `writeVault` | Writes decisions, dead ends, timelines and file histories as Markdown |
+| `src/vault/vault.ts` | `buildNotes`, `writeVault` | Writes decisions, dead ends, timelines, a 7-day digest and file histories as Markdown |
 | `src/vault/user.ts` | `skipReason` | Rules for reading the notes people write |
 | `src/views/views.ts` | `sessionProjects`, `sourceOf` | Helpers for the vault writer |
 | `src/backup/backup.ts` | `backup` | Copies the vault to a git repo or folders. Never the archive or store |

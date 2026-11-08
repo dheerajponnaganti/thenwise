@@ -44,7 +44,8 @@ Codex and Antigravity load no plugin commands, so Thenwise names each of these a
 - `thenwise cost [words] [--since 7d|<date>]` and `/thenwise:cost`: what the chats cost, per tool and per project, and the share spent in chats that hit a dead end. Each tool counts by its own record: Claude Code gives dollars (at API prices) and tokens, Codex gives tokens; a tool whose chat files hold no cost is named, never guessed. With words, only chats about them.
 - `thenwise asof <date> --checkout [words]`: the code of this folder and the projects inside it (or `--project <folder>`, or `--all`) as it was on that date, in its own folder (a git worktree beside the store, with no git hooks run), and the chats of that day. Your working tree is not touched. `thenwise asof --clean` removes the folders and keeps any you changed.
 - `thenwise off|on [--project <path>]`.
-- `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
+- `thenwise digest [--since 24h|7d|<date>]`: what each chat did since then, newest first: the first prompt, files edited, commits, PRs and dead ends. `/thenwise:digest` does the same for this project.
+- `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, a digest of the last 7 days, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 - `thenwise notices all|important|off`: how much Thenwise tells you.
 - `thenwise connect <tool> [--remove]`: give Cursor, Gemini CLI, OpenCode, Codex or Antigravity the memory tools through MCP.
 - `thenwise forget`, `thenwise uninstall`: see [privacy.md](privacy.md).

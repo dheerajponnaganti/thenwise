@@ -86,7 +86,8 @@ export function expireInbox(memDir: string, nowMs: number): string[] {
   return out
 }
 
-/** Accept inbox (or expired) notes. A note that supersedes another closes it, with valid_to = the new valid_from. */
+/** Accept inbox (or expired) notes. A note keeps the date its evidence gives (a commit's `Decision:` line, a mined rule);
+ * one with no date holds from now. A note that supersedes another closes it, with valid_to = the new valid_from. */
 export function accept(memDir: string, pick: { ids?: string[]; type?: string }, nowIso: string): string[] {
   const all = readNotes(memDir)
   const msgs: string[] = []
@@ -95,9 +96,10 @@ export function accept(memDir: string, pick: { ids?: string[]; type?: string }, 
     if (typeof t === 'string') msgs.push(`${t}: no such note`)
     else if (t.status !== 'inbox' && t.status !== 'expired') msgs.push(`${t.id}: is ${t.status}, not in the inbox`)
     else {
-      saveNote(memDir, { ...t, status: 'active', valid_from: nowIso })
+      const from = t.valid_from || nowIso
+      saveNote(memDir, { ...t, status: 'active', valid_from: from })
       const old = t.supersedes ? all.find((n) => n.id === t.supersedes) : undefined
-      if (old && old.status === 'active') saveNote(memDir, { ...old, status: 'superseded', valid_to: nowIso })
+      if (old && old.status === 'active') saveNote(memDir, { ...old, status: 'superseded', valid_to: from })
       msgs.push(`${t.id}: accepted${old ? `, ${old.id} superseded` : ''}`)
     }
   }

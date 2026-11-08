@@ -68,8 +68,12 @@ test('decide records the files named and the files its own chat edited; the deci
     assert.equal(proposeExpiry(w.memDir, join(w.memDir, 'graph.db')), 1)
     const q = exp(w)[0]!
     assert.equal(q.supersedes, note.id)
-    accept(w.memDir, { ids: [q.id] }, new Date().toISOString())
-    assert.equal(readNotes(w.memDir).find((n) => n.id === note.id)!.status, 'superseded', 'accepting closes the decision')
+    accept(w.memDir, { ids: [q.id] }, at(60))
+    const closed = readNotes(w.memDir).find((n) => n.id === note.id)!
+    assert.equal(closed.status, 'superseded', 'accepting closes the decision')
+    // It stopped holding when the commit changed its file, not when the question was answered an hour later.
+    assert.equal(closed.valid_to, q.valid_from)
+    assert.equal(readNotes(w.memDir).find((n) => n.id === q.id)!.valid_from, q.valid_from, 'the accepted note keeps its date')
   } finally {
     w.destroy()
   }

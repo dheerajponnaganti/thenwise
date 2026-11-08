@@ -25,7 +25,7 @@ test('E1 fix: the home folder as a root reads only its own CLAUDE.md, never the 
   writeFileSync(join(home, 'deep/a/CLAUDE.md'), '# deep rules\n- should not be read')
   const cfg = { ...loadConfig(home), roots: [home] }
   const sources = docsPart(cfg).nodes.map((n) => n.source)
-  assert.ok(sources.some((s) => s === join(home, 'CLAUDE.md')))
+  assert.ok(sources.some((s) => s === join(home, 'CLAUDE.md').replace(/\\/g, '/'))) // stored paths use forward slashes
   assert.ok(!sources.some((s) => s.includes('deep')))
 })
 

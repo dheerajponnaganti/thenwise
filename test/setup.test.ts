@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { archive } from '../src/ingest/archive.ts'
 import { isOff, loadConfigSafe, readConfigFile } from '../src/ingest/config.ts'
 import { runDoctor } from '../src/setup/doctor.ts'
-import { discoverProjects } from '../src/setup/projects.ts'
+import { discoverProjects, newProjectLines } from '../src/setup/projects.ts'
 
 const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
 const MARK = '[no-memory]'
@@ -58,6 +58,21 @@ test('S2-H1 S2-H4 S2-H6 S2-H8 S2-B5 S7-B2: setup --yes lists projects, drops per
   const files = allFiles(join(f.data, 'archive', 'sessions')).join('\n')
   assert.ok(!files.includes('personal'), 'a dropped project never reaches the archive')
   assert.ok(files.includes('a1.jsonl.gz') && files.includes('b1.jsonl.gz'))
+})
+
+test('setup: a value flag given with no value is an input error, and nothing is written', () => {
+  const f = f1()
+  const r = f.cli(['setup', '--notes', '--yes'])
+  assert.equal(r.status, 2)
+  assert.match(r.stderr, /--notes needs a value/)
+  assert.ok(!existsSync(join(f.data, 'config.json')), '"--yes" is never saved as a notes folder')
+})
+
+test('a project already in the roots is not reported as new, whatever the slashes', () => {
+  const f = f1(false)
+  const claude = join(f.home, '.claude')
+  assert.deepEqual(newProjectLines(claude, [`${join(f.work, 'alpha')}/`, join(f.work, 'beta').replace(/\//g, '\\')], () => false), [])
+  assert.match(newProjectLines(claude, [join(f.work, 'alpha')], () => false).join('\n'), /not remembered yet: .*beta/)
 })
 
 test('S2-H5 S7-B1: first sync shows chats done of total; a marked chat is never archived', () => {

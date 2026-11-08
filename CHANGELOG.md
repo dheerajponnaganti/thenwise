@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.
+- `thenwise asof --clean` removes a checkout again after a sync. The sync made every file in the data folder readable by you only, which also took away a checkout's run permissions, so git saw changes and kept the folder.
+- Codex: every file in a patch gets its history before the edit, not only the first one.
+- A decision or rule accepted from the inbox keeps the date its evidence gives, such as the commit that wrote a `Decision:` line. Before, it was dated when you accepted it, so `asof` missed it before that day. Accepting a "changed since decided" question closes the decision on the commit's date.
+- A decision note about files stays in step with them: when its files change, the old file links go, and a sync with nothing new says so instead of updating.
+- `thenwise status` works on a store built with `--until`.
+- A vault path written with a trailing slash names its notes as without one.
+- `thenwise setup --notes` (or another setup flag) with no value is an input error, as in the other commands. Before, `setup --notes --yes` saved "--yes" as a notes folder.
+- A project already in your roots is no longer listed as new when the paths differ only in slashes.
+- Old failure notices are not told again after a week.
+- A vault inside a git repo is dated with one git call per sync, not one per note.
+- Fixes for rare cases: a chat file that disappears during a session start, or a sync lock released at that moment, no longer drops the start's text; restoring a team backup refuses while a server under another user runs; stored paths of instruction files and memory files use forward slashes on Windows.
+
 ## 0.3.0
 
 - Test history. When a test runs, the agent hears once per session which files' edits it failed right after in past chats of this project (another clone of the same repo counts), most often first. Before an edit, the file's hint names the tests that failed after edits to it. `thenwise tests <test>` shows the same. A run of several test files counts for each, and a test command is now recognised with any spacing.

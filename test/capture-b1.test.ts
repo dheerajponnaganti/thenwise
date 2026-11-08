@@ -118,8 +118,10 @@ test('18: CLAUDE.md files of clones below a root are not global rules', () => {
     writeFileSync(join(w.proj, 'research/clone/CLAUDE.md'), '- a rule that belongs to the clone only\n')
     mkdirSync(join(w.proj, 'plain'), { recursive: true })
     writeFileSync(join(w.proj, 'plain/CLAUDE.md'), '- a rule of this very project\n')
-    const sources = docsPart(w.cfg).nodes.map((n) => n.source)
-    assert.ok(sources.some((s) => s.replace(/\\/g, '/').endsWith('plain/CLAUDE.md')))
+    const docs = docsPart(w.cfg).nodes
+    const sources = docs.map((n) => n.source)
+    assert.ok(sources.some((s) => s.endsWith('plain/CLAUDE.md')))
+    assert.ok(!docs.some((n) => n.id.includes('\\') || n.source.includes('\\')), 'stored paths use forward slashes on every system')
     assert.ok(!sources.some((s) => s.includes('clone')))
   } finally {
     w.destroy()
@@ -155,7 +157,9 @@ test('30: auto-memory of a key with no chats, Part 2 beside Part, and note dates
     const mem = join(w.home, 'mem/-no-chats/memory')
     mkdirSync(mem, { recursive: true })
     writeFileSync(join(mem, 'x.md'), 'a fact\n')
-    assert.equal(memoryPart(w.cfg, [], join(w.home, 'mem')).nodes.length, 1)
+    const mems = memoryPart(w.cfg, [], join(w.home, 'mem')).nodes
+    assert.equal(mems.length, 1)
+    assert.ok(!mems[0]!.source.includes('\\'), 'stored paths use forward slashes on every system')
 
     w.note('Part.md', '# Part\nline one\nline two\nline three\n')
     w.note('Part 2.md', '# Part two\nsomething else entirely\n')
@@ -176,6 +180,8 @@ test('30: auto-memory of a key with no chats, Part 2 beside Part, and note dates
     utimesSync(join(w.vault, 'Details.md'), new Date('2026-09-09T00:00:00Z'), new Date('2026-09-09T00:00:00Z'))
     const at = notesPart(w.cfg).nodes.find((n) => n.id.endsWith('Details.md'))!.at
     assert.equal(at, '2026-03-04T10:00:00.000Z')
+    // A vault written with a trailing slash names every note the same.
+    assert.deepEqual(notesPart({ ...w.cfg, vaults: [`${w.vault}/`] }).nodes.map((n) => n.id), notesPart(w.cfg).nodes.map((n) => n.id))
   } finally {
     w.destroy()
   }

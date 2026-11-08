@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { quote } from '../core/frontmatter.ts'
+import { alive } from '../core/progress.ts' // EPERM counts as alive: a server under another user
 import { maskSecrets } from '../core/secrets.ts'
 import { VAULT_FORMAT } from '../vault/vault.ts'
 import { CSP, serveConsole } from './console.ts'
@@ -878,12 +879,3 @@ export function restoreTeam(dir: string, file: string): { schema: number; kept: 
   return { schema: at, kept }
 }
 
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0)
-
-    return true
-  } catch {
-    return false
-  }
-}

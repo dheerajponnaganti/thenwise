@@ -4,6 +4,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { normPath } from '../core/vault-index.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
 import { copilotSources } from '../ingest/copilot.ts'
@@ -38,7 +39,8 @@ function headCwd(file: string): string | null {
 /** Reads the head of up to `sample` chats per project; counts every top-level chat. */
 /** Projects in the chat history that the config's roots leave out and no exclude rule names: they are silently out of scope. */
 export function newProjectLines(claudeDir: string, roots: string[], excluded: (key: string) => boolean): string[] {
-  const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !roots.some((r) => p.folder === r || p.folder!.startsWith(`${r}/`)))
+  const norm = roots.map(normPath) // Windows separators and a trailing slash still match
+  const out = discoverProjects(claudeDir).filter((p) => p.folder && !excluded(p.key) && !norm.some((r) => normPath(p.folder!) === r || normPath(p.folder!).startsWith(`${r}/`)))
 
   return out.length ? [`not remembered yet: ${out.map((p) => p.folder).join(', ')}. Run \`thenwise setup\` to add ${out.length === 1 ? 'it' : 'them'}.`] : []
 }

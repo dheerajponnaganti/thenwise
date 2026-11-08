@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.
 - `thenwise asof --clean` removes a checkout again after a sync. The sync made every file in the data folder readable by you only, which also took away a checkout's run permissions, so git saw changes and kept the folder.

@@ -49,8 +49,9 @@ const under = (p, roots) => roots.some((r) => normPath(p) === normPath(r) || nor
 /** The folder a Claude Code chat ran in, from the `cwd` of its first lines; '' when none shows there. */
 function headCwd(path) {
     const b = Buffer.alloc(16 << 10);
-    const fd = openSync(path, 'r');
+    let fd;
     try {
+        fd = openSync(path, 'r'); // a chat file gone or unreadable since it was listed is skipped
         const n = readSync(fd, b, 0, b.length, 0);
         const m = /"cwd":\s*"((?:[^"\\]|\\.)*)"/.exec(b.toString('utf8', 0, n));
         return m ? JSON.parse(`"${m[1]}"`) : '';
@@ -59,7 +60,8 @@ function headCwd(path) {
         return '';
     }
     finally {
-        closeSync(fd);
+        if (fd !== undefined)
+            closeSync(fd);
     }
 }
 /** Chats of this project from both tools, newest first, last written within DAYS, leaving out the given session ids. */

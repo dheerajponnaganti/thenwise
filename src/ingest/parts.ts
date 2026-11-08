@@ -17,6 +17,7 @@ import { COPILOT_ENTRYPOINT } from './copilot.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
 import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from './deadend.ts'
+import { sessionFacts } from './facts.ts'
 import { githubSlug, repoRoot } from './repos.ts'
 import { readChats } from '../teams/chatcache.ts'
 import type { WireChat } from '../teams/chatcache.ts'
@@ -142,6 +143,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {}
   if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}) } })
   const done = structural(s.turns)
+  const facts = sessionFacts(s.turns)
   for (const t of s.turns) {
     const tid = `turn:${t.id}${sfx}`
     // What happened beats what was said: an undone edit or a failed test, then the person's own [dead-end] line,
@@ -150,7 +152,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
     const st = done.get(t.id) ?? (marked ? { text: marked, kind: 'marked' as const } : undefined)
     const phrase = st ? undefined : deadEnd(t.reply.join('\n\n'))
     const de = st ?? (phrase ? { text: phrase, kind: 'phrase' as const } : undefined)
-    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')) } })
+    node({ id: tid, kind: 'turn', title: t.prompt.split('\n')[0]!.slice(0, 200), text: [t.prompt, ...t.reply, ...(t.cutOff ? [stoppedLine(t.cutOff.text)] : [])].join('\n\n'), at: t.at, project: key, source: sid, extra: { ...tool, ...(s.sub ? { subagent: true } : {}), ...(de ? { deadEnd: de.text, deadEndKind: de.kind } : {}), promptLen: t.prompt.length, ...questionFields([t.prompt, ...t.reply].join('\n')), ...facts.get(t.id) } })
     edge(tid, sid, 'part_of', t.at)
     if (st && 'file' in st && st.file) edge(tid, `file:${normPath(st.file)}`, 'dead_end', t.at)
     for (const [paths, kind] of [[t.reads, 'read'], [t.edits, 'edited'], [t.ran, 'ran_in']] as const) for (const p of paths) edge(tid, `file:${normPath(p)}`, kind, t.at)

@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import { parseTrailers, syncTrailers } from '../capture/notes.ts'
 import { fillSynonyms, keepWord, toks } from '../query/language.ts'
 import { noteKeys, passagesOf } from '../query/passages.ts'
+import { dropFacts, putFacts } from './facts.ts'
 import type { Config } from './config.ts'
 import { ALL_REFS, DERIVED, STORE_FORMAT, slugsOf, FILE_KINDS, gitOut, loadPrInputs, mainShas, ownerRows, parseSf, shaOfFile, firstChat, HISTORY_DAYS, repoShas, rootsKey, scanSessions, sha256, signatureOf } from './ingest.ts'
 import type { IngestOptions, IngestResult, SessionFile } from './ingest.ts'
@@ -78,9 +79,11 @@ class Store {
       this.bump('vocab_b', p.text, -1)
     }
     this.run('DELETE FROM passages WHERE node = ?', old.id)
+    dropFacts(this.db, old.id)
     this.bump('vocab_t', old.title, -1)
   }
   private index(rowid: number, n: GNode, extra: string) {
+    putFacts(this.db, n.id, n.kind, extra)
     this.run('INSERT INTO nodes_fts(rowid, title, text) VALUES (?, ?, ?)', rowid, n.title, n.text)
     this.run('INSERT INTO titles_fts(rowid, title) VALUES (?, ?)', rowid, [n.title, ...noteKeys(n.kind, extra)].join(' '))
     if (n.kind !== 'file') {

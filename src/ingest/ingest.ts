@@ -16,6 +16,7 @@ import type { TrailerItem } from '../capture/notes.ts'
 import { errFields, logger } from '../core/log.ts'
 import { buildLanguage } from '../query/language.ts'
 import { buildPassageIndex } from '../query/passages.ts'
+import { buildFactIndex } from './facts.ts'
 import { loadTombs, underFolder } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
@@ -517,6 +518,7 @@ function writeDb(path: string, g: Graph, meta: Record<string, number | string>, 
   for (const [k, v] of Object.entries(meta)) db.prepare('INSERT INTO meta VALUES (?,?)').run(k, String(v))
   db.exec("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
   buildPassageIndex(db)
+  buildFactIndex(db)
   buildLanguage(db)
   if (state) {
     db.exec(STATE_SCHEMA)
@@ -549,7 +551,7 @@ function writeDb(path: string, g: Graph, meta: Record<string, number | string>, 
 export function dumpHash(path: string): string {
   const db = new DatabaseSync(path, { readOnly: true })
   const h = createHash('sha256')
-  for (const [sql, tag] of [['SELECT * FROM nodes ORDER BY id', 'n'], ['SELECT * FROM edges ORDER BY src, dst, kind', 'e'], ['SELECT * FROM meta ORDER BY key', 'm'], ['SELECT * FROM passages ORDER BY pid', 'p'], ['SELECT * FROM synonyms ORDER BY word, syn', 's'], ['SELECT * FROM vocab ORDER BY word', 'v']] as const)
+  for (const [sql, tag] of [['SELECT * FROM nodes ORDER BY id', 'n'], ['SELECT * FROM edges ORDER BY src, dst, kind', 'e'], ['SELECT * FROM meta ORDER BY key', 'm'], ['SELECT * FROM passages ORDER BY pid', 'p'], ['SELECT node, file, old, new, at, undone FROM changes ORDER BY node, at, file, old, new, undone', 'c'], ['SELECT node, key, at, failed, cmd, after FROM tests ORDER BY node, at, key, cmd, failed, after', 't'], ['SELECT * FROM synonyms ORDER BY word, syn', 's'], ['SELECT * FROM vocab ORDER BY word', 'v']] as const)
     for (const row of db.prepare(sql).all()) h.update(`${tag}${JSON.stringify(row)}\n`)
   db.close()
 

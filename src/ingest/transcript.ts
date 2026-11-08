@@ -67,7 +67,7 @@ export const agentReport = (out: string): string =>
     : out.replace(/<usage>[\s\S]*?<\/usage>/g, '').split('\n').filter((l) => !/^agentId: \S+ \(/.test(l) && !/^\s*\[Harness note\b/.test(l)).join('\n').trim()
 // `node --test`, also with flags before it (`node --experimental-strip-types --test`, `node --import x --test`).
 const TEST_RUN = /(?:^|[\s;&|(])(?:npm (?:run )?test|node(?:\s+--?[\w-]+(?:[= ](?!--test)[^\s-][^\s]*)?)*\s+--test|pytest|go test|cargo test|vitest|jest|bun test|pnpm test|yarn test)\b/
-const h = (s: unknown) => (typeof s === 'string' ? createHash('sha1').update(s).digest('hex').slice(0, 16) : '')
+const h = (s: unknown) => (typeof s === 'string' ? createHash('sha256').update(s).digest('hex').slice(0, 16) : '')
 const TRANSCRIPT_REF = /read the full transcript at:\s*(\S+?\.jsonl)/i
 
 export function normalizePath(path: string, home: string, cwd = '/'): string {
@@ -198,7 +198,9 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
   const limit = fileMs ? Math.min(fileMs + 864e5, Date.now()) : Infinity
   const cut = until ? Date.parse(until) : Infinity
   const s: Session = { id, cwd: '', entrypoint: '', start: '', end: '', turns: [], summaries: [], paths: new Set(), capped: 0, sub }
-  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test'; at?: string; cmd?: string }>()
+  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; file?: string; changes?: Turn['changes'] }>()
+  // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
+  const editCalls = new Map<Turn, Map<string, number>>()
   const open = new Map<string, { turn: Turn; name: string; detail: string; at: string }>() // tool calls with no result yet
   let turn: Turn | null = null
   for (const line of typeof text === 'string' ? text.split('\n') : text) {
@@ -232,6 +234,21 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
           if (b?.type === 'tool_result') open.delete(b.tool_use_id)
           const hit = b?.type === 'tool_result' ? pending.get(b.tool_use_id) : undefined
           if (!hit) continue
+          if (hit.kind === 'edit') {
+            // One result answers a patch that became one edit per file (ids <call>, <call>#1, ...).
+            for (let j = 0; ; j++) {
+              const id = j ? `${b.tool_use_id}#${j}` : b.tool_use_id
+              const e = pending.get(id)
+              if (e?.kind !== 'edit') break
+              pending.delete(id)
+              if (b.is_error !== true) continue
+              const n = (editCalls.get(e.turn)?.get(e.file!) ?? 1) - 1
+              editCalls.get(e.turn)?.set(e.file!, n)
+              if (n <= 0) e.turn.edits.delete(e.file!)
+              e.turn.changes = e.turn.changes.filter((c) => !e.changes!.includes(c))
+            }
+            continue
+          }
           const out = textOf(b.content)
           if (hit.kind === 'agent') {
             const report = agentReport(out).slice(0, 8000) // a subagent's report to the turn that asked
@@ -268,11 +285,19 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
         if (typeof file === 'string') {
           const p = normalizePath(file, home, s.cwd || '/')
           s.paths.add(p)
-          if (turn) (b.name === 'Read' ? turn.reads : /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name) ? turn.edits : turn.reads).add(p)
+          const edit = /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(b.name)
+          if (turn) (b.name === 'Read' ? turn.reads : edit ? turn.edits : turn.reads).add(p)
           const at = d.timestamp ?? turn?.at ?? ''
-          if (turn && b.name === 'Edit') turn.changes.push({ file: p, oldHash: h(inp.old_string), newHash: h(inp.new_string), at })
-          if (turn && b.name === 'MultiEdit' && Array.isArray(inp.edits)) for (const e of inp.edits) turn.changes.push({ file: p, oldHash: h(e?.old_string), newHash: h(e?.new_string), at })
-          if (turn && b.name === 'Write') turn.changes.push({ file: p, oldHash: '', newHash: h(inp.content), at })
+          const made: Turn['changes'] = []
+          if (turn && b.name === 'Edit') made.push({ file: p, oldHash: h(inp.old_string), newHash: h(inp.new_string), at })
+          if (turn && b.name === 'MultiEdit' && Array.isArray(inp.edits)) for (const e of inp.edits) made.push({ file: p, oldHash: h(e?.old_string), newHash: h(e?.new_string), at })
+          if (turn && b.name === 'Write') made.push({ file: p, oldHash: '', newHash: h(inp.content), at })
+          if (turn) turn.changes.push(...made)
+          if (turn && edit && typeof b.id === 'string') {
+            const calls = editCalls.get(turn) ?? editCalls.set(turn, new Map()).get(turn)!
+            calls.set(p, (calls.get(p) ?? 0) + 1)
+            pending.set(b.id, { turn, kind: 'edit', file: p, changes: made })
+          }
         }
         if (turn && AGENT_TOOLS.test(b.name)) pending.set(b.id, { turn, kind: 'agent' })
         if (b.name === 'Bash' && typeof inp.command === 'string') {

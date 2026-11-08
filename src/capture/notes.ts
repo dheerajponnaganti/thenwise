@@ -26,9 +26,11 @@ export interface CNote {
   created: string
   project: string
   path: string
+  /** Files the note is about, as absolute paths: a decision about them, a dead end hit there. Empty for most notes. */
+  files?: string[]
 }
 
-const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project'] as const
+const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project', 'files'] as const
 export const notesDir = (memDir: string) => join(memDir, 'notes')
 export const makeId = (prefix: string, key: string) => `${prefix}-${createHash('sha1').update(key).digest('hex').slice(0, 10)}`
 
@@ -51,7 +53,7 @@ export function readNotes(memDir: string): CNote[] {
       const d = fm.data
       const s = (k: string) => (d[k] == null ? '' : String(d[k]))
       if (!s('id')) continue
-      out.push({ id: s('id'), type: t as NoteType, title: s('title'), summary: withLines(s('summary'), fm.body), status: (s('status') || 'inbox') as Status, valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path })
+      out.push({ id: s('id'), type: t as NoteType, title: s('title'), summary: withLines(s('summary'), fm.body), status: (s('status') || 'inbox') as Status, valid_from: s('valid_from'), valid_to: s('valid_to'), supersedes: s('supersedes'), sources: Array.isArray(d.sources) ? d.sources.map(String) : [], created: s('created'), project: s('project'), path, files: Array.isArray(d.files) ? d.files.map(String) : [] })
     }
   }
   return out
@@ -62,7 +64,8 @@ export function saveNote(memDir: string, n: CNote): CNote {
     mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 })
     n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`)
   }
-  const fm = FIELDS.map((k) => {
+  // `files` is written only when there are some, so notes without files keep their old form.
+  const fm = FIELDS.filter((k) => k !== 'files' || n.files?.length).map((k) => {
     const v = n[k] as Scalar | Scalar[]
     return `${k}: ${yamlValue(v === '' ? null : v)}`
   })

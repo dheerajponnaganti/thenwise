@@ -13,7 +13,7 @@ team shares (optional) ───────────────────
                                                       passages)            └─> vault ──────> Markdown notes
 ```
 
-A session start and a session end run a background sync (`thenwise hook sync-run`), which archives and ingests what changed, mines the new dead ends for rule proposals, and writes its progress to `sync-progress.json`. Search only reads the store, so it stays fast and needs no network.
+A session start and a session end run a background sync (`thenwise hook sync-run`), which archives and ingests what changed, mines the new dead ends for rule proposals, checks decisions against the new commits, and writes its progress to `sync-progress.json`. Search only reads the store, so it stays fast and needs no network.
 
 The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the newest chat another session left in the project straight from the tool's own live file (Claude Code, Copilot CLI, Codex or Antigravity), so the next agent knows where the work stopped even before the sync has copied that chat.
 
@@ -56,6 +56,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/hooks/handoff.ts` | `handoffBlock`, `liveChats`, `readLive` | Where another session of the project stopped, read from its live chat file |
 | `src/capture/notes.ts` | `readNotes`, `saveNote`, `accept`, `reject` | Curated notes and their inbox |
 | `src/capture/mine.ts` | `mineRules` | Proposes a rule where real dead ends keep happening (a file, or a `[dead-end]` line written twice), into the inbox |
+| `src/capture/expire.ts` | `proposeExpiry` | Asks in the inbox whether a decision still holds after a later commit changed its files |
 | `src/capture/distill.ts` | `distill` | Optional: proposes notes through `claude -p`, into the inbox only |
 | `src/capture/similar.ts` | `related` | Finds duplicates and contradictions among notes |
 | `src/vault/vault.ts` | `buildNotes`, `writeVault` | Writes decisions, dead ends, timelines, a 7-day digest and file histories as Markdown |

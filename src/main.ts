@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { flag as argFlag } from './core/args.ts'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 
 import { expandHome } from './core/home.ts'
 
@@ -32,15 +32,25 @@ const flag = (name: string) => {
 }
 // Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
 for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | mine [--db <file>] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | mine [--db <file>] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] [--file <path>]... | decide "<what was decided>" [--here] [--file <path>]...\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
 if (cmd === 'setup' || cmd === 'init') process.exit(await (await import('./setup/setup.ts')).setup(process.argv.slice(3)))
 if (cmd === 'deadend' || cmd === 'decide') {
   // A note the person writes on purpose: active at once, tied to the newest chat in scope and its project.
-  const text = process.argv.slice(3).filter((a) => !a.startsWith('--')).join(' ').trim()
-  if (!text) (console.error(`usage: thenwise ${cmd} "<what>" [--here]`), process.exit(2))
+  const { normPath } = await import('./core/vault-index.ts') // stored paths use forward slashes on every system
+  const words: string[] = []
+  const given: string[] = []
+  const rest = process.argv.slice(3)
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] !== '--file') rest[i]!.startsWith('--') || words.push(rest[i]!)
+    // A --file with no path after it is an input error: the person meant to name a file, so nothing is saved without it.
+    else if (!rest[i + 1] || rest[i + 1]!.startsWith('--')) (console.error('--file needs a path, such as --file src/cache.ts'), process.exit(2))
+    else given.push(normPath(resolve(rest[++i]!)))
+  }
+  const text = words.join(' ').trim()
+  if (!text) (console.error(`usage: thenwise ${cmd} "<what>" [--here] [--file <path>]...`), process.exit(2))
   const { loadConfig } = await import('./ingest/config.ts')
   const { makeId, readNotes, saveNote } = await import('./capture/notes.ts')
   const { related } = await import('./capture/similar.ts')
@@ -57,11 +67,28 @@ if (cmd === 'deadend' || cmd === 'decide') {
   }
   const type = cmd === 'deadend' ? 'dead_end' : 'decision'
   const now = new Date().toISOString()
+  // The note is about the files named with --file and the files this agent's own chat edited lately (the work the note
+  // is about, not all a long chat touched), so it reaches whoever opens them next, and a later commit to them asks
+  // whether a decision still holds. Never a reason to fail.
+  const files = new Set(given)
+  try {
+    const { insideAgent, liveChats, ownChat, readLive } = await import('./hooks/handoff.ts')
+    const mine = ownChat(cfg, process.cwd(), insideAgent())[0]
+    const chat = mine ? liveChats(cfg, process.cwd()).find((c) => c.id === mine) : undefined
+    const s = chat ? readLive(cfg, chat) : null
+    const since = Date.now() - 30 * 60e3
+    const recent = new Set<string>()
+    for (const t of [...(s?.turns ?? [])].reverse()) if (Date.parse(t.at) >= since) for (const f of t.edits) if (recent.size < 10) recent.add(f)
+    for (const f of recent) files.add(normPath(f))
+  } catch { /* no chat to read: the --file paths stand alone */ }
+  // A file that does not exist is kept (a decision may be about a file still to come), and said, so a typo shows.
+  const missing = given.filter((f) => !existsSync(f))
   const active = readNotes(cfg.memDir).filter((x) => x.status === 'active')
   const near = related({ type, title: text.slice(0, 80), summary: text }, active, active)
   const like = near.dup ?? near.candidate
-  const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '' })
-  console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}The next sync adds it to the memory.`)
+  const n = saveNote(cfg.memDir, { id: makeId('n', `${type}\0${text}\0${now}`), type, title: text.slice(0, 80), summary: text, status: 'active', valid_from: '', valid_to: '', supersedes: '', sources: source ? [source] : [], created: now, project, path: '', files: [...files].sort() })
+  console.log(`${type === 'dead_end' ? 'dead end' : 'decision'} saved as ${n.id}: ${n.path}\n${source ? `from ${source}, project ${project}. ` : ''}${files.size ? `About ${files.size} file${files.size === 1 ? '' : 's'}: ${[...files].slice(0, 5).map((f) => basename(f)).join(', ')}${files.size > 5 ? ', ...' : ''}. ` : ''}The next sync adds it to the memory.`)
+  if (missing.length) console.log(`Not found on disk, kept as given: ${missing.map((f) => normPath(relative(process.cwd(), f)) || f).join(', ')}. Check the path if that is a typo.`)
   if (like) console.log(`Similar note: ${like.id}: ${like.title}. Check that the two agree.`)
   process.exit(0)
 }
@@ -221,6 +248,8 @@ if (cmd === 'mine') {
   if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
   const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
   console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
+  const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db)
+  console.log(`${e} decision${e === 1 ? '' : 's'} to recheck added to the inbox${e ? '; `thenwise inbox` lists them' : ''}`)
   process.exit(0)
 }
 

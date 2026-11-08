@@ -361,6 +361,8 @@ export function curatedPart(cfg: Config, until?: string): Part {
     const seen = new Set<string>()
     for (const src of n.sources) seen.has(src) || (seen.add(src), out.edges.push({ src: cid, dst: src, kind: 'derived_from', at, extra: {} }))
     if (n.supersedes) out.edges.push({ src: cid, dst: `curated:${n.supersedes}`, kind: 'supersedes', at, extra: {} })
+    // A note about files shows in their history, so the decision reaches whoever opens one.
+    for (const f of new Set((n.files ?? []).map(normPath))) out.edges.push({ src: cid, dst: `file:${f}`, kind: 'touches', at, extra: {} })
   }
 
   return out

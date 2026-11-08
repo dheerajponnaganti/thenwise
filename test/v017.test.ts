@@ -42,7 +42,7 @@ test('R7-H1: a CLAUDE.md is one record per heading section, dated by its last co
     writeFileSync(join(w.proj, 'CLAUDE.md'), '# Style\nShort sentences only.\n\n## Commits\nOne commit per chunk of work.\n```\n# not a heading\n```\n\n## Tests\nRun the unit tests before a push.\n')
     git(w.proj, 'add', 'CLAUDE.md')
     git(w.proj, 'commit', '-q', '-m', 'Add rules')
-    const docs = docsPart(w.cfg).nodes.filter((n) => n.source === join(w.proj, 'CLAUDE.md'))
+    const docs = docsPart(w.cfg).nodes.filter((n) => n.source === join(w.proj, 'CLAUDE.md').replace(/\\/g, '/')) // stored paths use forward slashes
     assert.deepEqual(docs.map((n) => n.title), ['Style', 'Commits', 'Tests'])
     assert.ok(docs.every((n) => Date.parse(n.at) === Date.parse('2026-10-03T10:00:00Z') && n.extra.dateFrom === 'git'))
     assert.match(docs[1]!.text, /# not a heading/) // a fenced line is text, not a heading

@@ -32,7 +32,7 @@ const flag = (name: string) => {
 }
 // Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
 for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
-const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
+const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> [--checkout] | asof --clean | resume [words] | digest [--since 24h|7d|<ISO>] | tests <test command or file> | cost [words] [--since 7d|<date>] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes] | import <file> [--yes] | import --remove <name>\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))
 if (cmd === '--version' || cmd === '-v') (console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version), process.exit(0))
@@ -250,6 +250,14 @@ if (cmd === 'vault') {
   if (r.capped) console.error(`warning: ${r.capped} file history notes left out (cap ${NOTE_CAP} notes)`)
   console.log(r.stopped ?? `${r.notes} notes in ${r.dir}: ${r.written} written, ${r.unchanged} unchanged, ${r.removed} removed`)
   process.exit(r.stopped && !r.stopped.startsWith('no vault') ? 1 : 0)
+}
+
+if (cmd === 'export' || cmd === 'import') {
+  const { loadConfig } = await import('./ingest/config.ts')
+  const words: string[] = []
+  const rest = process.argv.slice(3)
+  for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--yes' ? 0 : i++) : words.push(rest[i]!)
+  process.exit(await (await import('./teams/export.ts')).exportMain(cmd, loadConfig(), words, flag))
 }
 
 if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {

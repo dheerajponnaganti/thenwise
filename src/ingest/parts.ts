@@ -19,7 +19,7 @@ import { skipReason } from '../vault/user.ts'
 import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from './deadend.ts'
 import { sessionFacts } from './facts.ts'
 import { githubSlug, repoRoot } from './repos.ts'
-import { readChats } from '../teams/chatcache.ts'
+import { loadImports, readChats } from '../teams/chatcache.ts'
 import type { WireChat } from '../teams/chatcache.ts'
 import { normalizePath } from './transcript.ts'
 import type { Session } from './transcript.ts'
@@ -571,16 +571,18 @@ export const teamChats = (cfg: Config): WireChat[] => {
 export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: WireChat[] = teamChats(cfg)): Part {
   const out: Part = { nodes: [], edges: [] }
   const checkouts = new Map<string, string | undefined>()
+  const imports = loadImports(cfg.memDir)
   for (const c of chats) {
+    const imported = (imports[c.owner] ?? []).includes(c.session) ? { imported: true } : {}
     if (!checkouts.has(c.project)) checkouts.set(c.project, checkoutOf(c.project, repos))
     const repo = checkouts.get(c.project)
     const sid = `tses:${c.owner}/${c.session}`
-    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }))
+    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }))
     for (const t of c.turns) {
       const at = iso(t.at)
       const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`
       const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {}
-      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }))
+      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }))
       out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} })
       if (repo) for (const p of t.paths) out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} })
     }

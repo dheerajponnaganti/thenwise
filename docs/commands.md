@@ -48,6 +48,7 @@ Codex and Antigravity load no plugin commands, so Thenwise names each of these a
 - `thenwise vault write`: write the curated notes (decisions, dead ends, timeline, a digest of the last 7 days, file histories) to your vault in a `_thenwise/` folder. Your own notes are read and never rewritten.
 - `thenwise notices all|important|off`: how much Thenwise tells you.
 - `thenwise connect <tool> [--remove]`: give Cursor, Gemini CLI, OpenCode, Codex or Antigravity the memory tools through MCP.
+- `thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>]`: one project's chats in a file to hand to a contractor or a new teammate, with a preview first. `thenwise import <file>` adds them to another memory, where answers label them as chats of that name, marked (imported); `thenwise import --remove <name>` takes them out. See [privacy.md](privacy.md).
 - `thenwise forget`, `thenwise uninstall`: see [privacy.md](privacy.md).
 - Teams: see [teams.md](teams.md).
 

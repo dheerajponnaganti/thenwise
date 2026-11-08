@@ -59,6 +59,13 @@ test('its tools become the tools that link files, and a result answers the call 
   assert.equal(new Set(uses.map((u: any) => u.id)).size, uses.length)
 })
 
+test('#77: an Antigravity command that exits nonzero is a failed tool result, though its step is DONE', () => {
+  const run = (out: string) => convert(user('run it'), step('PLANNER_RESPONSE', { content: '', tool_calls: [{ name: 'run_command', args: { CommandLine: 'node --test' } }] }), step('GENERIC', { content: out })).at(-1).message.content[0].is_error
+  assert.equal(run('Created At: x\nCompleted At: x\nCommand exited with code 1.\n\nCommand output:\n1 failing'), true)
+  assert.equal(run('Created At: x\nCompleted At: x\nCommand exited with code 0.\n\nCommand output:\nok'), false)
+  assert.equal(run('Command output:\nthe log said Command exited with code 3. elsewhere'), false, 'only its own result line counts')
+})
+
 test('reading its own tool definitions links no file', () => {
   const rows = convert(step('PLANNER_RESPONSE', { content: '', tool_calls: [{ name: 'read_file', args: { Path: '/home/me/.gemini/antigravity-cli/mcp/x/ping.json' } }] }))
   assert.deepEqual(rows, [])

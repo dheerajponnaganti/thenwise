@@ -324,6 +324,15 @@ test('a subagent event marked only by parentToolCallId stays out, and a task sum
   assert.match(f(ev('session.task_complete', { summary: 'Shipped the fix.' }))[0]!, /Shipped the fix\./)
 })
 
+test('#77: a Copilot shell command that exits nonzero is a failed tool result, though Copilot marks the call a success', () => {
+  const f = copilotConverter('s', '/w')
+  const result = (data: object) => JSON.parse(f(ev('tool.execution_complete', { toolCallId: 'c9', ...data }))[0]!).message.content[0].is_error
+  assert.equal(result({ success: true, shellExecution: { exitCode: 1 }, result: { content: '1 failing' } }), true)
+  assert.equal(result({ success: true, shellExecution: { exitCode: 0 }, result: { content: 'ok' } }), false)
+  assert.equal(result({ success: true, result: { content: 'a' } }), false, 'a tool with no shell result stays as Copilot says')
+  assert.equal(result({ success: false, result: { content: 'denied' } }), true)
+})
+
 test('a chat with prompts that yields nothing is logged, so a changed file format is not silent', () => {
   const w = new World()
   try {

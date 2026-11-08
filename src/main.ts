@@ -1,6 +1,7 @@
 // The `thenwise` command (also installed as `memory`). The usage line below lists every command.
 
 import { existsSync, readFileSync } from 'node:fs'
+import { flag as argFlag } from './core/args.ts'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -11,11 +12,7 @@ const READS_CHATS = new Set(['antigravity', 'codex'])
 
 const [cmd, vaultArg, dirArg] = process.argv.slice(2)
 const xp = (p: string | undefined) => (p === undefined ? undefined : expandHome(p, homedir()))
-const flag = (name: string) => {
-  const i = process.argv.indexOf(`--${name}`)
-
-  return i > 0 ? process.argv[i + 1] : undefined
-}
+const flag = (name: string) => argFlag(name)
 const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))

@@ -3,6 +3,7 @@
 // Callers pass event names, counts, ids and errors, never chat text, note text or queries. Writing never throws.
 
 import { createHash } from 'node:crypto'
+import { flag as argFlag } from './args.ts'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -149,7 +150,7 @@ export function recentErrors(dir?: string, now = Date.now()): string {
 
 /** `thenwise logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]`. */
 export function logsCommand(argv: string[], dir?: string): number {
-  const flag = (n: string) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : undefined)
+  const flag = (n: string) => argFlag(n, argv)
   let cut: number | undefined
   try {
     cut = flag('since') ? since(flag('since')!) : undefined

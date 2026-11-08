@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A database error now names the file that cannot be read, with advice that fits it: the store in your data folder (delete and rebuild), a store given with `--db` (rebuild it there with `thenwise ingest --db`), the team chat cache (delete it; the next sync fetches the chats again) or the team server's database (restore it from a backup, never delete). Before, every such error said to delete `graph.db` in your data folder, even when another file had failed, which could throw away a healthy store.
+
 ## 0.2.0
 
 - A Copilot chat stopped by a credit limit or an error reads "stopped by the tool: premium request limit reached", without a second "stopped".

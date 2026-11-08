@@ -41,6 +41,39 @@ const { cloudWarning, resolveDataDir } = await import('./core/home.ts')
 const warning = cloudWarning(resolveDataDir())
 if (warning) console.error(warning)
 
+/** SQLite says only that a file is damaged, never which one. Check the files a command may open (the store, a --db store,
+ * the team chat cache, the team server's database) and name each that cannot be read, with advice that fits it. */
+async function unreadable(dir: string): Promise<string> {
+  const { existsSync } = await import('node:fs')
+  const { join, resolve } = await import('node:path')
+  const { DatabaseSync } = await import('node:sqlite')
+  const { flag } = await import('./core/args.ts')
+  const ok = (f: string) => {
+    try {
+      const d = new DatabaseSync(f, { readOnly: true })
+      try {
+        return (d.prepare('PRAGMA quick_check(1)').get() as { quick_check?: string } | undefined)?.quick_check === 'ok'
+      } finally {
+        d.close()
+      }
+    } catch {
+      return false
+    }
+  }
+  const db = flag('db')
+  const store = join(dir, 'graph.db')
+  const files: [string, string][] = [
+    [store, ` The store is damaged: delete graph.db in ${dir} and run: thenwise ingest.`],
+    ...(db ? [[resolve(db), ` ${db} cannot be read as a Thenwise store. If it is one, it is damaged: delete it and run thenwise ingest --db ${db} to build it again. If you meant another file, point --db at a graph.db.`] as [string, string]] : []),
+    [join(dir, 'team-chats.db'), ` The team chat cache ${join(dir, 'team-chats.db')} is damaged: delete it, and the next team sync fetches the chats again.`],
+    [join(flag('dir') ?? join(dir, 'team-server'), 'team.db'), ` The team server's database ${join(flag('dir') ?? join(dir, 'team-server'), 'team.db')} is damaged: do not delete it; restore it with thenwise team restore <backup file>.`],
+  ]
+  const seen = new Set<string>()
+  const bad = files.filter(([f]) => !seen.has(f) && seen.add(f) && existsSync(f) && !ok(f))
+
+  return bad.length ? bad.map(([, advice]) => advice).join('') : ' A database file could not be read; thenwise doctor checks the store.'
+}
+
 try {
   await import('./main.ts')
 } catch (e) {
@@ -49,7 +82,7 @@ try {
   const msg = String(err?.message ?? e).split('\n')[0] ?? ''
   const dir = resolveDataDir()
   const hint = /not a database|malformed|disk image/i.test(msg)
-    ? ` The store is damaged: delete graph.db in ${dir} and run: thenwise ingest`
+    ? await unreadable(dir)
     : err?.code === 'EACCES' || err?.code === 'EPERM'
       ? ` Check the permissions of ${dir}, or set THENWISE_HOME to a folder you can write.`
       : err?.code === 'ENOTDIR' || err?.code === 'EEXIST' || (err?.code === 'ENOENT' && (await import('node:fs')).statSync(dir, { throwIfNoEntry: false })?.isFile())

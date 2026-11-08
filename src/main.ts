@@ -12,7 +12,17 @@ const READS_CHATS = new Set(['antigravity', 'codex'])
 
 const [cmd, vaultArg, dirArg] = process.argv.slice(2)
 const xp = (p: string | undefined) => (p === undefined ? undefined : expandHome(p, homedir()))
-const flag = (name: string) => argFlag(name)
+/** The value after `--<name>`, or undefined when the flag is not given. A flag given with no value is an input error:
+ * running with the default instead would work on data the person did not mean. */
+const flag = (name: string) => {
+  if (!process.argv.includes(`--${name}`)) return undefined
+  const v = argFlag(name)
+  if (!v || v.startsWith('--')) (console.error(`--${name} needs a value`), process.exit(2))
+
+  return v
+}
+// Each value flag is read once before any command runs, so a missing value stops the command before it does any work.
+for (const f of ['db', 'prs', 'until', 'vault', 'memory-from', 'session', 'last', 'since', 'all-of', 'project', 'mates-since']) flag(f)
 const USAGE = 'usage: thenwise setup [--yes] | doctor | off|on [--project <path>] | update-check [off|on] | connect antigravity|codex|cursor|gemini|opencode [--dry-run] [--remove]\n       thenwise search|current|why|tried|trace <words> | asof <ISO date or date-time> <words> | resume [words] | path <a> <b> | get <id>  (each with [--db <file>] [--expand] [--project <folder> | --here | --all])\n       thenwise vault write [--db <file>]\n       thenwise archive | ingest [--full] [--report] [--prs <prs.json>] [--db <file>] [--until <ISO>] [--vault <dir>] [--prune-excluded] [--memory-from <projects dir>]\n       thenwise distill [--since <ISO>] [--session <id>] [--last <n>] [--dry-run] | inbox | accept <id...> | accept --all-of <type> | reject <id...> | edit <id>\n       thenwise team serve|invite|remove|join|search|sync|share-chats|unshare-chats|shares, share <note>, unshare <note>  (teams preview)\n       thenwise mcp [--db <file>]   (stdio MCP server for Claude Code)\n       thenwise status [--db <file>] | shown [--session <id>] | notices all|important|off | logs [--errors] [--since 1h] [--component mcp] [--json] [--lines N]\n       thenwise deadend "<what failed>" [--here] | decide "<what was decided>" [--here]\n       thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]\n       thenwise forget <session id or project folder> [--yes] | backup | uninstall\n       (the old name `memory` still works)'
 
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') (console.log(USAGE), process.exit(0))

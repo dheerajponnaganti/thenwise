@@ -23,6 +23,7 @@ export function uninstall(home: string = homedir(), print: (l: string) => void =
   }
   print(stopped ? 'Stopped the background sync.' : 'No background sync is running.')
   print('Delete these by hand. Thenwise removes nothing itself.')
+  if (existsSync(join(memDir, 'checkouts'))) print('  0. First run `thenwise asof --clean`, so your repositories forget the checkouts made by `asof --checkout`.')
   print(`  1. The data folder, with the archive, the store, the config and the hook log: ${memDir}`)
   if (cfg?.vault?.path) print(`  2. The folder _thenwise/ inside your vault: ${join(resolve(cfg.vault.path), '_thenwise')}`)
   else print('  2. The folder _thenwise/ inside your vault, if you set one up.')

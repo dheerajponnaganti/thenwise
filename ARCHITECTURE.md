@@ -46,6 +46,7 @@ The handoff skips the store: at session start, `src/hooks/handoff.ts` reads the 
 | `src/query/passages.ts` | `splitPassages`, `buildPassageIndex` | Cuts text nodes into passages and indexes them in FTS5 |
 | `src/query/language.ts` | `buildLanguage`, `similarity` | Typo fixes and word pairs mined from the store |
 | `src/query/engine.ts` | `Graph` | Retrieval: BM25 fused with title, link and exact lanes, plus scope and dates |
+| `src/query/checkout.ts` | `checkout`, `cleanCheckouts` | `asof --checkout`: the code of a date in a git worktree beside the store, with that day's chats |
 | `src/query/commands.ts` | `search`, `current`, `why`, `tried`, `asof`, `trace`, `resume`, `pointers`, `get` | Store in, formatted answer out |
 | `src/query/cost.ts` | `costReport` | What the chats cost, by each tool's own running total: tokens where recorded, dollars where given |
 | `src/server/stdio.ts` | `createServer`, `serveStdio` | The eight memory tools over MCP stdio |

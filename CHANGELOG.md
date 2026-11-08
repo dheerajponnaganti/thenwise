@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A database error now names the file that cannot be read, with advice that fits it: the store in your data folder (delete and rebuild), a store given with `--db` (rebuild it there with `thenwise ingest --db`), the team chat cache (delete it; the next sync fetches the chats again) or the team server's database (restore it from a backup, never delete). Before, every such error said to delete `graph.db` in your data folder, even when another file had failed, which could throw away a healthy store.
+- A flag that takes a value, given without one (`thenwise status --db`, `thenwise distill --since`), is an input error that names the flag, with exit code 2. Before, the command ran with its default and said nothing, so a typo could work on data you did not mean.
 
 ## 0.2.0
 

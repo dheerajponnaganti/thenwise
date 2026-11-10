@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A long ingest, or a laptop asleep for over 30 minutes, no longer lets a second ingest or sync take the lock from a live process. A lock is taken only when its process is dead or the machine restarted since.
+
 ## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.

@@ -6,6 +6,7 @@ import { appendFileSync, chmodSync, closeSync, existsSync, unlinkSync, mkdirSync
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
+import { listDir } from '../core/home.ts'
 import { errFields, logger } from '../core/log.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
@@ -224,14 +225,18 @@ export function maskTranscript(text: string): { text: string; unparsed: number[]
 const isSessionPath = (p: string[]) => p.length === 2 || (p.length === 4 && p[2] === 'subagents')
 
 function collect(dir: string, into: Map<string, Source>, prefer: boolean) {
-  if (!existsSync(dir)) return
   const walk = (abs: string, rel: string) => {
-    for (const e of readdirSync(abs, { withFileTypes: true })) {
+    for (const e of listDir(abs)) {
       const p = join(abs, e.name)
       const r = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) walk(p, r)
       else if (e.isFile() && e.name.endsWith('.jsonl') && isSessionPath(r.split('/'))) {
-        const st = statSync(p)
+        let st: ReturnType<typeof statSync>
+        try {
+          st = statSync(p)
+        } catch {
+          continue // removed since the listing, or in a folder this user can list but not search
+        }
         const old = into.get(r)
         // Same session in both places: keep the longer one; on a tie keep the live copy.
         if (!old || st.size > old.size || (st.size === old.size && prefer)) into.set(r, { rel: r, path: p, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs })

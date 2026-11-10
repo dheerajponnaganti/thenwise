@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An unreadable chat file or folder, or a broken link, in any tool's chat folders no longer stops every hook, command and sync. It is skipped. A wrong shape under `views.projects` in the config gives a warning that names the field. Only that field is left out, so the view keeps working as before, and `config.json` is kept as you wrote it.
+
 ## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.

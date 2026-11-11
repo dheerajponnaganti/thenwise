@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { githubSlug, projectRoot, real, repoRoot } from '../ingest/repos.ts'
 
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from './language.ts'
+import { realDay } from '../core/time.ts'
 import { normPath } from '../core/vault-index.ts'
 
 export interface Node {
@@ -90,14 +91,6 @@ export const startOf = (d: string) => {
   const guess = Date.parse(`${d}T00:00:00.000Z`)
 
   return guess - offsetMs(guess - offsetMs(guess))
-}
-/** False when a string starts with a date that names no real day, such as 2026-13-45 or 2026-02-30 (Date.parse
- * rolls the second over to March 2). Anything else is left to Date.parse. */
-const realDay = (s: string) => {
-  const d = /^\d{4}-\d{2}-\d{2}/.exec(s)?.[0]
-  const t = d ? Date.parse(`${d}T00:00:00Z`) : 0
-
-  return !d || (!Number.isNaN(t) && new Date(t).toISOString().startsWith(d))
 }
 /** `24h`, `7d` or an ISO date or time, to milliseconds; NaN when it is none of these. A plain date is the start of
  * that local day, as asof reads a plain date as its end. */

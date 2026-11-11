@@ -89,10 +89,11 @@ test('#105: a date with the right shape that names no real day is an input error
       assert.match(asof(g, date, 'b one'), /^asof needs an ISO date .*got "/, date)
       assert.match(checkout(g, date, w.memDir), /^asof needs an ISO date .*got "/, date)
       assert.ok(Number.isNaN(sinceOf(date)), date)
-      for (const args of [['asof', date, 'quokka'], ['asof', date, '--checkout'], ['digest', '--since', date], ['cost', '--since', date]]) {
+      const since = [['digest', '--since', date], ['cost', '--since', date], ['resume', '--mates-since', date], ['distill', '--since', date], ['team', 'share-chats', w.proj, '--since', date], ['export', '--out', join(w.home, 'x.json'), '--since', date], ['logs', '--since', date]]
+      for (const args of [['asof', date, 'quokka'], ['asof', date, '--checkout'], ...since]) {
         const r = cli(...args)
         assert.equal(r.status, 2, args.join(' '))
-        assert.match(r.stderr, args[0] === 'asof' ? /asof needs an ISO date .*got "/ : /--since needs 24h, 7d or a date/)
+        assert.ok(r.stderr.includes(date) && /needs|takes/.test(r.stderr), `${args.join(' ')}: ${r.stderr}`)
         assert.equal(r.stdout, '')
       }
     }

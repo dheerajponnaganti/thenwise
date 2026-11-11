@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { logger } from "../core/log.js";
 import { MASK_VERSION, maskSecrets } from "../core/secrets.js";
@@ -128,7 +128,17 @@ function cloneOf(a, b) {
     const [xr, yr] = [rootsOf(a), rootsOf(b)];
     return xr && yr ? xr === yr : undefined;
 }
-const rootOf = (p) => real(repoRoot(p) ?? p);
+/** A repo's identity for "is this the same repo": the native real path, which on Windows also expands short names such as
+ * RUNNER~1, since a second checkout's .git file names the main repo by its long name. Only compared, never stored. */
+const rootOf = (p) => {
+    const r = repoRoot(p) ?? p;
+    try {
+        return realpathSync.native(r);
+    }
+    catch {
+        return real(r);
+    }
+};
 /** Whether a chat's repo is the shared project: the same repo (a worktree resolves to it), or another clone of it under the
  * same name (the same GitHub slug, else what `cloneOf` proves). A folder name alone never matches. */
 const sameProject = (found, repo) => !!found && (rootOf(found) === rootOf(repo) || (projectKey(found) === projectKey(repo) && (projectKey(repo).includes('/') || cloneOf(rootOf(found), rootOf(repo)) === true)));

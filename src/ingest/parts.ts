@@ -484,7 +484,9 @@ export function memoryPart(cfg: Config, keys: string[], memoryFrom?: string): Pa
 /** A file node exists while an edge points at it. Its source is the first layer that named it: git, then chats. */
 export function fileNode(id: string, kinds: Set<string>, aliasRoots: string[]): GNode {
   const abs = id.slice(5)
-  const aliases = aliasRoots.filter((r) => under(abs, r) && abs !== r).map((r) => abs.slice(r.length + 1)).sort()
+  // Sliced by the root as stored: a raw `/x/p/` or `C:\x\p` would cut the wrong number of letters (#109).
+  const roots = [...new Set(aliasRoots.map(normPath))]
+  const aliases = roots.filter((r) => under(abs, r) && abs !== r).map((r) => abs.slice(r.length + 1)).sort()
 
   return fullNode({ id, kind: 'file', title: basename(abs), source: kinds.has('changed') || !['read', 'edited', 'ran_in'].some((k) => kinds.has(k)) ? 'git' : 'transcript', extra: aliases.length ? { aliases } : {} })
 }

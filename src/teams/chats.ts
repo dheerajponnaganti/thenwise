@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { logger } from '../core/log.ts'
 import { newerThenwise } from '../core/notices.ts'
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
+import { normPath } from '../core/vault-index.ts'
 import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
 import type { SessionPart } from '../ingest/parts.ts'
 import { isOff } from '../ingest/config.ts'
@@ -324,7 +325,7 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   const tops = [s.cwd, ...wd].map(worktreeTop).filter((t) => !t || sameProject(t, repo))
   const roots = [...new Set([repo, real(repo), ...tops, ...tops.map((t) => t && real(t))].filter((r): r is string => !!r))]
   const alias = (abs: string) => {
-    const root = roots.find((r) => under(abs, r) && abs !== r)
+    const root = roots.map(normPath).find((r) => under(abs, r) && abs !== r) // sliced as stored, so a trailing slash cuts no letter
 
     const rel = root ? abs.slice(root.length + 1) : undefined
 

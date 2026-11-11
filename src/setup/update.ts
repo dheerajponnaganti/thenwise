@@ -81,6 +81,7 @@ export function updateNotice(cfg: Config, running = runningVersion()): string {
   if (top && compareVersions(running, top) > 0) lines.push(`Thenwise updated to ${running}. What changed: ${RELEASES}/v${running}`)
   const newer = s.latest && compareVersions(s.latest, running) > 0 && s.notified !== s.latest && checkEnabled(cfg) && !autoUpdateOn(cfg) ? s.latest : undefined
   if (newer) lines.push(`Thenwise ${newer} is out, you have ${running}. ${process.env.ANTIGRAVITY_CONVERSATION_ID ? 'Update with: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin' : process.env.COPILOT_PLUGIN_ROOT ? 'Update with: copilot plugin update thenwise' : process.env.PLUGIN_ROOT ? 'Update with: codex plugin marketplace upgrade thenwise' : 'Update in /plugin (Marketplaces, thenwise)'}, or run: npm install -g thenwise@latest. ${OFF_LINE}`)
+  // top is the newest version that ever ran here: older tools write ran back down, but keep fields they do not know.
   if (s.ran !== running || s.top !== top || newer) saveState(cfg.memDir, { ...s, ran: running, top: top && compareVersions(top, running) > 0 ? top : running, ...(newer ? { notified: newer } : {}) })
 
   return lines.join('\n')

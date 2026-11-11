@@ -28,13 +28,9 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.sha }}
         run: |
+          # scripts/docs-only.mjs lists the docs-only paths. Any other path, Markdown that tests read included, runs the tests.
           if files=$(git diff --name-only "$BASE" "$HEAD"); then
-            # plugin/ is what users install, Markdown commands and skills included, so it is never docs only.
-            if printf '%s\n' "$files" | grep -E '^plugin/' | grep -q . || printf '%s\n' "$files" | grep -vE '^(.*\.md|docs/.*|assets/.*|LICENSE|\.github/ISSUE_TEMPLATE/.*)$' | grep -q .; then
-              echo code=true >> "$GITHUB_OUTPUT"
-            else
-              echo code=false >> "$GITHUB_OUTPUT"
-            fi
+            printf '%s\n' "$files" | node scripts/docs-only.mjs >> "$GITHUB_OUTPUT"
           else
             echo code=true >> "$GITHUB_OUTPUT"
           fi
@@ -175,7 +171,8 @@ jobs:
       - run: node bench/fresh/check.mjs
   all-passed:
     # The one check a merge requires. A skipped matrix job never reports its own name, so requiring those would wait forever.
-    needs: [scan, unit, unit-windows, package, fresh-install]
+    # It needs changed too: a failed changed job skips the test jobs, and that must not pass.
+    needs: [changed, scan, unit, unit-windows, package, fresh-install]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

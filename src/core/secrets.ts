@@ -28,8 +28,9 @@ const PATTERNS: RegExp[] = [
 const WRAPPED = /(?<![A-Za-z0-9])(?=[A-Za-z0-9_.-]{16})(?:gh[pousr]_|github_pat_|sk-ant-|sk-|xox[abprs]-|[sr]k_(?:live|test)_|npm_|hf_|glpat-|AKIA|AIza|SK)[A-Za-z0-9_.-]*(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9_.-]+)+/g
 // `curl -u user:pass`.
 const CURL_USER = /((?:\s-u|\s--user)[\s=]+["']?[^\s:"']+:)([^\s"']{3,})/g
-// The password in a URL: `postgres://user:pass@host` keeps the user and host.
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,32}:\/\/[^\s:/@]*:)([^\s@/]{3,})@/gi
+// The password in a URL: `postgres://user:pass@host` keeps the user and host. The password runs to the last `@` before a
+// host that holds none, so `p@ss@host` is masked whole and `host:port/@scope` is no password.
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,32}:\/\/[^\s:/@]*:)([^\s/]{3,}?)@(?=[^\s@/?#"'`]+(?:[/?#\s"'`]|$))/gi
 // Upper-case env names ending in a secret word: `STRIPE_KEY=...`, `DB_PASSWORD=...`; Azure `AccountKey=...`.
 const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)|AccountKey|SharedAccessKey)(\s*=\s*["']?)([^\s"';]{8,})/g
 // The value after a secret-looking name: `api_key = abcd...`, `"password": "..."`, `Authorization: Bearer ...`.
@@ -93,11 +94,17 @@ export function maskSecrets(text: string): { text: string; count: number } {
   return { text: out, count }
 }
 
+/** A value masked with its key in front, so `{"password": "..."}` meets the same name rules as `password=...`. */
+const keyed = (k: string, x: string) => {
+  const m = maskSecrets(`${k}=${x}`).text
+
+  return m.startsWith(`${k}=`) ? m.slice(k.length + 1) : maskSecrets(x).text
+}
 /** Masks every string inside parsed JSON. */
 export const maskDeep = (v: unknown): unknown => {
   if (typeof v === 'string') return maskSecrets(v).text
   if (Array.isArray(v)) return v.map(maskDeep)
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskDeep(x)]))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' ? keyed(k, x) : maskDeep(x)]))
 
   return v
 }

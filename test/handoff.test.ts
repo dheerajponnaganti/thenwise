@@ -259,6 +259,28 @@ test('a long last turn still reaches the resume block after a compaction (a fixe
   assert.match(out, /prompt: Refactor the cache module/)
 })
 
+test('GHSA-84q4 item 3: a token cut at a length limit never reaches the resume block, its record or the handoff', () => {
+  const w = world()
+  const token = `ghp_${'A1b2C3d4E5'.repeat(4)}`
+  // The token starts 20 characters before the 300-character prompt limit, so the cut keeps too little of it to match.
+  const prompt = `${'Ship the price cache fix. '.repeat(11).slice(0, 277)} k=${token} and deploy`
+  assert.equal(prompt.indexOf(token), 280)
+  const file = join(w.home, 'live.jsonl')
+  writeFileSync(file, `${JSON.stringify({ cwd: w.proj, sessionId: 'tok', entrypoint: 'cli', type: 'user', uuid: 'u1', timestamp: '2026-11-03T10:00:00Z', message: { role: 'user', content: prompt } })}\n`)
+  const dir = join(w.home, '.thenwise')
+  const out = runHook('session-start', { session_id: 'tok', source: 'compact', cwd: w.proj, transcript_path: file }, { dir, cli: 'none' })
+  assert.match(out, /prompt: Ship the price cache fix/)
+  assert.ok(!out.includes('ghp_A1b2'), out)
+  assert.ok(!readFileSync(join(dir, 'hook-state/tok.sent.jsonl'), 'utf8').includes('ghp_A1b2'))
+  // The handoff cuts at a word, so only text with no spaces keeps the cut piece: a long URL.
+  const url = `https://ci.example.com/run?${'step=build&'.repeat(25)}`.slice(0, 277) + `&k=${token}`
+  assert.equal(url.indexOf(token), 280)
+  claudeChat(w.home, w.proj, 'cc-tok', undefined, url)
+  const b = handoffBlock(w.cfg(), w.proj, ['own'])
+  assert.match(b, /task: "https:\/\/ci\.example\.com/)
+  assert.ok(!b.includes('ghp_A1b2'), b)
+})
+
 test('a 6 MB chat gives its handoff in time', () => {
   const w = world()
   claudeChat(w.home, w.proj, 'cc-big')

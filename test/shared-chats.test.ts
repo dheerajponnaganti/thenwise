@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -23,7 +24,8 @@ import { teamChats, teamChatsPart, teamClaims } from '../src/ingest/parts.ts'
 import { dropChat, openChatCache, putChat, readChats } from '../src/teams/chatcache.ts'
 import type { WireChat } from '../src/teams/chatcache.ts'
 import { archived, buildChat, formatPreview, loadShares, previewShare, pushShared, scrubber, setServerStatus, sharesStatus, unshareChats, updateShares } from '../src/teams/chats.ts'
-import { fetchShared, joinTeam } from '../src/teams/client.ts'
+import { fetchChats, fetchShared, joinTeam, readCache } from '../src/teams/client.ts'
+import type { State } from '../src/teams/client.ts'
 import { openTeamDb } from '../src/teams/schema.ts'
 import { createTeamServer, invite } from '../src/teams/server.ts'
 import { chatText, diffStores, git, World } from './world.ts'
@@ -1241,5 +1243,55 @@ test('mixed tools: an Antigravity member shares a chat, and the answer names Ant
     assert.equal(a, b, 'update equals rebuild with an own Antigravity chat')
   } finally {
     await t.stop()
+  }
+})
+
+test('GHSA-84q4 item 7: a bad chat tomb row is skipped and logged, and the next sync still works', async () => {
+  const feed: Record<string, unknown> = { '/v1/chat-tombs': { tombs: [{ owner: 5, session: 'x', rev: 3 }, null, { owner: 'ana', session: 'gone', rev: 4 }] }, '/v1/chats': { chats: [] } }
+  const srv = createServer((req, res) => res.end(JSON.stringify(feed[req.url!.split('?')[0]!] ?? {})))
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'tw-ghsa7t-'))
+    const s: State = { url: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, token: 't', lastRev: 0, shared: {}, queue: [] }
+    writeFileSync(join(dir, 'team.json'), JSON.stringify(s))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    await fetchChats(dir, s).finally(() => (process.env.THENWISE_LOG = 'off'))
+    const db = openChatCache(dir)
+    const cursor = db.prepare("SELECT v FROM since WHERE k = 'tombs'").get() as { v: number }
+    db.close()
+    assert.equal(cursor.v, 4, 'the cursor moves past the bad rows')
+    assert.match(readFileSync(join(dir, 'logs/thenwise.log'), 'utf8'), /tomb_skipped/)
+    await fetchChats(dir, s) // no transaction was left open
+  } finally {
+    srv.close()
+  }
+})
+
+test('GHSA-84q4 item 7: a synced chat or note is checked and masked like an import; a bad row is skipped and logged', async () => {
+  const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  const chat = (session: string, rev: number, over: Record<string, unknown> = {}) => ({ owner: 'ana', session, project: 'org/proj', rev, started_at: 1, ended_at: 2, head: `deploy with ${token}`, mask: 1, bytes: 9, tool: '', turns: [{ id: 't1', at: 1, line: `use ${token}`, kind: 'turn', passages: [`DB_PASSWORD=correcthorse9 and ${token}`], paths: ['src/a.ts'], shas: [], prs: [], dead_end: true, dead_kind: 'phrase', dead_text: `${token} did not work` }], ...over })
+  const note = { owner: 'ana', id: 'n-1', rev: 1, title: `rotate ${token}`, text: 'DB_PASSWORD=correcthorse9', project: 'proj', kind: 'decision', status: 'active', shared_by: 'ana', updated_at: 1, superseded_by: null }
+  const feed: Record<string, unknown> = { '/v1/chat-tombs': { tombs: [] }, '/v1/chats': { chats: [chat('bad', 1, { turns: undefined }), chat('good', 2)] }, '/v1/me': { name: 'bob' }, '/v1/notes': { notes: [note] }, '/v1/tombs': { tombs: [] } }
+  const srv = createServer((req, res) => res.end(JSON.stringify(feed[req.url!.split('?')[0]!] ?? {})))
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'tw-ghsa7-'))
+    const s: State = { url: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, token: 't', lastRev: 0, shared: {}, queue: [] }
+    writeFileSync(join(dir, 'team.json'), JSON.stringify(s))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    const got = await fetchChats(dir, s).finally(() => (process.env.THENWISE_LOG = 'off'))
+    assert.match(got, /1 team chat fetched/)
+    const held = readChats(dir)
+    assert.deepEqual(held.map((c) => c.session), ['good'])
+    const db = openChatCache(dir)
+    const cursor = db.prepare("SELECT v FROM since WHERE k = 'chats'").get() as { v: number }
+    db.close()
+    assert.equal(cursor.v, 2, 'the cursor moves past the bad row')
+    assert.ok(!/a1B2c3D4e5|correcthorse9/.test(JSON.stringify(held)), JSON.stringify(held))
+    assert.match(readFileSync(join(dir, 'logs/thenwise.log'), 'utf8'), /chat_skipped/)
+    await fetchShared(dir)
+    assert.ok(!/a1B2c3D4e5|correcthorse9/.test(JSON.stringify(readCache(dir))), JSON.stringify(readCache(dir)))
+  } finally {
+    srv.close()
   }
 })

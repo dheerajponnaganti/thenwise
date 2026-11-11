@@ -357,16 +357,28 @@ export async function fetchChats(dir: string, s: State = load(dir)): Promise<str
       const r = await call(s, 'GET', `/chat-tombs?since=${since}&limit=500`, undefined, {}, CHAT_TIMEOUT_MS)
       if (r.status === 404) return ''
       if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
-      const rows = r.json.tombs as { owner: string; session: string; rev: number }[]
+      const rows: unknown[] = Array.isArray(r.json?.tombs) ? r.json.tombs : []
+      // A row of the wrong shape is skipped and logged, like a bad chat row, so it never stops the sync or leaves a transaction open.
+      const good = (t: any): t is { owner: string; session: string; rev: number } => typeof t?.owner === 'string' && typeof t?.session === 'string' && Number.isSafeInteger(t?.rev)
+      const bad = rows.filter((t) => !good(t)).length
+      if (bad) logger('teams', dir).warn('tomb_skipped', { rows: bad })
+      const ok = rows.filter(good)
+      // The cursor moves past every row that has a revision, good or bad, so a bad row is not fetched again forever.
+      const top = Math.max(since, ...rows.map((t: any) => t?.rev).filter((v): v is number => Number.isSafeInteger(v)))
       db.exec('BEGIN')
-      for (const t of rows) {
-        const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session) as { rev: number } | undefined
-        if (had && had.rev < t.rev) (dropChat(db, t.owner, t.session), tombs++)
+      try {
+        for (const t of ok) {
+          const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session) as { rev: number } | undefined
+          if (had && had.rev < t.rev) (dropChat(db, t.owner, t.session), tombs++)
+        }
+        if (top > since) setCursor(db, 'tombs', top)
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
       }
-      if (rows.length) setCursor(db, 'tombs', rows.at(-1)!.rev)
-      db.exec('COMMIT')
-      if (rows.length < 500) break
-      since = rows.at(-1)!.rev
+      if (rows.length < 500 || top <= since) break
+      since = top
     }
     for (let since = cursor(db, 'chats'); ; ) {
       const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS)

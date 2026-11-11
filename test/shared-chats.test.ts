@@ -1189,6 +1189,27 @@ test('mixed tools: an Antigravity member shares a chat, and the answer names Ant
   }
 })
 
+test('GHSA-84q4 item 7: a bad chat tomb row is skipped and logged, and the next sync still works', async () => {
+  const feed: Record<string, unknown> = { '/v1/chat-tombs': { tombs: [{ owner: 5, session: 'x', rev: 3 }, null, { owner: 'ana', session: 'gone', rev: 4 }] }, '/v1/chats': { chats: [] } }
+  const srv = createServer((req, res) => res.end(JSON.stringify(feed[req.url!.split('?')[0]!] ?? {})))
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'tw-ghsa7t-'))
+    const s: State = { url: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, token: 't', lastRev: 0, shared: {}, queue: [] }
+    writeFileSync(join(dir, 'team.json'), JSON.stringify(s))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    await fetchChats(dir, s).finally(() => (process.env.THENWISE_LOG = 'off'))
+    const db = openChatCache(dir)
+    const cursor = db.prepare("SELECT v FROM since WHERE k = 'tombs'").get() as { v: number }
+    db.close()
+    assert.equal(cursor.v, 4, 'the cursor moves past the bad rows')
+    assert.match(readFileSync(join(dir, 'logs/thenwise.log'), 'utf8'), /tomb_skipped/)
+    await fetchChats(dir, s) // no transaction was left open
+  } finally {
+    srv.close()
+  }
+})
+
 test('GHSA-84q4 item 7: a synced chat or note is checked and masked like an import; a bad row is skipped and logged', async () => {
   const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
   const chat = (session: string, rev: number, over: Record<string, unknown> = {}) => ({ owner: 'ana', session, project: 'org/proj', rev, started_at: 1, ended_at: 2, head: `deploy with ${token}`, mask: 1, bytes: 9, tool: '', turns: [{ id: 't1', at: 1, line: `use ${token}`, kind: 'turn', passages: [`DB_PASSWORD=correcthorse9 and ${token}`], paths: ['src/a.ts'], shas: [], prs: [], dead_end: true, dead_kind: 'phrase', dead_text: `${token} did not work` }], ...over })

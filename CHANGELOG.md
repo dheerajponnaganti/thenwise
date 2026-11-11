@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A mask update no longer drops the turns a Copilot, Codex or Antigravity chat file lost. The archive keeps its copy and masks that copy again.
+
 ## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.

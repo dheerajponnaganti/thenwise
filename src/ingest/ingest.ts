@@ -14,6 +14,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { syncTrailers } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
 import { errFields, logger } from '../core/log.ts'
+import { newerThenwise } from '../core/notices.ts'
 import { maskDeep } from '../core/secrets.ts'
 import { buildLanguage } from '../query/language.ts'
 import { buildPassageIndex } from '../query/passages.ts'
@@ -73,16 +74,18 @@ export interface IngestOptions {
 export const STATE_VERSION = 9
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
-export const STORE_FORMAT = 2
+// 3: the layout of 2. Thenwise 0.3.2 and older refuse a newer format, so they stop rebuilding a store a newer one wrote (#137).
+//   An update relabels a format 2 store, so this costs no rebuild.
+export const STORE_FORMAT = 3
 
 /** Each repo's GitHub slug as JSON, worked out here so opening a store runs no git. */
 export const slugsOf = (repos: string[]) => JSON.stringify(Object.fromEntries(repos.map((r) => [r, githubSlug(r)]).filter(([, s]) => s).sort()))
 
-/** One value from a store's meta table; undefined when the store or the key is missing. */
-function storeMeta(dbPath: string, key: string): string | undefined {
+/** One value from a store's meta (or ingest_state) table; undefined when the store or the key is missing. */
+function storeMeta(dbPath: string, key: string, table = 'meta'): string | undefined {
   const db = new DatabaseSync(dbPath, { readOnly: true })
   try {
-    return (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value
+    return (db.prepare(`SELECT value FROM ${table} WHERE key = ?`).get(key) as { value: string } | undefined)?.value
   } catch {
     return undefined
   } finally {
@@ -308,8 +311,14 @@ export function ingest(cfg: Config, opts: IngestOptions = {}): IngestResult {
     const format = existsSync(dbPath) ? storeFormat(dbPath) : STORE_FORMAT
     // A store frozen at a cutoff stays frozen: a later run (forget, a sync) rebuilds it with the same cutoff.
     if (!opts.until && existsSync(dbPath)) opts = { ...opts, until: storeMeta(dbPath, 'until') }
-    if (format > STORE_FORMAT) throw new Error(`${dbPath} was written by a newer Thenwise (store format ${format}, this one reads ${STORE_FORMAT}). Update Thenwise.`)
-    if (!opts.full && !opts.until && format === STORE_FORMAT && existsSync(dbPath)) {
+    // A store a newer Thenwise wrote is left as it is: rebuilding it here would undo its work, and it would rebuild again (#137).
+    const built = existsSync(dbPath) ? Number(JSON.parse(storeMeta(dbPath, 'signature', 'ingest_state') ?? '{}').v) || 0 : 0
+    const newer = format > STORE_FORMAT ? `store format ${format}, this one reads ${STORE_FORMAT}` : built > STATE_VERSION ? `store version ${built}, this one builds ${STATE_VERSION}` : ''
+    if (newer) {
+      newerThenwise(cfg.memDir, 'the store')
+      throw new Error(`${dbPath} was written by a newer Thenwise (${newer}). Update Thenwise.`)
+    }
+    if (!opts.full && !opts.until && (format === STORE_FORMAT || format === 2) && existsSync(dbPath)) {
       try {
         r = updateGraph(cfg, opts, dbPath)
       } catch (e) {

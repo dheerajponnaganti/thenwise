@@ -219,8 +219,9 @@ export function syncRun(env: HookEnv) {
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? (r.stderr.trim() || r.stdout.trim()).split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
-      // A failed step reaches the person once, at the next session start; the details stay in the log.
-      if (r.status !== 0) addNews(env.dir, `sync-${verb.split(' ')[0]}`, `the background sync's ${verb.split(' ')[0]} step failed; /thenwise:logs shows why`)
+      // A failed step reaches the person once, at the next session start; the details stay in the log. A step that met data
+      // a newer Thenwise wrote has left its own notice, which names the tool to update (#137).
+      if (r.status !== 0 && !/written by a newer Thenwise/.test(r.stderr ?? '')) addNews(env.dir, `sync-${verb.split(' ')[0]}`, `the background sync's ${verb.split(' ')[0]} step failed; /thenwise:logs shows why`)
     }
   } finally {
     // Not finished here means the ingest never ran: the sync stopped on an error.

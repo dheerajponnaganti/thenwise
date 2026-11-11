@@ -126,6 +126,17 @@ test('the notice shows once per version, and never tells of an older one', () =>
   assert.equal(updateNotice(old.cfg, '0.1.25'), '')
 })
 
+test('#137: an older Thenwise in another tool does not make the newer one say it was updated again', () => {
+  const w = world()
+  updateNotice(w.cfg, '0.3.1')
+  assert.match(updateNotice(w.cfg, '0.3.3'), /updated to 0\.3\.3/)
+  assert.equal(updateNotice(w.cfg, '0.3.1'), '', 'the older one tells nothing')
+  assert.equal(updateNotice(w.cfg, '0.3.3'), '', 'told once')
+  // A released Thenwise writes only `ran`, and keeps the rest.
+  writeFileSync(join(w.data, 'update-check.json'), JSON.stringify({ ...w.state(), ran: '0.3.1' }))
+  assert.equal(updateNotice(w.cfg, '0.3.3'), '')
+})
+
 test('the first run is silent; after an update it says so, once, with the link', () => {
   const w = world()
   assert.equal(updateNotice(w.cfg, '0.1.25'), '', 'a fresh install is not an update')

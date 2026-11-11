@@ -133,6 +133,7 @@ if (cmd === 'archive' || cmd === 'ingest') {
     }
     done({ seen: r.seen, archived: r.archived, excluded: r.excluded, unparsed: r.unparsed.length, failed: r.failed.length })
     console.log(`${r.seen} sessions seen: ${r.archived} archived, ${r.skipped} unchanged (${r.remasked} masked again), ${r.excluded} excluded; ${(r.bytes / 1e6).toFixed(1)} MB of archive; ${r.unparsed.length} lines did not parse`)
+    if (r.newer) console.log(`${r.newer} archived chats or plan folders were written by a newer Thenwise and were left as they are. Update Thenwise.`)
     const bad = new Map<string, number[]>()
     for (const u of r.unparsed) bad.set(u.rel, [...(bad.get(u.rel) ?? []), u.line])
     for (const [rel, ls] of bad) console.log(`  ${rel}: ${ls.length} lines did not parse (first: line ${Math.min(...ls)})`)

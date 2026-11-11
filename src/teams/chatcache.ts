@@ -58,10 +58,13 @@ export function openChatCache(dir: string): DatabaseSync {
   return db
 }
 
+/** True when a newer Thenwise masked the cache: this one then neither masks it again nor adds to it (#137). */
+export const newerCache = (db: DatabaseSync) => Number((db.prepare("SELECT v FROM since WHERE k = 'mask'").get() as { v: number } | undefined)?.v ?? 0) > MASK_VERSION
+
 /** Text fetched under an older MASK_VERSION is masked again in place, so newer patterns reach chats fetched before, with no refetch. */
 function remaskCache(db: DatabaseSync) {
   const v = Number((db.prepare("SELECT v FROM since WHERE k = 'mask'").get() as { v: number } | undefined)?.v ?? 0)
-  if (v === MASK_VERSION) return
+  if (v >= MASK_VERSION) return
   const m = (t: string | null) => (t == null ? t : maskSecrets(t).text)
   db.exec('BEGIN')
   try {

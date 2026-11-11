@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
 
-import { createServer, serveStdio } from '../src/server/stdio.ts'
+import { createServer, serverConfig, serveStdio } from '../src/server/stdio.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
 
 const cli = resolve('src/cli.ts')
@@ -284,4 +284,24 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
   assert.match(textOf('memory_read', { id: 'turn:f3' }), /This record has no "(zephyr|marmot)", "(zephyr|marmot)"\./)
   textOf('memory_search', { query: 'cache settings round' })
   assert.doesNotMatch(textOf('memory_read', { id: 'turn:z' }), /This record has no/, 'a later search without a gap clears it')
+})
+
+test('#120: the server reuses its config load, and still sees `thenwise off` and `on` at once', () => {
+  const dir = tempDir()
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ off: false }))
+    const first = serverConfig()
+    assert.equal(first.config?.off, false)
+    assert.equal(serverConfig(), first, 'an unchanged file is not loaded again')
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ off: true }))
+    assert.equal(serverConfig().config?.off, true)
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ off: false }))
+    assert.equal(serverConfig().config?.off, false)
+    assert.notEqual(serverConfig(Date.now() + 10_000), first, 'a few seconds later it loads again')
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
 })

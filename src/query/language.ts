@@ -39,9 +39,10 @@ export const similarity = (a: Set<string>, b: Set<string>): number => {
 /** Mines `synonyms(word, syn, pmi, n)` from the labelled nodes and the links between them. Replaces what the table holds. */
 export function fillSynonyms(db: DatabaseSync) {
   db.exec('DELETE FROM synonyms')
-  const rows = db.prepare('SELECT id, kind, title, extra FROM nodes ORDER BY id').all() as { id: string; kind: string; title: string; extra: string }[]
+  const kinds = [...LABELLED]
+  const rows = db.prepare(`SELECT id, kind, title, extra FROM nodes WHERE kind IN (${kinds.map(() => '?').join(',')}) ORDER BY id`).all(...kinds) as { id: string; kind: string; title: string; extra: string }[]
   const own = new Map<string, string[]>()
-  for (const r of rows) if (LABELLED.has(r.kind)) own.set(r.id, labelWords(r.title, JSON.parse(r.extra || '{}')))
+  for (const r of rows) own.set(r.id, labelWords(r.title, JSON.parse(r.extra || '{}')))
   const links = new Map<string, Set<string>>()
   for (const e of db.prepare("SELECT src, dst FROM edges WHERE kind <> 'part_of' ORDER BY src, dst").all() as { src: string; dst: string }[]) {
     if (!own.has(e.src) || !own.has(e.dst)) continue

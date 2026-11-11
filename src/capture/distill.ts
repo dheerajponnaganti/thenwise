@@ -2,7 +2,7 @@
 // `claude -p --model haiku` (the owner's subscription), and writes proposals as inbox notes. No model in retrieval.
 
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -134,6 +134,8 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
     for (const f of readdirSync(join(root, key)).filter((x) => x.endsWith('.jsonl.gz')).sort()) {
       const id = f.replace(/\.jsonl\.gz$/, '')
       if (opts.session && opts.session !== id) continue
+      // The archive file is written after the chat's last turn: older than `since` means the chat ended before it.
+      if (opts.since && statSync(join(root, key, f)).mtimeMs < Date.parse(opts.since)) continue
       const s = parseSession(chatLines(join(root, key, f)), id, cfg.home)
       if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
       if (opts.since && Date.parse(s.end) < Date.parse(opts.since)) continue

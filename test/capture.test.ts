@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -155,4 +155,16 @@ test('trailers wait in the inbox, once, until accepted', () => {
   accept(f.cfg.memDir, { ids: first.map((n) => n.id) }, new Date().toISOString())
   f.run()
   assert.equal([...new Graph(f.db).nodes.keys()].filter((k) => k.startsWith('curated:tr-')).length, 2)
+})
+
+test('#120: distill --since skips an archived chat written before the date without parsing it', () => {
+  const f = fixture()
+  f.items([])
+  // Not gzip: parsing it throws, so only the mtime check keeps this run alive.
+  const old = join(f.home, '.memory/archive/sessions/-proj/s0.jsonl.gz')
+  writeFileSync(old, 'not a chat')
+  utimesSync(old, new Date('2025-01-01T00:00:00Z'), new Date('2025-01-01T00:00:00Z'))
+  const r = distill(f.cfg, { dryRun: true, since: '2026-01-01', now: Date.parse('2026-10-02T00:00:00Z') })
+  assert.ok(r.lines.some((l) => l.startsWith('session s1:')), r.lines.join('\n'))
+  assert.ok(!r.lines.some((l) => l.includes('s0')))
 })

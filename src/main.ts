@@ -322,6 +322,7 @@ if (cmd && QUERY.includes(cmd)) {
     for (; i < rest.length && ['--here', '--all', '--project', '--db'].includes(rest[i]!); i++) lead.push(rest[i]!, ...(['--project', '--db'].includes(rest[i]!) ? [rest[++i]!] : []))
     args.push(...rest.slice(i))
   }
+  // `--fast` is read by nothing; it stays one release so an older hook's `--fast --project x` keeps its `--project` (#120).
   else for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short', '--checkout', '--clean'].includes(rest[i]!) ? 0 : i++) : args.push(rest[i]!)
   const cfg = loadConfig()
   if (cmd === 'asof' && process.argv.includes('--clean')) (console.log((await import('./query/checkout.ts')).cleanCheckouts(cfg.memDir)), process.exit(0))

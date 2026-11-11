@@ -8,6 +8,7 @@ import { gzipSync } from 'node:zlib'
 
 import { listDir } from '../core/home.ts'
 import { errFields, logger } from '../core/log.ts'
+import { alive } from '../core/progress.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
@@ -323,6 +324,17 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   if (cfg.off) return { ...res, off: sources.size }
   mkdirSync(out, { recursive: true, mode: 0o700 })
   for (const d of [cfg.memDir, base, out]) chmodSync(d, 0o700)
+  // Tmp files of a killed run: the sync stops archive with SIGTERM, so no finally ran. The archive lock keeps other archives of
+  // this store out, but an older Thenwise in another tool still takes a lock older than 30 minutes, so a live pid's fresh files
+  // stay. An hour untouched means no writer at all: a dead run's pid that another process now has.
+  try {
+    for (const f of [...readdirSync(out, { recursive: true, encoding: 'utf8' }).map((f) => join(out, f)), ...readdirSync(base).map((f) => join(base, f))]) {
+      const pid = Number(/(?:\.gz|manifest\.json)\.(\d+)\.tmp$/.exec(f)?.[1])
+      if (pid && (pid === process.pid || !alive(pid) || Date.now() - (statSync(f, { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) > 3600e3)) rmSync(f, { force: true })
+    }
+  } catch (e) {
+    logger('archive', cfg.memDir).warn('tmp_cleanup_failed', errFields(e)) // only leftovers: the run goes on
+  }
 
   const check = `${cfg.ingestExcludeMarkers.join('\n')}|2`
   const parents = new Map<string, { cwd: string; marked: boolean }>() // a chat's own facts, inherited by its subagent files
@@ -330,8 +342,25 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   const tombs = loadTombs(cfg.memDir)
   const keys = [...sources.keys()].sort()
   const shrankLog = (tool: string | undefined, rel: string, lines: number, kept: number) => logger('archive', cfg.memDir).warn(`${tool ?? 'converted'}_chat_shrank`, { rel, lines, kept })
+  const save = () => {
+    const sorted = Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => (a < b ? -1 : 1)))
+    const mtmp = `${manifestFile}.${process.pid}.tmp`
+    writeFileSync(mtmp, JSON.stringify(sorted, null, 1), { mode: 0o600 })
+    renameSync(mtmp, manifestFile)
+    chmodSync(manifestFile, 0o600)
+  }
   let done = 0
+  let saved = Date.now()
   for (const rel of keys) {
+    // A run killed partway (the sync stops archive at 600 s) keeps what it finished. Between chats every entry's .gz is in place.
+    if (done && (done % 200 === 0 || Date.now() - saved > 30e3)) {
+      try {
+        save()
+      } catch (e) {
+        logger('archive', cfg.memDir).warn('checkpoint_failed', errFields(e)) // the save at the end tries again
+      }
+      saved = Date.now()
+    }
     try {
       opts.onProgress?.(++done, keys.length)
       const src = sources.get(rel)!
@@ -459,11 +488,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
     }
   }
   remaskPlans(base)
-  const sorted = Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => (a < b ? -1 : 1)))
-  const mtmp = `${manifestFile}.${process.pid}.tmp`
-  writeFileSync(mtmp, JSON.stringify(sorted, null, 1), { mode: 0o600 })
-  renameSync(mtmp, manifestFile)
-  chmodSync(manifestFile, 0o600)
+  save()
 
   return res
 }

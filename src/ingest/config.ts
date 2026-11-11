@@ -89,16 +89,19 @@ const SCHEMA: Record<string, any> = {
 }
 const ENUMS: Record<string, string[]> = { 'vault.place': ['central', 'project', 'obsidian'], 'vault.layout': ['shared', 'per-project'], 'backup.kind': ['none', 'git', 'folders'], scope: ['project', 'all'] }
 
-const plain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+const VIEW = { words: 'string[]', paths: 'string[]' }
+/** A list of text, or none: what loadConfigSafe keeps of a field readConfigFile warned about. */
+const texts = (v: unknown): string[] => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? v : [])
+const plain = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const describe = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'a list' : typeof v === 'object' ? 'a table' : `${typeof v} ${JSON.stringify(v)}`)
 
 function check(value: Record<string, unknown>, schema: Record<string, any>, at: string, errors: string[], warnings: string[]) {
   for (const [k, v] of Object.entries(value)) {
     const name = at ? `${at}.${k}` : k
-    const want = schema[k]
+    const want = Object.hasOwn(schema, k) ? schema[k] : undefined
     if (want === undefined) warnings.push(`unknown key "${name}" (ignored)`)
     else if (typeof want === 'object') plain(v) ? check(v, want, name, errors, warnings) : errors.push(`"${name}" must be a table, found ${describe(v)}`)
-    else if (want === 'string[]' ? !Array.isArray(v) || v.some((x) => typeof x !== 'string') : want === 'object' ? !plain(v) : typeof v !== want) errors.push(`"${name}" must be ${want === 'string[]' ? 'a list of text' : want === 'object' ? 'a table' : `a ${want}`}, found ${describe(v)}`)
+    else if (want === 'string[]' ? !Array.isArray(v) || v.some((x) => typeof x !== 'string') : want === 'object' ? !plain(v) : typeof v !== want) errors.push(`"${name}" must be ${want === 'string[]' ? 'a list of text' : want === 'object' ? 'a table' : `a ${want}`}, found ${Array.isArray(v) && want === 'string[]' ? `a list holding ${describe(v.find((x) => typeof x !== 'string'))}` : describe(v)}`)
     else if (ENUMS[name] && !ENUMS[name]!.includes(v as string)) errors.push(`"${name}" must be one of ${ENUMS[name]!.join(', ')}, found "${String(v)}"`)
   }
 }
@@ -148,6 +151,17 @@ export function readConfigFile(memDir: string): ConfigRead {
   }
   if (!plain(parsed)) return { ...res, raw: null, errors: [`${file}: the top level must be a table, found ${describe(parsed)}`] }
   check(parsed, SCHEMA, '', res.errors, res.warnings)
+  const views = plain(parsed.views) && plain(parsed.views.projects) ? parsed.views.projects : {}
+  // A wrong shape is only a warning: older versions ignored it, so such a config must keep loading. loadConfigSafe leaves the bad
+  // part out. `raw` stays as written, since commands save it back.
+  for (const [name, p] of Object.entries(views)) {
+    if (!plain(p)) res.warnings.push(`"views.projects.${name}" must be a table, found ${describe(p)} (view ignored)`)
+    else {
+      const bad: string[] = []
+      check(p, VIEW, `views.projects.${name}`, bad, res.warnings)
+      res.warnings.push(...bad.map((b) => `${b} (ignored)`))
+    }
+  }
   if (typeof parsed.version === 'number' && parsed.version > CONFIG_VERSION) res.errors.unshift(`${file}: version ${parsed.version} is newer than this Thenwise understands (${CONFIG_VERSION}). Update Thenwise.`)
   res.raw = parsed
 
@@ -210,7 +224,7 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
     ingestExcludeProjects: ing.exclude_projects ?? [],
     ingestExcludeMarkers: ing.exclude_markers ?? ['[no-memory]'],
     ghTimeoutMs: (ing.gh_timeout_s ?? 60) * 1000,
-    viewProjects: Object.entries((user.views?.projects ?? {}) as Record<string, { words?: string[]; paths?: string[] }>).map(([name, p]) => ({ name, words: (p.words ?? []).map((w) => w.toLowerCase()), paths: list(p.paths, []) })),
+    viewProjects: Object.entries(plain(user.views?.projects) ? user.views.projects : {}).flatMap(([name, p]) => (plain(p) ? [{ name, words: texts(p.words).map((w) => w.toLowerCase()), paths: list(texts(p.paths), []) }] : [])),
   }
 
   return { config, errors: [], warnings: read.warnings }

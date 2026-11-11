@@ -2,12 +2,12 @@
 
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { spawnSync } from 'node:child_process'
-import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { resolveDataDir } from '../core/home.ts'
+import { listDir, resolveDataDir } from '../core/home.ts'
 import { logger, recentErrors } from '../core/log.ts'
 import { codexDir } from '../ingest/codex.ts'
 import { copilotDir } from '../ingest/copilot.ts'
@@ -66,7 +66,7 @@ function pluginRegistered(home: string): boolean {
   if ([...names(join(claude, 'plugins', 'installed_plugins.json'), (j) => j.plugins), ...names(join(claude, 'settings.json'), (j) => j.enabledPlugins)].some((k) => /thenwise/i.test(k))) return true
   // Copilot CLI: installed-plugins/<marketplace>/<plugin>, or _direct/<plugin>.
   const installed = join(copilotDir(home), 'installed-plugins')
-  const dirs = (d: string) => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : [])
+  const dirs = (d: string) => listDir(d).filter((e) => e.isDirectory()).map((e) => e.name)
 
   if (dirs(installed).some((m) => dirs(join(installed, m)).some((p) => /thenwise/i.test(p)))) return true
 

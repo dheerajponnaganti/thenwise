@@ -6,6 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
+import { listDir } from '../core/home.ts'
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { isTestRun } from '../core/testrun.ts'
@@ -438,7 +439,7 @@ function chatCounts(home: string): string {
     }
   }
   const projects = join(home, '.claude', 'projects')
-  const claude = n(() => (existsSync(projects) ? readdirSync(projects).flatMap((k) => (statSync(join(projects, k)).isDirectory() ? readdirSync(join(projects, k)).filter((f) => f.endsWith('.jsonl')) : [])) : []))
+  const claude = listDir(projects).flatMap((k) => (k.isDirectory() ? listDir(join(projects, k.name)).filter((f) => f.isFile() && f.name.endsWith('.jsonl')) : [])).length
   const parts = [[claude, 'Claude Code'], [n(() => copilotSources(home)), 'Copilot'], [n(() => codexSources(home)), 'Codex'], [n(() => antigravitySources(home)), 'Antigravity']].filter(([c]) => (c as number) > 0).map(([c, t]) => `${(c as number).toLocaleString('en-US')} from ${t}`)
 
   return parts.length ? parts.join(', ') : 'none yet'

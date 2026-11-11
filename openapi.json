@@ -781,7 +781,7 @@
     },
     "/v1/members/{id}": {
       "patch": {
-        "summary": "Changes a member's role, expiry or disabled flag. The owner cannot be changed. Needs the admin role.",
+        "summary": "Changes a member's role, expiry or disabled flag. The owner cannot be changed. Needs the admin role; changing an admin, or giving the admin role, needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -834,7 +834,7 @@
         }
       },
       "delete": {
-        "summary": "Removes a member, keeping or deleting their notes. The owner cannot be removed. Needs the admin role.",
+        "summary": "Removes a member, keeping or deleting their notes. The owner cannot be removed. Needs the admin role; removing an admin needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -890,7 +890,7 @@
     },
     "/v1/members/{id}/rotate": {
       "post": {
-        "summary": "Gives a member a new token, shown once. The old token and sessions stop at once. Needs the admin role.",
+        "summary": "Gives a member a new token, shown once. The old token and sessions stop at once. A member with no expiry gets one year. Your own needs no role; another member's needs the admin role, and an admin's needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -998,7 +998,7 @@
         }
       },
       "patch": {
-        "summary": "Changes the team's name or the review queue. Needs the admin role.",
+        "summary": "Changes the team's name or the review queue. Needs the owner role.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1046,7 +1046,7 @@
     },
     "/v1/invites": {
       "post": {
-        "summary": "Creates an invite code, shown once. Needs the admin role.",
+        "summary": "Creates an invite code, shown once. Needs the admin role; an admin invite needs the owner.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1461,7 +1461,7 @@
         }
       },
       "delete": {
-        "summary": "An admin unshares a member's chat (a member's own goes through the one-segment path). Audited as chat.admin_unshare. Needs the admin role.",
+        "summary": "An admin unshares the chat of an editor, member or viewer, and the owner anyone's (a member's own goes through the one-segment path). Audited as chat.admin_unshare. Needs the admin role.",
         "parameters": [
           {
             "name": "owner",
@@ -1596,7 +1596,7 @@
     },
     "/v1/shared-projects/{owner}/{project}": {
       "delete": {
-        "summary": "Unshares every chat of a project of a member, with tombs. The member or an admin.",
+        "summary": "Unshares every chat of a project of a member, with tombs. The member, an admin for an editor, member or viewer, or the owner.",
         "parameters": [
           {
             "name": "owner",
@@ -1638,7 +1638,7 @@
         }
       },
       "patch": {
-        "summary": "Sets a project's status to paused or active (the owner's client calls this on pause and resume). The member or an admin.",
+        "summary": "Sets a project's status to paused or active (the owner's client calls this on pause and resume). The member, an admin for an editor, member or viewer, or the owner.",
         "parameters": [
           {
             "name": "owner",
@@ -1736,7 +1736,7 @@
         }
       },
       "patch": {
-        "summary": "Sets chat_retention_days: the daily sweep deletes chats that ended earlier, with tombs. null keeps chats until their owners unshare. Needs the admin role.",
+        "summary": "Sets chat_retention_days: the daily sweep deletes chats that ended earlier, with tombs. null keeps chats until their owners unshare. Needs the owner role.",
         "requestBody": {
           "required": true,
           "content": {

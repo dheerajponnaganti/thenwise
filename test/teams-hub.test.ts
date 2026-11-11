@@ -301,7 +301,7 @@ test('T12-B8: migration 2 gives every old note a team, kind, status and revision
     INSERT INTO members VALUES ('alice', 'h1', NULL), ('bob', 'h2', NULL);
     INSERT INTO notes VALUES ('alice', 'n1', 5, 'One', 'first', 'alpha'), ('bob', 'n2', 6, 'Two', 'second', '');`)
   migrateTeamDb(db)
-  assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, 5)
+  assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, 6)
   const rows = db.prepare('SELECT n.kind, n.status, n.pinned, n.tags, n.team_id, t.id AS tid, n.shared_by = n.owner_id AS mine FROM notes n JOIN teams t ON t.id = n.team_id').all() as any[]
   assert.equal(rows.length, 2)
   for (const r of rows) assert.deepEqual([r.kind, r.status, r.pinned, r.tags, r.mine], ['note', 'active', 0, '[]', 1])
@@ -343,8 +343,8 @@ test('T12-B10: the owner cannot be removed or changed; make-owner hands the team
     await t.roleOf('alice', 'admin')
     const a = t.tokens.alice!
     assert.equal((await t.req(a, `/v1/members/${rootId}`, { method: 'DELETE' })).status, 400, 'notes=keep|delete is required')
-    assert.equal((await t.req(a, `/v1/members/${rootId}?notes=keep`, { method: 'DELETE' })).status, 409)
-    assert.equal((await t.req(a, `/v1/members/${rootId}`, { method: 'PATCH', body: { disabled: true } })).status, 409)
+    assert.equal((await t.req(a, `/v1/members/${rootId}?notes=keep`, { method: 'DELETE' })).status, 403)
+    assert.equal((await t.req(a, `/v1/members/${rootId}`, { method: 'PATCH', body: { disabled: true } })).status, 403)
     assert.equal((await t.req(a, `/v1/members/${bobId}`, { method: 'PATCH', body: { role: 'owner' } })).status, 400)
     assert.equal((await t.req(a, `/v1/members/${bobId}/make-owner`, { method: 'POST' })).status, 403, 'only the owner hands over')
     assert.equal((await t.req(t.tokens.root!, `/v1/members/${bobId}/make-owner`, { method: 'POST' })).status, 200)

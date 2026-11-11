@@ -284,6 +284,25 @@ test('T19-H5 T19-B4: chats arriving, changing and leaving: an update equals a re
   }
 })
 
+test('GHSA-qr4h item 5: a cache already holding a chat with a time past the largest date no longer breaks ingest', () => {
+  const w = new World()
+  try {
+    w.chat('own', { turns: [{ prompt: 'my own work', reply: 'done', edits: [`${w.proj}/src/a.ts`] }] })
+    w.archive()
+    const bad = (session: string, over: Partial<WireChat>, at = Date.parse('2026-10-20T09:00:00Z')) => wire({ session, turns: [{ ...wire().turns[0]!, id: `${session}t`, at, shas: ['abc1234'] }], ...over })
+    cache(w, wire(), bad('b1', {}, 9e15), bad('b2', { started_at: 9e15 }), bad('b3', { ended_at: -9e15 }))
+    writeFileSync(join(w.memDir, 'team-cache.json'), JSON.stringify({ notes: { 'alice/ok': { owner: 'alice', id: 'ok', title: 'Fine note', text: 'fine', updated_at: 1 }, 'alice/far': { owner: 'alice', id: 'far', title: 'Far note', text: 'far', updated_at: 9e15 } } }))
+    assert.deepEqual(teamChats(w.cfg).map((x) => x.session), ['as1'])
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.ok(g.nodes.has('tturn:alice/t1') && g.nodes.has('team:alice/ok'))
+    assert.ok(!['tses:alice/b1', 'tses:alice/b2', 'tses:alice/b3', 'team:alice/far'].some((i) => g.nodes.has(i)))
+  } finally {
+    w.destroy()
+  }
+})
+
 test('T19-B3: a chat B holds itself is not added a second time from the team copy', () => {
   const w = sender()
   try {

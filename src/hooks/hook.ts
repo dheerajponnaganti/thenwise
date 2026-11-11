@@ -24,7 +24,7 @@ import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resum
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
 import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
-import { EXPIRY_DAYS, pausedNotes, readNotes } from '../capture/notes.ts'
+import { EXPIRY_DAYS, overdue, pausedNotes, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
@@ -425,11 +425,14 @@ function dashboard(env: HookEnv, storeStatus: string): string {
   let inbox = 'empty'
   try {
     const cfg = loadConfigSafe().config
-    const inboxNotes = readNotes(env.dir).filter((n) => n.status === 'inbox')
+    // Read only: an overdue note is already gone from `thenwise inbox`, which expires it first. Notes of paused folders wait
+    // unseen until `thenwise on`.
+    const now = Date.now()
+    const inboxNotes = readNotes(env.dir).filter((n) => n.status === 'inbox' && !overdue(n, now))
     const paused = cfg ? pausedNotes(inboxNotes, cfg, join(env.dir, 'graph.db')) : new Set<string>()
-    const waiting = inboxNotes.filter((n) => !paused.has(n.id)) // notes of paused folders wait unseen until `thenwise on`
+    const waiting = inboxNotes.filter((n) => !paused.has(n.id))
     const oldest = waiting.map((n) => Date.parse(n.created)).filter((t) => !Number.isNaN(t)).sort()[0]
-    if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (Date.now() - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
+    if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (now - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
   } catch {} // no notes folder
   const rows: [string, string][] = [['memory', memory], ['session', session], ['hooks', hooks], ['team', team], ['inbox', inbox], ['errors', recentErrors(env.dir)]]
 

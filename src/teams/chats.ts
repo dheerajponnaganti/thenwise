@@ -297,7 +297,10 @@ export function previewShare(cfg: Config, repoPath: string, opts: { since?: stri
   const pv: Preview = { project: projectKey(repo), repo, chats: 0, passages: 0, bytes: 0, oldest: '', newest: '', samples: [], left: {}, subagentFiles: 0, redacted: {}, truncated: 0, droppedTurns: 0 }
   const all: string[] = []
   const inRepo = new Map<string, string | undefined>()
-  for (const c of archived(cfg)) {
+  const arch = readArchived(cfg)
+  // A missing manifest before any archive is an empty archive; a damaged one must not read as "no chats".
+  if (arch.bad && existsSync(join(cfg.memDir, 'archive', 'sessions'))) throw new Error(`the archive ${arch.bad}: run \`thenwise archive\` to rebuild it, then share again`)
+  for (const c of arch.chats) {
     if (c.cwd && !inRepo.has(c.cwd)) inRepo.set(c.cwd, sessionRepo(c.cwd))
     if (c.cwd && inRepo.get(c.cwd) !== undefined && !sameProject(inRepo.get(c.cwd), repo)) continue // a quick no: its folder is another repo
     const b = buildChat(cfg, repo, c, sc.scrub, { ...(opts.since ? { since: opts.since } : {}), tombs })

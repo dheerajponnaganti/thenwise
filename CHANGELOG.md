@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- A team sync no longer unshares your shared chats when the archive manifest is damaged or missing. It leaves the shares alone, sends nothing that sync and says why.
+- A team sync no longer unshares your shared chats when the archive manifest is damaged or missing. It leaves the shares alone, sends nothing that sync and says why. `team share-chats` and `export` name the damaged manifest instead of finding no chats.
 
 ## 0.3.1
 

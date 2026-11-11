@@ -581,6 +581,8 @@ async function brokenManifest(harm: (manifest: string) => void, why: RegExp) {
     const warns = readLog(t.a.memDir).filter((e) => e.ev === 'manifest_unreadable')
     assert.equal(warns.length, 1)
     assert.match(String(warns[0]!.err), why)
+    // Sharing a project now names the problem instead of finding "no chats".
+    assert.throws(() => previewShare(t.a.cfg, t.a.proj), why)
   } finally {
     await t.stop()
   }

@@ -89,7 +89,7 @@ test('#111: vault write and other store readers leave out paused folders', () =>
   }
   // Distill sends chats to a model: a paused chat is never read.
   const sessions = (c: typeof w.cfg) => distill(c, { dryRun: true }).lines.filter((l) => l.startsWith('session ')).map((l) => l.split(':')[0]).sort()
-  assert.deepEqual(sessions(w.cfg), ['session c1', 'session c2'])
+  assert.deepEqual(sessions(w.cfg), ['session c1', 'session c2'], JSON.stringify({ lines: distill(w.cfg, { dryRun: true }).lines, roots: w.cfg.roots, scratch }))
   assert.deepEqual(sessions({ ...w.cfg, offProjects: [w.proj] }), ['session c2'])
   assert.deepEqual(sessions({ ...w.cfg, offProjects: [scratch] }), ['session c1'])
   assert.deepEqual(sessions({ ...w.cfg, off: true }), [])

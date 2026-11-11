@@ -61,13 +61,15 @@ test('#108: a Bash call that tests and commits keeps its test run; update equals
     w.archive()
     w.ingest('inc.db')
     appendFileSync(file, lines(w, 'f2', 't2', '2026-10-10T10:05:00Z', 'again', [{ id: 'b2', name: 'Bash', input: { command: 'git commit -m "Retry" && npm test' }, error: true, out: '[main 5d6e7f8] Retry\n1 failing' }]))
+    // The tests passed, then git found nothing to commit: the call failed, the test run did not.
+    appendFileSync(file, lines(w, 'f2', 't3', '2026-10-10T10:10:00Z', 'once more', [{ id: 'b3', name: 'Bash', input: { command: 'npm test && git commit -m "Again"' }, error: true, out: 'ok\nnothing to commit, working tree clean' }]))
     w.archive()
     const r = w.both()
     assert.equal(r.a, r.b, 'an update stores the same test runs as a rebuild')
     const db = new DatabaseSync(w.path('full.db'), { readOnly: true })
     const tests = db.prepare('SELECT node, failed FROM tests ORDER BY at').all() as { node: string; failed: number }[]
     db.close()
-    assert.deepEqual(tests.map((t) => [t.node, t.failed]), [['turn:t1', 0], ['turn:t2', 1]])
+    assert.deepEqual(tests.map((t) => [t.node, t.failed]), [['turn:t1', 0], ['turn:t2', 1], ['turn:t3', 0]])
   } finally {
     w.destroy()
   }

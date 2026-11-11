@@ -1,7 +1,7 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
 
 import { createHash } from 'node:crypto'
-import { isTestRun } from '../core/testrun.ts'
+import { commandParts, isTestRun } from '../core/testrun.ts'
 import { posix } from 'node:path'
 import { crc32, gunzipSync, inflateRawSync } from 'node:zlib'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
@@ -94,6 +94,34 @@ const GIT_COMMIT = /\bgit(?:\s+(?:-[cC]\s+\S+|--\S+))*\s+commit\b/
 const COMMIT_LINE = /\[(?:detached HEAD|[\w./-]+)(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g
 // What git prints when it commits nothing. Seen even when `|| true` or a later command hides the failed exit code.
 const GIT_FAILED = /^(?:fatal|error): |^nothing (?:added )?to commit|^no changes added to commit|^Aborting commit/m
+const GH_PR = /\bgh\s+pr\s+create\b/
+// Output that shows a command ran at all, which proves every test before it in an && chain passed. A commit line or git's
+// own refusal; a PR url or gh's own refusal. A bare `fatal:` or `error:` is no proof: a failing test prints those too
+// (`cargo test` ends with `error: test failed`, and tests that run git echo its `fatal:` lines).
+const RAN = {
+  commit: new RegExp(`${COMMIT_LINE.source}|^(?:nothing (?:added )?to commit|no changes added to commit|Aborting commit)`, 'm'),
+  pr: /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+|^(?:pull request create failed|a pull request for branch .* already exists|No commits between|could not find any commits between|aborted: you must first push)/m,
+}
+/** For each test part of a command, the commands after it in its && chain whose output can show they ran: `b` in
+ * `a && b` runs only if `a` passed. Undefined when some test part has none, since then its result is only the exit code.
+ * Past a `;`, `||` or `|` nothing is known: the next command runs whether the test passed or not (or, for `|`, the
+ * pipeline's exit code is the last command's). */
+function testProof(cmd: string): ('commit' | 'pr')[][] | undefined {
+  const parts = commandParts(cmd)
+  const proof: ('commit' | 'pr')[][] = []
+  for (const [i, p] of parts.entries()) {
+    if (!isTestRun(p.text)) continue
+    const after: ('commit' | 'pr')[] = []
+    for (let j = i; parts[j]!.op === '&&' && j + 1 < parts.length; j++) {
+      const next = parts[j + 1]!.text
+      if (GIT_COMMIT.test(next)) after.push('commit')
+      else if (GH_PR.test(next)) after.push('pr')
+    }
+    if (!after.length) return undefined
+    proof.push(after)
+  }
+  return proof.length ? proof : undefined
+}
 const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|system-reminder|task-notification|command-message|bash-input|bash-stdout|bash-stderr|user-prompt-submit-hook|ide_opened_file|ide_selection|ide_diagnostics'
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`)
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`)
@@ -241,7 +269,7 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
   let pastCut = false
   const run: CostRun = { base: { input: 0, cached: 0, output: 0 }, last: undefined, start: undefined }
   // `cmd` is a test run the call makes, whatever else it does: `npm test && git commit` is a commit and a test run.
-  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; msg?: Turn['commitMsgs'][number]; pr?: boolean; file?: string; changes?: Turn['changes'] }>()
+  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; msg?: Turn['commitMsgs'][number]; pr?: boolean; proof?: ('commit' | 'pr')[][]; file?: string; changes?: Turn['changes'] }>()
   // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
   const editCalls = new Map<Turn, Map<string, number>>()
   const open = new Map<string, { turn: Turn; name: string; detail: string; at: string }>() // tool calls with no result yet
@@ -301,7 +329,9 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             continue
           }
           const out = textOf(b.content)
-          if (hit.cmd) hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, cmd: hit.cmd })
+          // A nonzero exit is the tests' only when no later command in their && chain shows it ran.
+          const passed = !!hit.proof?.every((after) => after.some((k) => RAN[k].test(out)))
+          if (hit.cmd) hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true && !passed, cmd: hit.cmd })
           if (hit.kind === 'agent') {
             const report = agentReport(out).slice(0, 8000) // a subagent's report to the turn that asked
             if (report) (hit.turn.reply.push(report), hit.turn.agentReports.push(report))
@@ -363,7 +393,7 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
           }
           // One entry per call, whatever it combines: `npm test && git commit && gh pr create` is a test run, a commit and a PR.
           const cmd = isTestRun(inp.command) ? inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined
-          const pr = /\bgh\s+pr\s+create\b/.test(inp.command)
+          const pr = GH_PR.test(inp.command)
           const commit = GIT_COMMIT.exec(inp.command)
           let typed: Turn['commitMsgs'][number] | undefined
           if (turn && commit) {
@@ -378,7 +408,7 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             // commit whose result never came still counts; a result that shows the commit failed takes it back.
             if (subject) turn.commitMsgs.push((typed = { subject, at: d.timestamp ?? turn.at }))
           }
-          if (turn && (cmd || pr || commit)) pending.set(b.id, { turn, kind: commit ? 'commit' : pr ? 'pr' : 'test', at: d.timestamp ?? turn.at, cmd, msg: typed, pr })
+          if (turn && (cmd || pr || commit)) pending.set(b.id, { turn, kind: commit ? 'commit' : pr ? 'pr' : 'test', at: d.timestamp ?? turn.at, cmd, msg: typed, pr, ...(cmd ? { proof: testProof(inp.command) } : {}) })
         }
       }
     }

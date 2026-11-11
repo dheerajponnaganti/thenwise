@@ -74,6 +74,20 @@ test('#108: a Bash call that tests and commits records every test run and commit
   // A commit and a PR in one call: both are linked.
   const pr = turn('npm test && git commit -m "Fix it" && gh pr create --fill', '[main 1a2b3c4] Fix it\nhttps://github.com/o/r/pull/7')
   assert.deepEqual([pr.tests.length, [...pr.commitShas], [...pr.prUrls]], [1, ['1a2b3c4'], ['https://github.com/o/r/pull/7']])
+  // `a && b` runs b only if a passed: a nonzero exit after git or gh shows it ran is theirs, not the tests'.
+  const failedRun = (cmd: string, out: string) => turn(cmd, out, true).tests.map((x) => x.failed)
+  assert.deepEqual(failedRun('npm test && git commit -m "Fix it"', 'ok\nnothing to commit, working tree clean'), [false])
+  assert.deepEqual(failedRun('npm test 2>&1 && git commit -m "Fix it" && git push', 'ok\n[main 1a2b3c4] Fix it\nrejected'), [false])
+  assert.deepEqual(failedRun('npm test && npm run build && git commit -m "Fix it"', 'ok\nAborting commit due to empty commit message.'), [false])
+  assert.deepEqual(failedRun('npm test && pytest && git commit -m "Fix it"', 'ok\nno changes added to commit'), [false])
+  assert.deepEqual(failedRun('npm test && gh pr create --fill', 'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/o/r/pull/7'), [false])
+  // No proof that the next command ran, or no && before it: the exit code stands.
+  assert.deepEqual(failedRun('npm test && npm run build && git commit -m "Fix it"', 'build failed'), [true])
+  assert.deepEqual(failedRun('cargo test && git commit -m "Fix it"', 'error: test failed, to rerun pass `--lib`'), [true])
+  assert.deepEqual(failedRun('npm test; git commit -m "Fix it"', '1 failing\n[main 1a2b3c4] Fix it'), [true])
+  assert.deepEqual(failedRun('npm test || git commit -m "Fix it"', '1 failing\n[main 1a2b3c4] Fix it'), [true])
+  assert.deepEqual(failedRun('npm test | tee log && git commit -m "Fix it"', 'nothing to commit'), [true])
+  assert.deepEqual(failedRun('npm test && git commit -m "Fix it"; npm test', '[main 1a2b3c4] Fix it\n1 failing'), [true])
 })
 
 test('secrets in shell commands are masked: flags and the Windows ways to set one', () => {

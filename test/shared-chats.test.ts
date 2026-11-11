@@ -1199,7 +1199,8 @@ test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub
     w.archive()
     const all = archived(w.cfg)
     assert.deepEqual(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'client')!, (t) => t), { skip: 'other', repo: real(dir) })
-    assert.deepEqual(built(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'inwt')!, (t) => t)).unit.turns[0]!.paths, ['src/a.ts'])
+    const inwt = built(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'inwt')!, (t) => t)).unit.turns[0]!
+    assert.deepEqual(inwt.paths, ['src/a.ts'], JSON.stringify({ turn: inwt, wt, proj: w.proj, wtGit: readFileSync(join(wt, '.git'), 'utf8') }))
     const sent: string[] = []
     const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
     assert.deepEqual([pv.chats, sent.sort()], [2, ['c1', 'inwt']])

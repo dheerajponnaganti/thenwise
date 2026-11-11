@@ -23,7 +23,7 @@ import { tighten } from '../privacy/perms.ts'
 import { activeProjects, loadShares } from '../teams/chats.ts'
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from './entry.ts'
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
-import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
+import { progressLine, readProgress, readTold, running, writeProgress, writeTold } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
 import { EXPIRY_DAYS, overdue, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
@@ -215,7 +215,7 @@ export function syncRun(env: HookEnv) {
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'ingest') chats = Number(/^(\d+) sessions in scope/m.exec(r.stdout)?.[1]) || undefined
       // The store is ready after the ingest: the person hears "done" then, not after the backup and the vault.
-      if (verb === 'ingest') writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, ...(chats ? { chats } : {}) })
+      if (verb === 'ingest') writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, ...(r.status === 0 ? (chats ? { chats } : {}) : { failed: true }) })
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? (r.stderr.trim() || r.stdout.trim()).split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
@@ -223,7 +223,8 @@ export function syncRun(env: HookEnv) {
       if (r.status !== 0) addNews(env.dir, `sync-${verb.split(' ')[0]}`, `the background sync's ${verb.split(' ')[0]} step failed; /thenwise:logs shows why`)
     }
   } finally {
-    if (!readProgress(env.dir)?.finished) writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started })
+    // Not finished here means the ingest never ran: the sync stopped on an error.
+    if (!readProgress(env.dir)?.finished) writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, failed: true })
     tighten(env.dir)
     rmSync(lock, { force: true })
   }
@@ -255,10 +256,10 @@ function lateTeam(env: HookEnv, input: Record<string, any>, cwd: string, graph: 
 export function syncNotice(dir: string, now = Date.now()): string {
   const p = readProgress(dir)
   if (!p || p.kind === 'auto') return ''
-  const told = p.told ? Date.parse(p.told) : 0
+  const told = Date.parse(readTold(dir)) || 0
   if (p.finished ? told >= Date.parse(p.finished) : !running(p) || now - told < 60_000) return ''
   const line = progressLine(p, now)
-  if (line) writeProgress(dir, { told: new Date(now).toISOString() })
+  if (line) writeTold(dir, new Date(now).toISOString())
 
   return line ? `Thenwise: ${line}.${p.finished ? '' : ' /thenwise:status shows more.'}` : ''
 }

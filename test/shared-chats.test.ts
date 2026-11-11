@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -20,10 +21,13 @@ import { runHook, trimTrace } from '../src/hooks/hook.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
 import { teamChats, teamChatsPart, teamClaims } from '../src/ingest/parts.ts'
+import { MASK_VERSION } from '../src/core/secrets.ts'
 import { dropChat, openChatCache, putChat, readChats } from '../src/teams/chatcache.ts'
 import type { WireChat } from '../src/teams/chatcache.ts'
 import { archived, buildChat, formatPreview, loadShares, previewShare, pushShared, scrubber, setServerStatus, sharesStatus, unshareChats, updateShares } from '../src/teams/chats.ts'
-import { fetchShared, joinTeam } from '../src/teams/client.ts'
+import { fetchChats, fetchShared, joinTeam, readCache } from '../src/teams/client.ts'
+import type { State } from '../src/teams/client.ts'
+import { readExport } from '../src/teams/export.ts'
 import { openTeamDb } from '../src/teams/schema.ts'
 import { createTeamServer, invite } from '../src/teams/server.ts'
 import { chatText, diffStores, git, World } from './world.ts'
@@ -276,6 +280,25 @@ test('T19-H5 T19-B4: chats arriving, changing and leaving: an update equals a re
     const g = new Graph(w.path('inc.db'))
     assert.ok(!g.nodes.has('tturn:alice/t1') && !g.nodes.has('tses:alice/as1') && g.nodes.has('tturn:bob/b1'))
     assert.ok(![...g.adj.keys()].some((k) => k.startsWith('tturn:alice')))
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-qr4h item 5: a cache already holding a chat with a time past the largest date no longer breaks ingest', () => {
+  const w = new World()
+  try {
+    w.chat('own', { turns: [{ prompt: 'my own work', reply: 'done', edits: [`${w.proj}/src/a.ts`] }] })
+    w.archive()
+    const bad = (session: string, over: Partial<WireChat>, at = Date.parse('2026-10-20T09:00:00Z')) => wire({ session, turns: [{ ...wire().turns[0]!, id: `${session}t`, at, shas: ['abc1234'] }], ...over })
+    cache(w, wire(), bad('b1', {}, 9e15), bad('b2', { started_at: 9e15 }), bad('b3', { ended_at: -9e15 }))
+    writeFileSync(join(w.memDir, 'team-cache.json'), JSON.stringify({ notes: { 'alice/ok': { owner: 'alice', id: 'ok', title: 'Fine note', text: 'fine', updated_at: 1 }, 'alice/far': { owner: 'alice', id: 'far', title: 'Far note', text: 'far', updated_at: 9e15 } } }))
+    assert.deepEqual(teamChats(w.cfg).map((x) => x.session), ['as1'])
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.ok(g.nodes.has('tturn:alice/t1') && g.nodes.has('team:alice/ok'))
+    assert.ok(!['tses:alice/b1', 'tses:alice/b2', 'tses:alice/b3', 'team:alice/far'].some((i) => g.nodes.has(i)))
   } finally {
     w.destroy()
   }
@@ -1151,6 +1174,336 @@ test('scope: a chat in a worktree of the project is shared under the project', (
   }
 })
 
+/** A second repo named `proj` in another folder, with no remote and one chat that must stay home. */
+function stranger(w: World) {
+  const dir = join(w.home, 'clients', 'other', 'proj')
+  mkdirSync(join(dir, 'src'), { recursive: true })
+  git(dir, 'init', '-q', '-b', 'main')
+  writeFileSync(join(dir, 'src/a.ts'), 'a\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'Add a')
+  w.cfg.roots.push(dir) // the member works in it too, so the store holds both repos
+  w.chat('client', { turns: [{ prompt: 'Draft the client plan', reply: 'The CLIENT CONFIDENTIAL plan lives in src/a.ts.', edits: [`${dir}/src/a.ts`] }], cwd: dir }, '-home-clients-other-proj')
+  w.archive()
+  return dir
+}
+
+test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub remote is never previewed or exported', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    // A worktree of the named repo is the same repo, whatever its folder is called.
+    const wt = join(w.home, 'wt')
+    git(w.proj, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    w.chat('inwt', { turns: [{ prompt: 'Work in the worktree', reply: 'Edited it.', edits: [`${wt}/src/a.ts`] }], cwd: wt }, '-home-wt')
+    w.archive()
+    const all = archived(w.cfg)
+    assert.deepEqual(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'client')!, (t) => t), { skip: 'other', repo: real(dir) })
+    const inwt = built(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'inwt')!, (t) => t)).unit.turns[0]!
+    assert.deepEqual(inwt.paths, ['src/a.ts'], JSON.stringify({ turn: inwt, wt, proj: w.proj, wtGit: readFileSync(join(wt, '.git'), 'utf8') }))
+    const sent: string[] = []
+    const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual([pv.chats, sent.sort()], [2, ['c1', 'inwt']])
+    // The stranger repo can be shared on its own, under the same name.
+    assert.equal(previewShare(w.cfg, dir).chats, 1)
+    const file = join(w.home, 'proj.thenwise')
+    const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+    const out = spawnSync(process.execPath, ['--no-warnings', cli, 'export', w.proj, '--out', file, '--name', 'ana', '--yes'], { encoding: 'utf8', env: { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir }, input: '' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.deepEqual(readExport(file).map((x) => x.session).sort(), ['c1', 'inwt'])
+    assert.ok(!readFileSync(file).toString('latin1').includes('CLIENT CONFIDENTIAL'))
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub remote is never pushed, now or at a later sync', needs, async () => {
+  const t = await team()
+  try {
+    stranger(t.a)
+    t.share(t.a)
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 1)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chat_passages WHERE text LIKE '%CLIENT CONFIDENTIAL%'"), 0)
+    assert.doesNotMatch(sharesStatus(t.a.cfg).lines.join(), /waiting/)
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 1: chats of another repo already on the server are unshared at the next sync', needs, async () => {
+  const t = await team()
+  try {
+    const dir = stranger(t.a)
+    // What an older version left behind: the other repo's chat sent under the project's name.
+    updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo: dir, status: 'active' }))
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    // A shared clone missing on disk proves nothing, so nothing is unshared.
+    updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo: t.a.proj, repos: [join(t.a.home, 'gone', 'proj')], status: 'active' }))
+    assert.doesNotMatch(await pushShared(t.a.cfg), /another repo/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'client'"), 1)
+    t.share(t.a)
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    let said: string
+    try {
+      said = await pushShared(t.a.cfg)
+    } finally {
+      process.env.THENWISE_LOG = 'off'
+    }
+    assert.match(said, /1 chat of another repo unshared/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'client'"), 0)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'c1'"), 1, 'the chosen repo\'s chat stays')
+    const sh = loadShares(t.a.memDir)
+    assert.ok(sh.chats.c1 && !sh.chats.client && sh.removed.client === 'proj')
+    assert.deepEqual(readLog(t.a.memDir).filter((e) => e.ev === 'other_repo_unshared').map((e) => e.n), [1])
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+  } finally {
+    await t.stop()
+  }
+})
+
+/** ~/proj on a GitLab-style remote, a clone of it with the same remote written another way, a copy with no remote but the
+ * same first commit, and a chat in each. */
+function clones(w: World) {
+  git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+  const backup = join(w.home, 'backup', 'proj')
+  const copy = join(w.home, 'copy', 'proj')
+  for (const d of [backup, copy]) execFileSync('git', ['clone', '-q', w.proj, d])
+  git(backup, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/proj')
+  git(copy, 'remote', 'remove', 'origin')
+  w.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')
+  w.chat('incopy', { turns: [{ prompt: 'Work in the copy', reply: 'The copy has the same importer.' }], cwd: copy }, '-home-copy-proj')
+  w.archive()
+  return { backup, copy }
+}
+
+test('GHSA-5jmx item 1: a second clone of the same repo is the same project, an unrelated repo with the folder name is not', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    const { backup, copy } = clones(w)
+    // A repo git cannot tell apart (no commits) is never matched by its folder name.
+    const empty = join(w.home, 'empty', 'proj')
+    mkdirSync(empty, { recursive: true })
+    git(empty, 'init', '-q', '-b', 'main')
+    w.chat('inempty', { turns: [{ prompt: 'Start the empty repo', reply: 'Nothing here yet.' }], cwd: empty }, '-home-empty-proj')
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inbackup', 'incopy'])
+    const all = archived(w.cfg)
+    const other = (id: string) => buildChat(w.cfg, w.proj, all.find((x) => x.session === id)!, (t) => t)
+    assert.deepEqual(other('client'), { skip: 'other', repo: real(dir) }, 'another first commit proves another repo')
+    assert.deepEqual(other('inempty'), { skip: 'other' }, 'git cannot tell, so it is no proof')
+    // From either clone the project is the same.
+    for (const r of [backup, copy]) assert.equal(previewShare(w.cfg, r).chats, 3)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 1: the next sync keeps the chats of a second clone, and of a repo git cannot tell apart', needs, async () => {
+  const t = await team()
+  try {
+    clones(t.a)
+    const empty = join(t.a.home, 'empty', 'proj')
+    mkdirSync(empty, { recursive: true })
+    git(empty, 'init', '-q', '-b', 'main')
+    t.a.chat('inempty', { turns: [{ prompt: 'Start the empty repo', reply: 'Nothing here yet.' }], cwd: empty }, '-home-empty-proj')
+    t.a.archive()
+    // Sent before: from the backup clone, and from the repo with no commits.
+    for (const repo of [join(t.a.home, 'backup', 'proj'), empty]) {
+      updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo, status: 'active' }))
+      await pushShared(t.a.cfg)
+    }
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 4)
+    t.share(t.a)
+    assert.doesNotMatch(await pushShared(t.a.cfg), /another repo/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 4)
+    assert.deepEqual(loadShares(t.a.memDir).removed, {})
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 1: a clone of a local repo is the same project', needs, async () => {
+  const t = await team()
+  try {
+    const w = t.a
+    git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+    const at = (d: string) => join(w.home, d, 'proj')
+    for (const d of ['backup', 'byfile', 'byrel', 'gone', 'fork', 'forkcopy']) execFileSync('git', ['clone', '-q', d === 'forkcopy' ? at('fork') : w.proj, at(d)])
+    git(at('byfile'), 'remote', 'set-url', 'origin', `file://${w.proj.replace(/\\/g, '/')}`)
+    git(at('byrel'), 'remote', 'set-url', 'origin', '../../proj')
+    git(at('gone'), 'remote', 'set-url', 'origin', join(w.home, 'nowhere', 'proj')) // unknown: the first commit decides
+    git(at('fork'), 'remote', 'set-url', 'origin', 'git@gitlab.com:client-b/proj.git') // another fork, never joined
+    for (const d of ['backup', 'byfile', 'byrel', 'gone', 'fork', 'forkcopy']) w.chat(`in${d}`, { turns: [{ prompt: `Work in ${d}`, reply: `The ${d} clone is done.` }], cwd: at(d) }, `-home-${d}-proj`)
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inbackup', 'inbyfile', 'inbyrel', 'ingone'])
+    // Shared before from the backup clone alone; sharing ~/proj keeps every chat of the backup at the next sync.
+    updateShares(w.memDir, (s) => void (s.projects.proj = { repo: at('backup'), status: 'active' }))
+    await pushShared(w.cfg)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'inbackup'"), 1)
+    t.share(w)
+    assert.doesNotMatch(await pushShared(w.cfg), /another repo/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'inbackup'"), 1)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session IN ('infork', 'inforkcopy')"), 0)
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 1: a remote written through insteadOf matches its full url', () => {
+  const w = sender()
+  try {
+    git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+    const short = join(w.home, 'short', 'proj')
+    const alias = join(w.home, 'alias', 'proj')
+    for (const d of [short, alias]) execFileSync('git', ['clone', '-q', w.proj, d])
+    git(short, 'remote', 'set-url', 'origin', 'gl:acme/proj')
+    git(short, 'config', 'url.git@gitlab.com:.insteadOf', 'gl:')
+    // An alias git cannot rewrite proves nothing, so the first commit decides.
+    git(alias, 'remote', 'set-url', 'origin', 'zz:acme/proj')
+    w.chat('inshort', { turns: [{ prompt: 'Work in the short clone', reply: 'Done there.' }], cwd: short }, '-home-short-proj')
+    w.chat('inalias', { turns: [{ prompt: 'Work in the alias clone', reply: 'Done there too.' }], cwd: alias }, '-home-alias-proj')
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inalias', 'inshort'])
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 5: a second clone of a non-GitHub repo is added, not swapped', needs, async () => {
+  const t = await team()
+  try {
+    // Each clone on its own host: git proves no shared repo, so each is shared by its path.
+    git(t.a.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+    const backup = join(t.a.home, 'backup', 'proj')
+    execFileSync('git', ['clone', '-q', t.a.proj, backup])
+    git(backup, 'remote', 'set-url', 'origin', 'git@bitbucket.org:acme/proj.git')
+    t.a.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')
+    t.a.archive()
+    const run = (...args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+      const p = spawn(process.execPath, ['src/main.ts', 'team', ...args], { env: { ...process.env, HOME: t.a.home, THENWISE_HOME: t.a.memDir, THENWISE_SYNC: 'off' }, stdio: ['ignore', 'pipe', 'pipe'] })
+      let [stdout, stderr] = ['', '']
+      p.stdout.on('data', (d) => (stdout += d))
+      p.stderr.on('data', (d) => (stderr += d))
+      p.on('close', (status) => done({ status, stdout, stderr }))
+    })
+    for (const repo of [t.a.proj, backup]) {
+      const r = await run('share-chats', repo, '--yes')
+      assert.equal(r.status, 0, r.stderr)
+      assert.match(r.stdout, /1 chat pushed/)
+    }
+    // The old shape stays: `repo` is the first clone, so an older version keeps syncing it.
+    const p = loadShares(t.a.memDir).projects.proj!
+    assert.deepEqual([p.repo, p.repos], [real(t.a.proj), [real(backup)]])
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 2)
+    assert.ok(sharesStatus(t.a.cfg).lines.join().includes(`proj  sharing from ${real(t.a.proj)}, ${real(backup)}  2 chats`))
+    assert.match(sharesStatus(t.a.cfg).summary, /sharing chats of 1 project \(2 chats/)
+    const un = await run('unshare-chats', backup)
+    assert.match(un.stdout, /unshared: 1 chat removed from the team server; proj still shares/)
+    assert.deepEqual(loadShares(t.a.memDir).projects.proj, { repo: real(t.a.proj), status: 'active', lastPush: p.lastPush })
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'c1'"), 1)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 1)
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 1: a repo with a GitHub slug still shares its clones, and never a folder that is only named like it', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    git(w.proj, 'remote', 'add', 'origin', 'https://github.com/me/proj.git')
+    const clone = join(w.home, 'clone')
+    execFileSync('git', ['clone', '-q', w.proj, clone])
+    git(clone, 'remote', 'set-url', 'origin', 'git@github.com:me/proj.git')
+    w.chat('inclone', { turns: [{ prompt: 'Work in the clone', reply: 'Edited it.', edits: [`${clone}/src/a.ts`] }], cwd: clone }, '-home-clone')
+    w.archive()
+    const sent: string[] = []
+    const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual([pv.project, sent.sort()], ['me/proj', ['c1', 'inclone']])
+    assert.deepEqual(buildChat(w.cfg, w.proj, archived(w.cfg).find((x) => x.session === 'client')!, (t) => t), { skip: 'other', repo: real(dir) })
+    assert.equal(previewShare(w.cfg, dir).project, 'proj')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 2: a dead end with a home path leaves with the path stripped', () => {
+  const w = new World()
+  try {
+    w.chat('c1', { turns: [
+      { prompt: 'Run the build', reply: `Running ${w.home}/clients/acme-secret/build.sh did not work at all, so I stopped.` },
+      { prompt: `[dead-end] ${w.proj}/src/a.ts rewrite with ${w.home}/notes/acme.txt`, reply: 'Noted.' },
+    ] })
+    w.archive()
+    const dead = built(unit(w)).unit.turns.filter((t) => t.dead_end).map((t) => t.dead_text ?? '')
+    assert.equal(dead.length, 2)
+    assert.ok(dead.every((d) => !d.includes(w.home) && !d.includes(real(w.home))), dead.join(' | '))
+    assert.match(dead[0]!, /~\/clients\/acme-secret\/build\.sh did not work/)
+    assert.match(dead[1]!, /^src\/a\.ts rewrite with ~\/notes\/acme\.txt/)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 4: a redact word in a PR url never leaves', () => {
+  const w = new World()
+  try {
+    w.chat('c1', { turns: [{ prompt: 'Open the PR', reply: 'Opened it.', prUrl: 'https://github.com/acme-corp/proj/pull/7' }] })
+    w.archive()
+    const prs = built(unit(w, 'c1', ['acme'])).unit.turns[0]!.prs
+    assert.deepEqual(prs, ['https://github.com/[redacted]-corp/proj/pull/7'])
+  } finally {
+    w.destroy()
+  }
+})
+
+const teammateIn = (g: Graph, folder: string) => (g.scopeTo(folder), /tturn:alice/.test(c.search(g, 'quokka cache corrupted shards')))
+
+test('GHSA-5jmx item 3: a teammate chat named by a folder joins no repo when two local repos have that name', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    cache(w, wire())
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.deepEqual([teammateIn(g, w.proj), teammateIn(g, dir)], [false, false])
+    assert.ok(!(g.adj.get('tturn:alice/t1') ?? []).some((e) => e.to.startsWith('file:')), 'no file of either repo is linked')
+    g.scope = undefined
+    assert.match(c.search(g, 'quokka cache corrupted shards'), /tturn:alice/, 'the all-projects search still finds it')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 3: a teammate chat named by a folder joins the local repo of that name the member shares', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    cache(w, wire())
+    w.both()
+    updateShares(w.memDir, (s) => void (s.projects.proj = { repo: real(dir), status: 'active' }))
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.deepEqual([teammateIn(g, w.proj), teammateIn(g, dir)], [false, true])
+    assert.deepEqual((g.adj.get('tturn:alice/t1') ?? []).filter((e) => e.to.startsWith('file:')).map((e) => e.to), [`file:${dir.replace(/\\/g, '/')}/src/a.ts`])
+  } finally {
+    w.destroy()
+  }
+})
+
 test('mixed tools: a Copilot CLI member and a Claude Code member read each other\'s chats, and each answer names the tool', needs, async () => {
   const t = await team()
   try {
@@ -1242,4 +1595,74 @@ test('mixed tools: an Antigravity member shares a chat, and the answer names Ant
   } finally {
     await t.stop()
   }
+})
+
+test('GHSA-84q4 item 7: a bad chat tomb row is skipped and logged, and the next sync still works', async () => {
+  const feed: Record<string, unknown> = { '/v1/chat-tombs': { tombs: [{ owner: 5, session: 'x', rev: 3 }, null, { owner: 'ana', session: 'gone', rev: 4 }] }, '/v1/chats': { chats: [] } }
+  const srv = createServer((req, res) => res.end(JSON.stringify(feed[req.url!.split('?')[0]!] ?? {})))
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'tw-ghsa7t-'))
+    const s: State = { url: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, token: 't', lastRev: 0, shared: {}, queue: [] }
+    writeFileSync(join(dir, 'team.json'), JSON.stringify(s))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    await fetchChats(dir, s).finally(() => (process.env.THENWISE_LOG = 'off'))
+    const db = openChatCache(dir)
+    const cursor = db.prepare("SELECT v FROM since WHERE k = 'tombs'").get() as { v: number }
+    db.close()
+    assert.equal(cursor.v, 4, 'the cursor moves past the bad rows')
+    assert.match(readFileSync(join(dir, 'logs/thenwise.log'), 'utf8'), /tomb_skipped/)
+    await fetchChats(dir, s) // no transaction was left open
+  } finally {
+    srv.close()
+  }
+})
+
+test('GHSA-84q4 item 7: a synced chat or note is checked and masked like an import; a bad row is skipped and logged', async () => {
+  const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  const chat = (session: string, rev: number, over: Record<string, unknown> = {}) => ({ owner: 'ana', session, project: 'org/proj', rev, started_at: 1, ended_at: 2, head: `deploy with ${token}`, mask: 1, bytes: 9, tool: '', turns: [{ id: 't1', at: 1, line: `use ${token}`, kind: 'turn', passages: [`DB_PASSWORD=correcthorse9 and ${token}`], paths: ['src/a.ts'], shas: [], prs: [], dead_end: true, dead_kind: 'phrase', dead_text: `${token} did not work` }], ...over })
+  const note = { owner: 'ana', id: 'n-1', rev: 1, title: `rotate ${token}`, text: 'DB_PASSWORD=correcthorse9', project: 'proj', kind: 'decision', status: 'active', shared_by: 'ana', updated_at: 1, superseded_by: null }
+  const feed: Record<string, unknown> = { '/v1/chat-tombs': { tombs: [] }, '/v1/chats': { chats: [chat('bad', 1, { turns: undefined }), chat('good', 2)] }, '/v1/me': { name: 'bob' }, '/v1/notes': { notes: [note] }, '/v1/tombs': { tombs: [] } }
+  const srv = createServer((req, res) => res.end(JSON.stringify(feed[req.url!.split('?')[0]!] ?? {})))
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok))
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'tw-ghsa7-'))
+    const s: State = { url: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, token: 't', lastRev: 0, shared: {}, queue: [] }
+    writeFileSync(join(dir, 'team.json'), JSON.stringify(s))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    const got = await fetchChats(dir, s).finally(() => (process.env.THENWISE_LOG = 'off'))
+    assert.match(got, /1 team chat fetched/)
+    const held = readChats(dir)
+    assert.deepEqual(held.map((c) => c.session), ['good'])
+    const db = openChatCache(dir)
+    const cursor = db.prepare("SELECT v FROM since WHERE k = 'chats'").get() as { v: number }
+    db.close()
+    assert.equal(cursor.v, 2, 'the cursor moves past the bad row')
+    assert.ok(!/a1B2c3D4e5|correcthorse9/.test(JSON.stringify(held)), JSON.stringify(held))
+    assert.match(readFileSync(join(dir, 'logs/thenwise.log'), 'utf8'), /chat_skipped/)
+    await fetchShared(dir)
+    assert.ok(!/a1B2c3D4e5|correcthorse9/.test(JSON.stringify(readCache(dir))), JSON.stringify(readCache(dir)))
+  } finally {
+    srv.close()
+  }
+})
+
+test('GHSA-84q4: a mask version bump masks again what the team caches already hold', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-remask-'))
+  const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  const db = openChatCache(dir)
+  db.prepare("INSERT INTO since VALUES ('mask', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(MASK_VERSION - 1) // fetched before the bump
+  db.prepare('INSERT INTO chats (owner, session, project, rev, started_at, ended_at, head, mask, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('ana', 's1', 'proj', 1, 1, 2, `deploy with ${token}`, 1, 9)
+  db.prepare('INSERT INTO passages (owner, session, turn, n, at, line, kind, text, paths, shas, prs, dead_end, dead_kind, dead_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('ana', 's1', 't1', 0, 1, `use ${token}`, 'turn', `DB_PASSWORD=correcthorse9 ${token}`, '[]', '[]', '[]', 1, 'phrase', `${token} failed`)
+  db.close()
+  const again = openChatCache(dir)
+  const held = JSON.stringify([again.prepare('SELECT * FROM chats').all(), again.prepare('SELECT * FROM passages').all()])
+  const v = (again.prepare("SELECT v FROM since WHERE k = 'mask'").get() as { v: number }).v
+  again.close()
+  assert.ok(!held.includes('a1B2c3D4e5'), held)
+  assert.equal(v, MASK_VERSION)
+  writeFileSync(join(dir, 'team-cache.json'), JSON.stringify({ since: 3, notes: { 'ana/n1': { owner: 'ana', id: 'n1', rev: 3, title: `rotate ${token}`, text: 'x' } } }))
+  const notes = readCache(dir)
+  assert.ok(!JSON.stringify(notes).includes('a1B2c3D4e5'))
+  assert.equal(notes.since, 3, 'no refetch is needed')
 })

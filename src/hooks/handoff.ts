@@ -177,14 +177,15 @@ export const localTime = (iso: string) => {
 
   return Number.isNaN(d.getTime()) ? iso : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+// Both mask before they cut: a token cut short no longer matches its pattern.
 const flat = (t: string, n: number) => {
-  const s = t.replace(/\s+/g, ' ').trim()
+  const s = maskSecrets(t).text.replace(/\s+/g, ' ').trim()
 
   // Cut at a word, so the next agent never reads half a word.
   return s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, '')}...` : s
 }
 const tailOf = (t: string, n: number) => {
-  const s = t.replace(/\s+/g, ' ').trim()
+  const s = maskSecrets(t).text.replace(/\s+/g, ' ').trim()
 
   return s.length > n ? `...${s.slice(-n).replace(/^\S*\s+/, '')}` : s
 }

@@ -1,11 +1,11 @@
 // `thenwise doctor` with no argument: checks the install and gives one fix line per failure. Read only.
 import { codexHooksTrusted } from "../ingest/codex.js";
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveDataDir } from "../core/home.js";
+import { listDir, resolveDataDir } from "../core/home.js";
 import { logger, recentErrors } from "../core/log.js";
 import { codexDir } from "../ingest/codex.js";
 import { copilotDir } from "../ingest/copilot.js";
@@ -52,7 +52,7 @@ function pluginRegistered(home) {
         return true;
     // Copilot CLI: installed-plugins/<marketplace>/<plugin>, or _direct/<plugin>.
     const installed = join(copilotDir(home), 'installed-plugins');
-    const dirs = (d) => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : []);
+    const dirs = (d) => listDir(d).filter((e) => e.isDirectory()).map((e) => e.name);
     if (dirs(installed).some((m) => dirs(join(installed, m)).some((p) => /thenwise/i.test(p))))
         return true;
     // Codex: plugins/cache/<marketplace>/<plugin>.

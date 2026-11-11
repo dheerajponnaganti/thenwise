@@ -27,8 +27,9 @@ const PATTERNS = [
 const WRAPPED = /(?<![A-Za-z0-9])(?=[A-Za-z0-9_.-]{16})(?:gh[pousr]_|github_pat_|sk-ant-|sk-|xox[abprs]-|[sr]k_(?:live|test)_|npm_|hf_|glpat-|AKIA|AIza|SK)[A-Za-z0-9_.-]*(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9_.-]+)+/g;
 // `curl -u user:pass`.
 const CURL_USER = /((?:\s-u|\s--user)[\s=]+["']?[^\s:"']+:)([^\s"']{3,})/g;
-// The password in a URL: `postgres://user:pass@host` keeps the user and host.
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,32}:\/\/[^\s:/@]*:)([^\s@/]{3,})@/gi;
+// The password in a URL: `postgres://user:pass@host` keeps the user and host. The password runs to the last `@` before a
+// host that holds none, so `p@ss@host` is masked whole and `host:port/@scope` is no password.
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,32}:\/\/[^\s:/@]*:)([^\s/]{3,}?)@(?=[^\s@/?#"'`]+(?:[/?#\s"'`]|$))/gi;
 // Upper-case env names ending in a secret word: `STRIPE_KEY=...`, `DB_PASSWORD=...`; Azure `AccountKey=...`.
 const ENV = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)|AccountKey|SharedAccessKey)(\s*=\s*["']?)([^\s"';]{8,})/g;
 // The value after a secret-looking name: `api_key = abcd...`, `"password": "..."`, `Authorization: Bearer ...`.
@@ -47,7 +48,7 @@ const SHELL_FLAG = /((?<![\w-])--?[\w-]*(?:api[_-]?key|secret|token|passw(?:or)?
 const SHELL_SET = /(\bsetx\s+\w*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)\s+["']?|SetEnvironmentVariable\(\s*["'][\w-]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?)["']\s*,\s*["']|ConvertTo-SecureString\s+(?:-String\s+)?["']|PSCredential\w*\(\s*["'][^"']*["']\s*,\s*["'])([^\s"']{4,})/gi;
 export const MASK = '[secret masked]';
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */
-export const MASK_VERSION = 7;
+export const MASK_VERSION = 8;
 export function maskSecrets(text) {
     let count = 0;
     let out = text.replace(WRAPPED, (hit) => {
@@ -88,6 +89,11 @@ export function maskSecrets(text) {
     });
     return { text: out, count };
 }
+/** A value masked with its key in front, so `{"password": "..."}` meets the same name rules as `password=...`. */
+const keyed = (k, x) => {
+    const m = maskSecrets(`${k}=${x}`).text;
+    return m.startsWith(`${k}=`) ? m.slice(k.length + 1) : maskSecrets(x).text;
+};
 /** Masks every string inside parsed JSON. */
 export const maskDeep = (v) => {
     if (typeof v === 'string')
@@ -95,6 +101,6 @@ export const maskDeep = (v) => {
     if (Array.isArray(v))
         return v.map(maskDeep);
     if (v && typeof v === 'object')
-        return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskDeep(x)]));
+        return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' ? keyed(k, x) : maskDeep(x)]));
     return v;
 };

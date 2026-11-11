@@ -1,8 +1,9 @@
 // OpenAI Codex: its chats (sessions/YYYY/MM/DD/rollout-*.jsonl) in Claude Code's transcript shape, so one pipeline
 // (masking, [no-memory], forget, search) serves them too. Codex's own files are only ever read.
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listDir } from "../core/home.js";
 import { asClaudeTool, projectKey } from "./copilot.js";
 export const CODEX_ENTRYPOINT = 'codex-cli';
 export const codexDir = (home) => process.env.CODEX_HOME || join(home, '.codex');
@@ -132,25 +133,25 @@ export function codexConverter(sessionId, cwd) {
 }
 /** The first line of a rollout: session_meta, small enough to read without the rest of a long file. */
 function metaOf(path) {
-    const fd = openSync(path, 'r');
     try {
-        const buf = Buffer.alloc(1 << 20);
-        const got = readSync(fd, buf, 0, buf.length, 0);
-        const end = buf.subarray(0, got).indexOf(10);
-        const d = JSON.parse(buf.subarray(0, end < 0 ? got : end).toString('utf8'));
-        return d?.type === 'session_meta' ? d.payload : undefined;
+        const fd = openSync(path, 'r');
+        try {
+            const buf = Buffer.alloc(1 << 20);
+            const got = readSync(fd, buf, 0, buf.length, 0);
+            const end = buf.subarray(0, got).indexOf(10);
+            const d = JSON.parse(buf.subarray(0, end < 0 ? got : end).toString('utf8'));
+            return d?.type === 'session_meta' ? d.payload : undefined;
+        }
+        finally {
+            closeSync(fd);
+        }
     }
     catch {
-        return undefined; // not a rollout, or being written: the next sync reads it
-    }
-    finally {
-        closeSync(fd);
+        return undefined; // not a rollout, unreadable, or being written: the next sync reads it
     }
 }
 function rollouts(dir, out) {
-    if (!existsSync(dir))
-        return out;
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
+    for (const e of listDir(dir)) {
         if (e.isDirectory())
             rollouts(join(dir, e.name), out);
         // shortcut: compressed .jsonl.zst rollouts are skipped, Node 22 cannot read zstd; add them once Node 22 support ends.
@@ -184,7 +185,9 @@ export function codexSources(home) {
             continue;
         if (imported.has(meta.id) || (meta.thread_source ?? 'user') !== 'user' || (meta.source && typeof meta.source === 'object'))
             continue;
-        const at = statSync(path).mtimeMs;
+        const at = statSync(path, { throwIfNoEntry: false })?.mtimeMs;
+        if (at === undefined)
+            continue; // moved since the listing
         if ((newest.get(meta.id)?.at ?? -1) < at)
             newest.set(meta.id, { rel: `${projectKey(cwd)}/${meta.id}.jsonl`, path, id: meta.id, cwd, at });
     }

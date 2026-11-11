@@ -2,13 +2,14 @@
 // state, the backups and the team server, and leaves a tombstone so the next sync does not bring it back from
 // Claude Code's own chat files. Those files are never touched. The whole run holds the sync lock.
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { backup } from "../backup/backup.js";
 import { readNotes } from "../capture/notes.js";
 import { expandHome, legacyDir } from "../core/home.js";
 import { normPath } from "../core/vault-index.js";
-import { takeLock } from "../hooks/hook.js";
+import { headCwd } from "../hooks/handoff.js";
+import { takeLock } from "../ingest/lock.js";
 import { antigravityDirs, antigravitySources } from "../ingest/antigravity.js";
 import { codexDir, codexSources } from "../ingest/codex.js";
 import { copilotDir, copilotSources } from "../ingest/copilot.js";
@@ -55,9 +56,18 @@ function chatsOf(cfg) {
     }
     catch { } // no manifest yet: the folder scan below still finds every chat
     for (const root of [join(base, 'sessions'), join(base, 'claude-projects'), join(cfg.claudeDir, 'projects')]) {
-        for (const p of list(root).filter((e) => e.isDirectory()))
-            for (const e of list(join(root, p.name)))
-                add(p.name, e.name.replace(/\.jsonl(\.gz)?$/, ''));
+        for (const p of list(root).filter((e) => e.isDirectory())) {
+            for (const e of list(join(root, p.name))) {
+                const id = e.name.replace(/\.jsonl(\.gz)?$/, '');
+                // A chat not yet archived has no cwd in the manifest: its own first lines name the folder.
+                if (!cwds.has(`${p.name}/${id}`) && e.isFile() && e.name.endsWith('.jsonl')) {
+                    const cwd = headCwd(join(root, p.name, e.name));
+                    if (cwd)
+                        cwds.set(`${p.name}/${id}`, cwd);
+                }
+                add(p.name, id);
+            }
+        }
     }
     for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home)]) {
         cwds.set(`${c.rel.split('/')[0]}/${c.id}`, c.cwd);
@@ -109,7 +119,11 @@ export async function forget(cfg, target, opts = {}) {
     const out = opts.print ?? ((l) => console.log(l));
     const folder = normPath(resolve(expandHome(target, cfg.home)));
     const all = chatsOf(cfg);
-    const byProject = (c) => c.key === target || c.key === claudeKey(folder) || (!!c.cwd && underFolder(c.cwd, folder));
+    // A mangled key is shared by /x/my.app and /x/my-app: match by key only when the chat's folder is unknown, and only when no
+    // chat under that key ran in another folder. Otherwise the chat could be the other folder's.
+    const shared = new Set(all.filter((c) => c.cwd && !underFolder(c.cwd, folder)).map((c) => c.key));
+    const unsure = (c) => !c.cwd && c.key === claudeKey(folder) && shared.has(c.key);
+    const byProject = (c) => c.key === target || (c.cwd ? underFolder(c.cwd, folder) : c.key === claudeKey(folder) && !shared.has(c.key));
     const named = (c) => `${c.id}${chatSuffix(c.key)}`;
     // One session id in several project folders: the bare id is ambiguous, `<id>@<folder>` picks one.
     const same = all.filter((c) => c.id === target);
@@ -133,15 +147,24 @@ export async function forget(cfg, target, opts = {}) {
     const keys = [...new Set([...chats.map((c) => c.key), ...plans])];
     const base = join(cfg.memDir, 'archive');
     const gz = chats.flatMap((c) => [join(base, 'sessions', c.key, `${c.id}.jsonl.gz`), join(base, 'sessions', c.key, c.id), join(base, 'claude-projects', c.key, `${c.id}.jsonl`), join(base, 'claude-projects', c.key, c.id)]).filter(existsSync);
+    const left = all.filter((c) => unsure(c) && !chats.includes(c));
+    if (left.length)
+        out(`${left.length} chat${left.length === 1 ? '' : 's'} in ${claudeKey(folder)} name${left.length === 1 ? 's' : ''} no folder and could be another folder's, so ${left.length === 1 ? 'it stays' : 'they stay'}. Forget by id: ${left.map((c) => `thenwise forget ${named(c)}`).join(', ')}`);
     out(`Will forget ${sessions.length} chat${sessions.length === 1 ? '' : 's'} (${projectWide ? `project ${target}` : `session ${target}`}); ${gz.length} archived item${gz.length === 1 ? '' : 's'} will be removed.`);
     if (!opts.yes && !(await (opts.confirm ?? confirmTty)('Forget them? This cannot be undone. [y/N] ')))
         return (out('Nothing was removed.'), 1);
     lockSync(join(cfg.memDir, 'sync.lock'), opts.waitMs ?? 10 * 60000);
+    // A manual `thenwise archive` or setup holds only the archive lock: take it too, so it cannot write back the entries removed here.
+    const archiveLock = join(cfg.memDir, 'archive', 'archive.lock');
+    let archiveHeld = false;
     try {
+        if (existsSync(dirname(archiveLock)))
+            (lockSync(archiveLock, opts.waitMs ?? 10 * 60000), (archiveHeld = true));
         const tombs = loadTombs(cfg.memDir);
         if (projectWide) {
-            // A mangled key is shared by /x/my.app and /x/my-app: record one only for a key target or a chat with no folder known.
-            tombs.projects.push(...chats.filter((c) => byProject(c) && (c.key === target || !c.cwd)).map((c) => c.key));
+            // A mangled key is shared by /x/my.app and /x/my-app, so it is recorded only for a key target. A folder target is recorded as
+            // the folder, and its chats by session id, so the other folder's later chats still arrive.
+            tombs.projects.push(...chats.filter((c) => c.key === target).map((c) => c.key));
             tombs.folders.push(folder);
             tombs.sessions.push(...sessions);
         }
@@ -235,6 +258,8 @@ export async function forget(cfg, target, opts = {}) {
     }
     finally {
         tighten(cfg.memDir);
+        if (archiveHeld)
+            rmSync(archiveLock, { force: true });
         rmSync(join(cfg.memDir, 'sync.lock'), { force: true });
     }
     return 0;

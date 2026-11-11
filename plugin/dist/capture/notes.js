@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseFrontMatter, yamlValue } from "../core/frontmatter.js";
+import { maskSecrets } from "../core/secrets.js";
 export const TYPES = ['decision', 'dead_end', 'finding', 'rule', 'now'];
 export const EXPIRY_DAYS = 14;
 const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project', 'files'];
@@ -35,6 +36,9 @@ export function readNotes(memDir) {
     return out;
 }
 export function saveNote(memDir, n) {
+    // Masked before the file name is made from the title, so no part of a secret lands in the path either.
+    n.title = maskSecrets(n.title).text;
+    n.summary = maskSecrets(n.summary).text;
     if (!n.path) {
         mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 });
         n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`);

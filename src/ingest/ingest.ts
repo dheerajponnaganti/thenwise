@@ -14,6 +14,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { syncTrailers } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
 import { errFields, logger } from '../core/log.ts'
+import { maskDeep } from '../core/secrets.ts'
 import { buildLanguage } from '../query/language.ts'
 import { buildPassageIndex } from '../query/passages.ts'
 import { buildFactIndex } from './facts.ts'
@@ -69,7 +70,7 @@ export interface IngestOptions {
 //   A commit sentence about dead ends themselves is no dead end.
 // 7 (0.3.0): turns keep their edits and test runs, for the `changes` and `tests` tables.
 // 8 (0.3.0): sessions keep their cost and its running total over time; an edit whose call failed is no edit (#78).
-export const STATE_VERSION = 8
+export const STATE_VERSION = 9
 /** The layout of graph.db. A store with no entry has the first layout, which is 1. */
 // 2: emoji and other symbols are indexed as words.
 export const STORE_FORMAT = 2
@@ -248,7 +249,7 @@ export function loadPrInputs(cfg: Config, opts: IngestOptions, repos: string[], 
   if (!opts.prs) return fetchPrs(cfg, repos, { now: opts.now, timeoutMs: opts.ghTimeoutMs }).inputs
   const full = cfg.githubRepos[0] ?? 'unknown/unknown'
   try {
-    return [{ full, list: JSON.parse(readFileSync(opts.prs, 'utf8')) }]
+    return [{ full, list: maskDeep(JSON.parse(readFileSync(opts.prs, 'utf8'))) as any[] }]
   } catch (e) {
     warnings.push(`no PRs for ${full}: ${e instanceof Error ? e.message.split('\n')[0] : e}`)
 

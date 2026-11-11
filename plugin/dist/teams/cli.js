@@ -4,8 +4,10 @@ import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadConfig } from "../ingest/config.js";
-import { formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from "./chats.js";
+import { real } from "../ingest/repos.js";
+import { clonesOf, formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from "./chats.js";
 import { fetchShared, flush, joinTeam, LABEL, load as loadTeam, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from "./client.js";
+import { MAX_MS } from "./http.js";
 import { backupTeam, createTeamServer, invite, listMembers, openTeamDb, removeMember, restoreTeam, rotate } from "./server.js";
 export const TEAM_USAGE = `thenwise team serve [--port N] [--host H] [--dir <server folder>] [--console <hub folder>] [--allow-origin <origin>] [--tls-behind-proxy | --allow-plain-http]   (${LABEL})
 thenwise team invite <name> [--days N] [--again] | remove <name> [--keep-notes | --delete-notes] | members | rotate <name> | backup <file> | restore <file>   (run where the server runs)
@@ -82,9 +84,14 @@ export async function teamMain(argv, flag) {
         else if (sub === 'invite' || sub === 'remove' || sub === 'rotate') {
             if (!words[0])
                 return (console.error(TEAM_USAGE), 2);
+            const days = sub === 'invite' ? flag('days') : undefined;
+            const until = days === undefined ? undefined : Date.now() + Number(days) * 864e5;
+            // Checked before any write: `week` would become NaN, stored as NULL, which never expires.
+            if (until !== undefined && !(Number(days) > 0 && until <= MAX_MS))
+                return (console.error(`--days needs a number of days above 0, found ${days}`), 2);
             const db = openTeamDb(serverDir);
             if (sub === 'invite' || sub === 'rotate') {
-                const token = sub === 'rotate' ? rotate(db, words[0]) : invite(db, words[0], flag('days') ? Date.now() + Number(flag('days')) * 864e5 : undefined, { again: rest.includes('--again') });
+                const token = sub === 'rotate' ? rotate(db, words[0]) : invite(db, words[0], until, { again: rest.includes('--again') });
                 console.log(`${sub === 'rotate' ? 'new ' : ''}token for ${words[0]} (shown once, ${LABEL})${sub === 'rotate' ? '; the old one no longer works' : ''}:\n${token}\nThey join with: thenwise team join <server url> ${token}`);
             }
             else {
@@ -132,7 +139,10 @@ export async function teamMain(argv, flag) {
                 for (const [id, p] of Object.entries(s.removed))
                     if (p === pv.project)
                         (delete s.removed[id], delete s.serverGone?.[id]);
-                s.projects[pv.project] = { repo: pv.repo, status: 'active', reshare: true, ...(since ? { since } : {}) };
+                // Another clone of a project already shared is added to it; an unshared project starts again from this one.
+                const old = s.projects[pv.project];
+                const all = [...new Set([...(old && old.status !== 'removed' ? clonesOf(old) : []), pv.repo].map(real))];
+                s.projects[pv.project] = { repo: all[0], ...(all.length > 1 ? { repos: all.slice(1) } : {}), status: 'active', reshare: true, ...(since ? { since } : {}) };
             });
             await setServerStatus(dir, pv.project, 'active');
             console.log(await pushShared(cfg));

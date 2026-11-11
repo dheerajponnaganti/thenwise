@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -74,6 +74,24 @@ test('decide records the files named and the files its own chat edited; the deci
     // It stopped holding when the commit changed its file, not when the question was answered an hour later.
     assert.equal(closed.valid_to, q.valid_from)
     assert.equal(readNotes(w.memDir).find((n) => n.id === q.id)!.valid_from, q.valid_from, 'the accepted note keeps its date')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-84q4 item 5: decide and deadend mask the note file and its name', () => {
+  const w = new World()
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir }
+    delete env.CLAUDECODE
+    delete env.COPILOT_CLI
+    const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+    for (const cmd of ['decide', 'deadend']) {
+      const r = spawnSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), cmd, `${token} is the deploy key; DB_PASSWORD=correcthorse9 for ${cmd}`], { cwd: w.proj, encoding: 'utf8', env })
+      assert.equal(r.status, 0, r.stderr)
+      const n = readNotes(w.memDir).find((x) => x.summary.endsWith(`for ${cmd}`))!
+      assert.ok(!/a1b2c3d4e5/i.test(n.path) && !/a1B2c3D4e5|correcthorse9/.test(readFileSync(n.path, 'utf8') + r.stdout), `${n.path}\n${readFileSync(n.path, 'utf8')}`)
+    }
   } finally {
     w.destroy()
   }

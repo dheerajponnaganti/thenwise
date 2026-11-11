@@ -4,8 +4,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, wri
 import { basename, join, resolve, sep } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
 import { logger } from "../core/log.js";
-import { takeLock } from "../hooks/hook.js";
-import { maskSecrets } from "../core/secrets.js";
+import { takeLock } from "../ingest/lock.js";
+import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { makeId, readNotes } from "../capture/notes.js";
 import { cursor, dropChat, openChatCache, putChat, setCursor } from "./chatcache.js";
 export const LABEL = 'teams preview';
@@ -236,10 +236,14 @@ export const cacheFile = (dir) => join(dir, 'team-cache.json');
 /** The teammates' notes this machine holds, keyed `owner/id`, and the newest team revision it has seen. */
 export function readCache(dir) {
     try {
-        return JSON.parse(readFileSync(cacheFile(dir), 'utf8'));
+        const c = JSON.parse(readFileSync(cacheFile(dir), 'utf8'));
+        // Notes fetched under an older MASK_VERSION are masked again; the next fetch writes them back with the version.
+        if (c.mask !== MASK_VERSION)
+            c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION);
+        return c;
     }
     catch {
-        return { since: 0, notes: {} };
+        return { since: 0, notes: {}, mask: MASK_VERSION };
     }
 }
 /** Fetches what teammates shared or unshared since the last fetch, in revision order, into team-cache.json, so the
@@ -272,7 +276,7 @@ export async function fetchShared(dir) {
         if (ch.tomb || ch.note.status === 'retired' || ch.note.owner === me)
             delete cache.notes[key];
         else
-            (cache.notes[key] = ch.note), got++;
+            (cache.notes[key] = maskDeep(ch.note)), got++; // masked here too: the server may be older or another one
     }
     const tmp = `${cacheFile(dir)}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
@@ -294,6 +298,7 @@ const CHAT_TIMEOUT_MS = 60000;
  * revision order, page by page, each page saved with its cursor so an interrupted fetch resumes. A server without
  * shared chats (404) is not an error. */
 export async function fetchChats(dir, s = load(dir)) {
+    const { checkedChat } = await import("./export.js"); // export.ts imports this file
     const db = openChatCache(dir);
     try {
         let tombs = 0;
@@ -304,34 +309,57 @@ export async function fetchChats(dir, s = load(dir)) {
                 return '';
             if (r.status !== 200)
                 throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`);
-            const rows = r.json.tombs;
+            const rows = Array.isArray(r.json?.tombs) ? r.json.tombs : [];
+            // A row of the wrong shape is skipped and logged, like a bad chat row, so it never stops the sync or leaves a transaction open.
+            const good = (t) => typeof t?.owner === 'string' && typeof t?.session === 'string' && Number.isSafeInteger(t?.rev);
+            const bad = rows.filter((t) => !good(t)).length;
+            if (bad)
+                logger('teams', dir).warn('tomb_skipped', { rows: bad });
+            const ok = rows.filter(good);
+            // The cursor moves past every row that has a revision, good or bad, so a bad row is not fetched again forever.
+            const top = Math.max(since, ...rows.map((t) => t?.rev).filter((v) => Number.isSafeInteger(v)));
             db.exec('BEGIN');
-            for (const t of rows) {
-                const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session);
-                if (had && had.rev < t.rev)
-                    (dropChat(db, t.owner, t.session), tombs++);
+            try {
+                for (const t of ok) {
+                    const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session);
+                    if (had && had.rev < t.rev)
+                        (dropChat(db, t.owner, t.session), tombs++);
+                }
+                if (top > since)
+                    setCursor(db, 'tombs', top);
+                db.exec('COMMIT');
             }
-            if (rows.length)
-                setCursor(db, 'tombs', rows.at(-1).rev);
-            db.exec('COMMIT');
-            if (rows.length < 500)
+            catch (e) {
+                db.exec('ROLLBACK');
+                throw e;
+            }
+            if (rows.length < 500 || top <= since)
                 break;
-            since = rows.at(-1).rev;
+            since = top;
         }
         for (let since = cursor(db, 'chats');;) {
             const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS);
             if (r.status !== 200)
                 throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`);
             const rows = r.json.chats;
+            const top = Math.max(since, ...rows.map((c) => c?.rev).filter(Number.isSafeInteger));
             db.exec('BEGIN');
-            for (const c of rows)
-                (putChat(db, c), got++);
-            if (rows.length)
-                setCursor(db, 'chats', rows.at(-1).rev);
+            for (const c of rows) {
+                // Checked and masked as an import is: one bad chat is skipped and logged, and never stops the rest.
+                try {
+                    putChat(db, checkedChat(c));
+                    got++;
+                }
+                catch (e) {
+                    logger('teams', dir).warn('chat_skipped', { session: String(c?.session), error: e.message });
+                }
+            }
+            if (top > since)
+                setCursor(db, 'chats', top);
             db.exec('COMMIT');
-            if (rows.length < CHAT_PAGE)
+            if (rows.length < CHAT_PAGE || top <= since)
                 break;
-            since = rows.at(-1).rev;
+            since = top;
         }
         const held = Number(db.prepare('SELECT count(*) AS n FROM chats').get().n);
         return tombs || got || held ? `; ${got} team chat${got === 1 ? '' : 's'} fetched, ${tombs} dropped, ${held} held` : '';

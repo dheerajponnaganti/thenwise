@@ -7,6 +7,7 @@ import { join } from 'node:path'
 
 import { parseFrontMatter, yamlValue } from '../core/frontmatter.ts'
 import type { Scalar } from '../core/frontmatter.ts'
+import { maskSecrets } from '../core/secrets.ts'
 
 export const TYPES = ['decision', 'dead_end', 'finding', 'rule', 'now'] as const
 export type NoteType = (typeof TYPES)[number]
@@ -60,6 +61,9 @@ export function readNotes(memDir: string): CNote[] {
 }
 
 export function saveNote(memDir: string, n: CNote): CNote {
+  // Masked before the file name is made from the title, so no part of a secret lands in the path either.
+  n.title = maskSecrets(n.title).text
+  n.summary = maskSecrets(n.summary).text
   if (!n.path) {
     mkdirSync(join(notesDir(memDir), n.type), { recursive: true, mode: 0o700 })
     n.path = join(notesDir(memDir), n.type, `${slug(n)}.md`)

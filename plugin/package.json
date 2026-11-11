@@ -1,6 +1,6 @@
 {
   "name": "thenwise",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Claude Code, Copilot CLI, Codex and Antigravity plugin: a local memory of your past chats, commits and notes. Ask why, what was tried and what was true then. SQLite, no telemetry.",
   "type": "module",
   "engines": {

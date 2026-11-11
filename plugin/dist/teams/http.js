@@ -85,6 +85,8 @@ export function seqOf(v) {
         throw new HttpError(400, 'bad_request', 'seq must be a whole number');
     return n;
 }
+/** The largest time a JS Date holds, in ms. A later one would stop every teammate's ingest. */
+export const MAX_MS = 8.64e15;
 export const CHAT_LIMITS = { passages: 2000, bytes: 2 * 1024 * 1024, passage: 1200, body: 4 * 1024 * 1024 };
 const bad = (m) => new HttpError(400, 'bad_request', m);
 const wordList = (v, name, max, len) => {
@@ -96,8 +98,10 @@ const wordList = (v, name, max, len) => {
 };
 // A path is relative to the repo: no drive or scheme, no leading slash or home, no climbing out.
 const relative = (p) => !/^([/\\~]|[A-Za-z][\w+.-]*:)/.test(p) && !p.split(/[/\\]/).includes('..');
-/** The unit of one shared chat: passages and their metadata only. Absolute paths, `cwd`, and anything past the limits are a 400 naming the field. */
-export function chatUnit(body) {
+const size = (s) => Buffer.byteLength(s);
+/** The unit of one shared chat: passages and their metadata only. Absolute paths, `cwd`, and anything past the limits are a 400 naming the field.
+ * `bytes` is what the server stores for it, every field, so the quota sees all of it; the 2 MB cap is on passage text. */
+export function chatUnit(body, session = '') {
     for (const k of ['cwd', 'extra'])
         if (k in body)
             throw bad(`${k} must not be sent`);
@@ -105,6 +109,7 @@ export function chatUnit(body) {
         throw bad('turns must be a list');
     let count = 0;
     let bytes = 0;
+    let stored = 0;
     const turns = body.turns.map((t, i) => {
         if (!t || typeof t !== 'object' || Array.isArray(t))
             throw bad(`turns[${i}] must be an object`);
@@ -130,9 +135,9 @@ export function chatUnit(body) {
         const shas = wordList(o.shas, `turns[${i}].shas`, 20, 40);
         if (!shas.every((x) => /^[0-9a-f]{4,40}$/.test(x)))
             throw bad(`turns[${i}].shas must be commit shas`);
-        return {
+        const turn = {
             id: str(o, 'id', 120),
-            at: intField(o.at, 0, Number.MAX_SAFE_INTEGER, `turns[${i}].at`),
+            at: intField(o.at, 0, MAX_MS, `turns[${i}].at`),
             line: o.line === undefined ? '' : str(o, 'line', 300),
             kind: o.kind === undefined ? 'turn' : oneOf(o.kind, ['turn', 'summary'], `turns[${i}].kind`),
             passages,
@@ -143,20 +148,25 @@ export function chatUnit(body) {
             dead_kind: o.dead_kind === undefined ? '' : str(o, 'dead_kind', 40),
             dead_text: o.dead_text === undefined ? '' : str(o, 'dead_text', 160),
         };
+        // One row per passage, as the server stores it: the first carries line, paths, shas and prs; the others '' and '[]'.
+        stored += passages.reduce((a, p) => a + size(p) + size(session) + size(turn.id) + size(turn.kind) + size(turn.dead_kind) + size(turn.dead_text), 0) + size(turn.line) + size(JSON.stringify(turn.paths)) + size(JSON.stringify(turn.shas)) + size(JSON.stringify(turn.prs)) + (passages.length - 1) * 6;
+        return turn;
     });
     if (bytes > CHAT_LIMITS.bytes)
         throw bad(`passages: more than ${CHAT_LIMITS.bytes} bytes in one chat`);
     const project = str(body, 'project', 200);
     if (!project)
         throw bad('project must not be empty');
+    const tool = body.tool === undefined ? '' : str(body, 'tool', 40);
+    const head = str(body, 'head', 200);
     return {
         project,
-        tool: body.tool === undefined ? '' : str(body, 'tool', 40),
-        head: str(body, 'head', 200),
-        started_at: intField(body.started_at, 0, Number.MAX_SAFE_INTEGER, 'started_at'),
-        ended_at: intField(body.ended_at, 0, Number.MAX_SAFE_INTEGER, 'ended_at'),
+        tool,
+        head,
+        started_at: intField(body.started_at, 0, MAX_MS, 'started_at'),
+        ended_at: intField(body.ended_at, 0, MAX_MS, 'ended_at'),
         mask: body.mask === undefined ? 0 : intField(body.mask, 0, 1e6, 'mask'),
         turns,
-        bytes,
+        bytes: stored + size(project) + size(tool) + size(head),
     };
 }

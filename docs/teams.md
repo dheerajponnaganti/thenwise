@@ -22,7 +22,9 @@ thenwise team invite alice --dir ~/thenwise-team      # prints alice's token onc
 thenwise team join https://team.example.com <token>   # on alice's machine
 ```
 
-An invite link from the Hub works the same in a browser. Roles: owner, admin, editor, member, viewer. Admins manage members; editors can edit any note; viewers read.
+An invite link from the Hub works the same in a browser. Roles: owner, admin, editor, member, viewer. The owner rules admins: only the owner gives the admin role, changes, disables, removes or rotates an admin, and changes team settings (name, review queue, chat retention). Admins manage editors, members and viewers. Editors can edit any note. Viewers read.
+
+**Sign-in limit.** After 20 wrong tokens or invite codes from one address in a minute, each further wrong one gets `429` with a `Retry-After` wait until the minute ends. A right token keeps working. The server writes one line to stderr per address and minute when it passes the limit, and the audit log counts the failures. Behind a proxy, every client counts as the proxy's address.
 
 ## Share
 
@@ -122,9 +124,9 @@ Teammates' Claude finds shared chats like its own memory and names whose chat it
 { "team": { "redact": ["Acme", "acme.internal"] } }
 ```
 
-**Retention.** An optional team setting deletes shared chats older than N days. Members drop them at their next sync.
+**Retention.** An optional team setting, set by the owner, deletes shared chats older than N days. Members drop them at their next sync.
 
-**Admins.** An admin can unshare any member's chats and sees a sharing ledger: who shares which project, how many chats, how many bytes, and the last push.
+**Admins.** An admin can unshare or pause the chats of editors, members and viewers, never those of another admin or the owner. The owner can act on anyone's chats. An admin also sees a sharing ledger: who shares which project, how many chats, how many bytes, and the last push.
 
 ### What this does not protect
 
@@ -161,7 +163,7 @@ Start alone. Add your team when you want to.
 
 ## More options
 
-- Invite tokens last one year (`--days N` to change). `team invite --again <name>` brings a removed person back to their notes, and a removed name is never handed to someone else. `team members` lists everyone.
+- Invite tokens last one year (`--days N` to change, a number above 0). `team rotate` keeps the expiry; a member with none gets one year, as an invite does. `team invite --again <name>` brings a removed person back to their notes, and a removed name is never handed to someone else. `team members` lists everyone.
 - `team pull` restores what a machine shared. Two machines of one person never overwrite each other's edit silently: the newer copy wins, and an older one is reported.
 - If the server is down, shares wait in a queue and retry at the next session start.
 - `"team": { "auto_share": ["decision", "dead_end"], "auto_share_projects": ["<project>"] }` in config.json shares the notes you accept in those projects, and `"capture": { "auto": true }` distills new chats into inbox proposals once a day (through `claude -p`). Both are off by default.

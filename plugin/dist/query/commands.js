@@ -102,7 +102,7 @@ const quoted = (text) => text.split('\n').filter((l) => l.trim()).map((l) => `  
 /** Automatic dead ends (phrase rules at ingest, not curated notes) say so. */
 const deadNote = (n) => (n.extra?.deadEnd ? `\n   dead end (automatic, ${n.extra.deadEndKind ?? 'phrase'}): ${cut(flat(String(n.extra.deadEnd)), 160)}` : '');
 /** Dead ends from what happened (an undo, a failed test, a revert, a closed PR, the person's own mark) weigh more than a phrase. */
-export const deadWeight = (n) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?? 'phrase') === 'phrase' ? 1 : 2);
+export const deadWeight = (n) => (!n.extra?.deadEnd ? 0 : (n.extra.deadEndKind ?? 'phrase') === 'phrase' || n.extra.team ? 1 : 2);
 /** The short source on a result line; the date, project and id are on the line already. */
 function where(n) {
     if (n.extra?.team && (n.kind === 'turn' || n.kind === 'summary' || n.kind === 'session'))

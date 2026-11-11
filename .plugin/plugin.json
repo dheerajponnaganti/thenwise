@@ -1,11 +1,11 @@
 {
   "name": "thenwise",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Memory of your past Claude Code, Copilot CLI, Codex and Antigravity work: search, history and a resume brief, all local.",
   "license": "Apache-2.0",
   "author": { "name": "Dheeraj Ponnaganti" },
   "repository": "https://github.com/dheerajponnaganti/thenwise",
   "keywords": ["copilot-cli", "claude-code", "memory", "mcp", "plugin", "sqlite"],
   "hooks": "hooks/copilot.json",
-  "commands": "commands"
+  "commands": "commands-copilot"
 }

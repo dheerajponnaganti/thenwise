@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { parseFrontMatter } from '../core/frontmatter.ts'
 import { logger } from '../core/log.ts'
 import { takeLock } from '../ingest/lock.ts'
-import { maskSecrets } from '../core/secrets.ts'
+import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'
 import type { Config } from '../ingest/config.ts'
@@ -292,11 +292,15 @@ export interface TeamNote {
 }
 export const cacheFile = (dir: string) => join(dir, 'team-cache.json')
 /** The teammates' notes this machine holds, keyed `owner/id`, and the newest team revision it has seen. */
-export function readCache(dir: string): { since: number; notes: Record<string, TeamNote> } {
+export function readCache(dir: string): { since: number; notes: Record<string, TeamNote>; mask?: number } {
   try {
-    return JSON.parse(readFileSync(cacheFile(dir), 'utf8'))
+    const c = JSON.parse(readFileSync(cacheFile(dir), 'utf8'))
+    // Notes fetched under an older MASK_VERSION are masked again; the next fetch writes them back with the version.
+    if (c.mask !== MASK_VERSION) c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION)
+
+    return c
   } catch {
-    return { since: 0, notes: {} }
+    return { since: 0, notes: {}, mask: MASK_VERSION }
   }
 }
 
@@ -324,7 +328,7 @@ export async function fetchShared(dir: string): Promise<string> {
     cache.since = Math.max(cache.since, ch.rev)
     // Retired notes leave; pending ones never come (the feed holds them back).
     if (ch.tomb || ch.note!.status === 'retired' || ch.note!.owner === me) delete cache.notes[key]
-    else (cache.notes[key] = ch.note!), got++
+    else (cache.notes[key] = maskDeep(ch.note) as TeamNote), got++ // masked here too: the server may be older or another one
   }
   const tmp = `${cacheFile(dir)}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 })
@@ -348,6 +352,7 @@ const CHAT_TIMEOUT_MS = 60000
  * revision order, page by page, each page saved with its cursor so an interrupted fetch resumes. A server without
  * shared chats (404) is not an error. */
 export async function fetchChats(dir: string, s: State = load(dir)): Promise<string> {
+  const { checkedChat } = await import('./export.ts') // export.ts imports this file
   const db = openChatCache(dir)
   try {
     let tombs = 0
@@ -356,27 +361,48 @@ export async function fetchChats(dir: string, s: State = load(dir)): Promise<str
       const r = await call(s, 'GET', `/chat-tombs?since=${since}&limit=500`, undefined, {}, CHAT_TIMEOUT_MS)
       if (r.status === 404) return ''
       if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
-      const rows = r.json.tombs as { owner: string; session: string; rev: number }[]
+      const rows: unknown[] = Array.isArray(r.json?.tombs) ? r.json.tombs : []
+      // A row of the wrong shape is skipped and logged, like a bad chat row, so it never stops the sync or leaves a transaction open.
+      const good = (t: any): t is { owner: string; session: string; rev: number } => typeof t?.owner === 'string' && typeof t?.session === 'string' && Number.isSafeInteger(t?.rev)
+      const bad = rows.filter((t) => !good(t)).length
+      if (bad) logger('teams', dir).warn('tomb_skipped', { rows: bad })
+      const ok = rows.filter(good)
+      // The cursor moves past every row that has a revision, good or bad, so a bad row is not fetched again forever.
+      const top = Math.max(since, ...rows.map((t: any) => t?.rev).filter((v): v is number => Number.isSafeInteger(v)))
       db.exec('BEGIN')
-      for (const t of rows) {
-        const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session) as { rev: number } | undefined
-        if (had && had.rev < t.rev) (dropChat(db, t.owner, t.session), tombs++)
+      try {
+        for (const t of ok) {
+          const had = db.prepare('SELECT rev FROM chats WHERE owner = ? AND session = ?').get(t.owner, t.session) as { rev: number } | undefined
+          if (had && had.rev < t.rev) (dropChat(db, t.owner, t.session), tombs++)
+        }
+        if (top > since) setCursor(db, 'tombs', top)
+        db.exec('COMMIT')
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
       }
-      if (rows.length) setCursor(db, 'tombs', rows.at(-1)!.rev)
-      db.exec('COMMIT')
-      if (rows.length < 500) break
-      since = rows.at(-1)!.rev
+      if (rows.length < 500 || top <= since) break
+      since = top
     }
     for (let since = cursor(db, 'chats'); ; ) {
       const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS)
       if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
       const rows = r.json.chats as WireChat[]
+      const top = Math.max(since, ...rows.map((c) => c?.rev).filter(Number.isSafeInteger))
       db.exec('BEGIN')
-      for (const c of rows) (putChat(db, c), got++)
-      if (rows.length) setCursor(db, 'chats', rows.at(-1)!.rev)
+      for (const c of rows) {
+        // Checked and masked as an import is: one bad chat is skipped and logged, and never stops the rest.
+        try {
+          putChat(db, checkedChat(c))
+          got++
+        } catch (e) {
+          logger('teams', dir).warn('chat_skipped', { session: String(c?.session), error: (e as Error).message })
+        }
+      }
+      if (top > since) setCursor(db, 'chats', top)
       db.exec('COMMIT')
-      if (rows.length < CHAT_PAGE) break
-      since = rows.at(-1)!.rev
+      if (rows.length < CHAT_PAGE || top <= since) break
+      since = top
     }
     const held = Number((db.prepare('SELECT count(*) AS n FROM chats').get() as { n: number }).n)
 

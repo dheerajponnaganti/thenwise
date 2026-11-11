@@ -781,7 +781,7 @@
     },
     "/v1/members/{id}": {
       "patch": {
-        "summary": "Changes a member's role, expiry or disabled flag. The owner cannot be changed. Needs the admin role.",
+        "summary": "Changes a member's role, expiry or disabled flag. The owner cannot be changed. Needs the admin role; changing an admin, or giving the admin role, needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -834,7 +834,7 @@
         }
       },
       "delete": {
-        "summary": "Removes a member, keeping or deleting their notes. The owner cannot be removed. Needs the admin role.",
+        "summary": "Removes a member, keeping or deleting their notes. The owner cannot be removed. Needs the admin role; removing an admin needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -890,7 +890,7 @@
     },
     "/v1/members/{id}/rotate": {
       "post": {
-        "summary": "Gives a member a new token, shown once. The old token and sessions stop at once. Needs the admin role.",
+        "summary": "Gives a member a new token, shown once. The old token and sessions stop at once. A member with no expiry gets one year. Your own needs no role; another member's needs the admin role, and an admin's needs the owner.",
         "parameters": [
           {
             "name": "id",
@@ -998,7 +998,7 @@
         }
       },
       "patch": {
-        "summary": "Changes the team's name or the review queue. Needs the admin role.",
+        "summary": "Changes the team's name or the review queue. Needs the owner role.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1046,7 +1046,7 @@
     },
     "/v1/invites": {
       "post": {
-        "summary": "Creates an invite code, shown once. Needs the admin role.",
+        "summary": "Creates an invite code, shown once. Needs the admin role; an admin invite needs the owner.",
         "requestBody": {
           "required": true,
           "content": {

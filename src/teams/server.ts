@@ -485,6 +485,22 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       audit(me, 'denied', `${m} ${u.pathname}`, { needs: NEED[action] })
       throw new HttpError(403, 'forbidden', `this needs the ${NEED[action]} role`)
     }
+    // Rank decides who acts on whom: the owner on anyone, an admin only on roles below admin.
+    const rank = (t: Row) => {
+      if (me.role === 'owner' || ROLES.indexOf(t.role) < ROLES.indexOf('admin')) return
+      audit(me, 'denied', `${m} ${u.pathname}`, { needs: 'owner' })
+      const owner = t.role === 'owner'
+      throw new HttpError(403, owner ? 'owner_protected' : 'forbidden', owner ? 'only the owner can act on the owner' : 'only the owner can act on an admin')
+    }
+    /** The member a moderation path names: yourself, or as an admin someone you outrank. */
+    const moderated = (name: string) => {
+      need(name === me.name ? 'share' : 'admin')
+      const o = db.prepare('SELECT id, name, team_id, role FROM members WHERE team_id = ? AND name = ?').get(me.team_id, name) as { id: string; name: string; team_id: string; role: string } | undefined
+      if (!o) throw new HttpError(404, 'not_found', 'no such member')
+      if (o.id !== me.id) rank(o)
+
+      return o
+    }
     const limit = (dflt = 20) => clampInt(u.searchParams.get('limit'), dflt, 1, 200, 'limit')
     const offset = () => clampInt(u.searchParams.get('offset'), 0, 0, 1e9, 'offset')
     const since = () => clampInt(u.searchParams.get('since'), 0, 0, Number.MAX_SAFE_INTEGER, 'since')
@@ -514,15 +530,8 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       if (!(m === 'POST' && c === 'rotate' && b === me.id)) need('admin')
       if (m === 'GET' && !b) return [200, { members: (db.prepare('SELECT * FROM members WHERE team_id = ? ORDER BY name').all(me.team_id) as Row[]).map(member) }]
       const t = memberById(b)
-      // Rank decides, for PATCH, DELETE and rotate: the owner acts on anyone, an admin only on roles below admin.
-      const rank = () => {
-        if (me.role === 'owner' || ROLES.indexOf(t.role) < ROLES.indexOf('admin')) return
-        audit(me, 'denied', `${m} ${u.pathname}`, { needs: 'owner' })
-        const owner = t.role === 'owner'
-        throw new HttpError(403, owner ? 'owner_protected' : 'forbidden', owner ? 'only the owner can change the owner' : 'only the owner can change an admin')
-      }
       if (m === 'PATCH' && !c) {
-        rank()
+        rank(t)
         const body = await readBody(req, 4096)
         if (t.role === 'owner') throw new HttpError(409, 'owner_protected', 'the owner keeps the role and the access; hand the team over with make-owner')
         const set: Record<string, string | number | null> = {}
@@ -543,7 +552,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       }
       if (m === 'DELETE' && !c) {
         const keep = oneOf(u.searchParams.get('notes'), ['keep', 'delete'], 'notes')
-        rank()
+        rank(t)
         try {
           removeMember(db, t.name, keep === 'keep')
         } catch (e) {
@@ -556,7 +565,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       if (m === 'POST' && c === 'rotate' && !d) {
         if (t.disabled) throw new HttpError(409, 'disabled', 'the member is disabled; enable them first or invite them again')
         // Everyone rotates their own token.
-        if (t.id !== me.id) rank()
+        if (t.id !== me.id) rank(t)
         audit(me, 'member.rotate', `member:${t.id}`)
 
         return [200, { token: rotate(db, t.name, now()) }]
@@ -647,19 +656,17 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     if (a === 'shared-projects') {
       if (m === 'GET' && !b) return [200, { projects: db.prepare('SELECT m.name AS owner, s.project, s.since, s.status, s.last_push, (SELECT count(*) FROM chats c WHERE c.owner_id = s.owner_id AND c.project = s.project) AS chats, (SELECT coalesce(sum(bytes), 0) FROM chats c WHERE c.owner_id = s.owner_id AND c.project = s.project) AS bytes FROM shared_projects s JOIN members m ON m.id = s.owner_id WHERE s.team_id = ? ORDER BY m.name, s.project').all(me.team_id) }]
       if (m === 'PATCH' && b && c && !d) {
-        need(b === me.name ? 'share' : 'admin')
+        const o = moderated(b)
         const body = await readBody(req, 1024)
         const status = oneOf(body.status, ['active', 'paused'], 'status')
-        const r = db.prepare('UPDATE shared_projects SET status = ? WHERE project = ? AND owner_id = (SELECT id FROM members WHERE team_id = ? AND name = ?)').run(status, c, me.team_id, b)
+        const r = db.prepare('UPDATE shared_projects SET status = ? WHERE project = ? AND owner_id = ?').run(status, c, o.id)
         if (!r.changes) throw new HttpError(404, 'not_found', 'no such shared project')
         audit(me, 'project.status', `project:${c}`, { status, owner: b })
 
         return [200, { status }]
       }
       if (m === 'DELETE' && b && c && !d) {
-        need(b === me.name ? 'share' : 'admin')
-        const o = db.prepare('SELECT id, name, team_id FROM members WHERE team_id = ? AND name = ?').get(me.team_id, b) as { id: string; name: string; team_id: string } | undefined
-        if (!o) throw new HttpError(404, 'not_found', 'no such member')
+        const o = moderated(b)
         const r = dropProject(db, o, c)
         audit(me, o.id === me.id ? 'project.unshare' : 'chat.admin_unshare', `project:${c}`, { ...r, owner: o.name })
 
@@ -690,14 +697,8 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
         return [code, json, code === 200 ? { etag: `"${(json as { rev: number }).rev}"` } : {}]
       }
-      // An admin unshares a member's chat.
-      if (m === 'DELETE' && b && c && !d) {
-        need(b === me.name ? 'share' : 'admin')
-        const o = db.prepare('SELECT id, name, team_id FROM members WHERE team_id = ? AND name = ?').get(me.team_id, b) as { id: string; name: string; team_id: string } | undefined
-        if (!o) throw new HttpError(404, 'not_found', 'no such member')
-
-        return delChat(me, o, c, ifMatch(req.headers['if-match']), seqOf(u.searchParams.get('seq')))
-      }
+      // An admin unshares the chat of a member they outrank.
+      if (m === 'DELETE' && b && c && !d) return delChat(me, moderated(b), c, ifMatch(req.headers['if-match']), seqOf(u.searchParams.get('seq')))
       throw new HttpError(404, 'not_found', 'no such route')
     }
     if (a !== 'notes') throw new HttpError(404, 'not_found', 'no such route')

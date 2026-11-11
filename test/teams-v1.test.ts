@@ -356,6 +356,8 @@ test('T9-B5: every /v1 route in openapi.json answers as its spec says, and other
   }
 })
 
+// The fixture's summaries for member actions, settings and invites were corrected on purpose when only the owner came to
+// act on admins: they now say which role each call needs. Paths, schemas and responses are what 0.1.16 shipped.
 test('T17-B5: the v1 part of openapi.json is byte for byte what 0.1.16 shipped; only 1.1 additions are new', () => {
   const old = JSON.parse(readFileSync('test/fixtures/openapi-v1.json', 'utf8'))
   const now = JSON.parse(readFileSync('openapi.json', 'utf8'))

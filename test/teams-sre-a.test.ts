@@ -190,6 +190,33 @@ test('GHSA-qr4h item 1: an admin cannot demote, disable, rotate, remove or promo
   }
 })
 
+test('GHSA-qr4h item 1: an admin cannot unshare or pause the chats of an admin or the owner', async () => {
+  const t = await team(['root', 'a1', 'a2', 'ed'], { a1: 'admin', a2: 'admin', ed: 'editor' })
+  try {
+    const as = (who: string, path: string, method = 'GET', body?: unknown) => t.req(t.tokens[who]!, path, method, body, method === 'DELETE' && path.startsWith('/v1/chats/') ? { 'if-match': '*' } : {})
+    const chat = { project: 'p', head: 'h', started_at: 1, ended_at: 2, turns: [{ id: 't1', at: 1, passages: ['x'] }] }
+    for (const n of ['root', 'a1', 'a2', 'ed']) for (const s of ['s1', 's2']) assert.equal((await t.req(t.tokens[n]!, `/v1/chats/${s}`, 'PUT', chat, { 'if-match': '*' })).status, 200)
+    for (const [who, code] of [['a2', 'forbidden'], ['root', 'owner_protected']]) {
+      for (const [path, method, body] of [[`/v1/chats/${who}/s1`, 'DELETE'], [`/v1/shared-projects/${who}/p`, 'PATCH', { status: 'paused' }], [`/v1/shared-projects/${who}/p`, 'DELETE']] as const) {
+        const r = await as('a1', path, method, body)
+        assert.equal(r.status, 403, `${method} ${path}`)
+        assert.equal((await r.json()).error.code, code)
+      }
+    }
+    const left = await (await as('root', '/v1/shared-projects')).json()
+    assert.deepEqual(left.projects.filter((x: any) => x.owner !== 'ed').map((x: any) => [x.owner, x.status, x.chats]), [['a1', 'active', 2], ['a2', 'active', 2], ['root', 'active', 2]], 'nothing changed')
+    assert.equal((await as('a1', '/v1/chats/ed/s1', 'DELETE')).status, 200, 'an admin unshares an editor')
+    assert.equal((await as('a1', '/v1/shared-projects/ed/p', 'PATCH', { status: 'paused' })).status, 200, 'and pauses them')
+    assert.equal((await as('ed', '/v1/shared-projects/ed/p', 'PATCH', { status: 'active' })).status, 200, 'a member acts on their own')
+    assert.equal((await as('a1', '/v1/shared-projects/a1/p', 'PATCH', { status: 'paused' })).status, 200)
+    assert.equal((await as('root', '/v1/chats/a2/s1', 'DELETE')).status, 200, 'the owner acts on anyone')
+    assert.equal((await as('root', '/v1/shared-projects/a2/p', 'PATCH', { status: 'paused' })).status, 200)
+    assert.equal((await as('root', '/v1/shared-projects/a2/p', 'DELETE')).status, 200)
+  } finally {
+    await t.app.close()
+  }
+})
+
 test('GHSA-qr4h item 2: team invite --days week fails and leaves no member row', async () => {
   const dir = tmp('days')
   const flags = (days: string) => (n: string) => (n === 'dir' ? dir : n === 'days' ? days : undefined)

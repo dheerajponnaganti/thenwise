@@ -126,7 +126,7 @@ Teammates' Claude finds shared chats like its own memory and names whose chat it
 
 **Retention.** An optional team setting, set by the owner, deletes shared chats older than N days. Members drop them at their next sync.
 
-**Admins.** An admin can unshare any member's chats and sees a sharing ledger: who shares which project, how many chats, how many bytes, and the last push.
+**Admins.** An admin can unshare or pause the chats of editors, members and viewers, never those of another admin or the owner. The owner can act on anyone's chats. An admin also sees a sharing ledger: who shares which project, how many chats, how many bytes, and the last push.
 
 ### What this does not protect
 

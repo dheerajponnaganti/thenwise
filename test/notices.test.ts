@@ -199,3 +199,13 @@ test('the weekly sweep of hook state keeps the mark of news already told, so old
   seen({ dir, cli: 'none' }, 's1', undefined, '/x/a.ts') // a file hint runs the sweep
   assert.equal(takeNews(dir, 'all'), '')
 })
+
+test('#112: /thenwise:status waits for a slow store instead of the hook budget', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-status-'))
+  writeFileSync(join(dir, 'graph.db'), '')
+  // A stand-in cli whose status answers after 1.5 s, past the 900 ms a hook query gets.
+  const cli = join(dir, 'slow.mjs')
+  writeFileSync(cli, "setTimeout(() => console.log('chats: 5 in scope'), 1500)\n")
+  const out = runHook('status', {}, { dir, cli })
+  assert.match(out, /^memory +5 chats remembered;/m)
+})

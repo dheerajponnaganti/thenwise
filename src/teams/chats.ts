@@ -533,8 +533,10 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   for (const p of projects) {
     const sh = loadShares(dir)
     const todo: Candidate[] = []
-    for (const c of archived(cfg)) {
-      if (c.session in sh.removed) continue
+    // A chat last written before `since` also started before it: skip it without parsing.
+    const since = p.since ? Date.parse(p.since) : NaN
+    for (const c of arch.chats) {
+      if (c.session in sh.removed || (c.at && c.at < since)) continue
       if (c.cwd && !quick.has(c.cwd)) quick.set(c.cwd, sessionRepo(c.cwd))
       if (c.cwd && quick.get(c.cwd) !== undefined && !sameProject(quick.get(c.cwd), p.repo)) continue
       const have = sh.chats[c.session]

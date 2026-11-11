@@ -27,6 +27,20 @@ function afterPointer(): boolean {
     return false
   }
 }
+// The config load scans four tools' chat folders when roots or repos are unset (#120). A few seconds' reuse saves that per
+// call; keyed on the file's text, so `thenwise off` and `on` show at once, and a new chat folder shows within seconds.
+let cfgMemo: { key: string; at: number; res: ReturnType<typeof loadConfigSafe> } | undefined
+export function serverConfig(now = Date.now()): ReturnType<typeof loadConfigSafe> {
+  const file = join(resolveDataDir(), 'config.json')
+  let text = ''
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {} // no config: loadConfigSafe says so
+  const key = `${homedir()}\0${file}\0${text}`
+  if (!cfgMemo || cfgMemo.key !== key || now - cfgMemo.at > 5000) cfgMemo = { key, at: now, res: loadConfigSafe() }
+
+  return cfgMemo.res
+}
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.'
 // Codex shows the model neither server instructions nor (untrusted) hook context, and answers past-work questions from
@@ -128,7 +142,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     const now = `${s.ino}:${s.size}:${s.mtimeMs}\0${conf}`
     if (!graph || now !== sig) {
       const g = new Graph(p, { lazy: true })
-      const cfg = loadConfigSafe().config
+      const cfg = serverConfig().config
       // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
       const project = here()
       g.off = cfg ? offCheck(cfg) : undefined
@@ -173,7 +187,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       const g = open()
       if (name === 'memory_resume') {
         // The live handoff needs no store: it reads the other session's chat file now.
-        const cfg = loadConfigSafe().config
+        const cfg = serverConfig().config
         const project = here()
         // A memory server always runs inside an agent: with no session record (Codex before its hooks are trusted, the
         // Antigravity App), the newest chat written in the last minute is the asking session's own.
@@ -300,7 +314,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
 /** Reads lines from `input` until it ends, writes one JSON line per reply to `output`. */
 export function serveStdio(input: NodeJS.ReadableStream, output: { write(s: string): unknown }, dbPath: () => string): Promise<void> {
   // tools.output_chars in config.json sets the budget unless the environment already does.
-  const chars = loadConfigSafe().config?.outputChars
+  const chars = serverConfig().config?.outputChars
   if (chars && !process.env.THENWISE_OUTPUT_CHARS) process.env.THENWISE_OUTPUT_CHARS = String(chars)
   const server = createServer(dbPath)
   const dec = new StringDecoder('utf8')

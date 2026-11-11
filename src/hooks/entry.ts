@@ -3,7 +3,7 @@
 // Copilot shape mapper and the progress file reader (which import only those two).
 
 import { existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { resolveDataDir } from '../core/home.ts'
 import { isTestRun } from '../core/testrun.ts'
@@ -102,7 +102,12 @@ export function nothingToDo(name: string, i: Record<string, any>): boolean {
   if (name === 'prompt') return !resumePending(i) && !syncToTell() && !latePending(i) && (typeof i.prompt !== 'string' || !asksAboutThePast(i.prompt))
   if (name === 'read') return i.tool_name !== 'Read' || typeof i.tool_input?.file_path !== 'string'
   if (name === 'stop' || name === 'stop-failure') return stopIdle(name)
-  if (name !== 'post' || i.tool_name !== 'Bash') return false
+  if (name !== 'post') return false
+  if (i.tool_name !== 'Bash') {
+    // An edit only matters when it touches a plan file, and that is a name check.
+    const f = i.tool_input?.file_path
+    return typeof f !== 'string' || !f.endsWith('.md') || !STEMS.includes(basename(f, '.md'))
+  }
   const cmd = i.tool_input?.command
   if (typeof cmd !== 'string' || !i.cwd) return true
   const first = cmd.trim().split(/\s+/)[0]!.split('/').pop()!

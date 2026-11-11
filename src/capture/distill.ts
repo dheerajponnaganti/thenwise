@@ -129,12 +129,21 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
   }
   const root = join(cfg.memDir, 'archive/sessions')
   const under = (p: string, r: string) => p === r || p.startsWith(`${r}/`)
+  // The manifest records each chat's source time: a chat last written before `since` also ended before it.
+  let manifest: Record<string, { mtimeMs?: number }> = {}
+  if (opts.since) {
+    try {
+      manifest = JSON.parse(readFileSync(join(cfg.memDir, 'archive', 'manifest.json'), 'utf8'))
+    } catch {} // no manifest: nothing is skipped early
+  }
 
   for (const key of existsSync(root) ? readdirSync(root).sort() : []) {
     if (cfg.ingestExcludeProjects.some((g) => globMatch(g, key))) continue
     for (const f of readdirSync(join(root, key)).filter((x) => x.endsWith('.jsonl.gz')).sort()) {
       const id = f.replace(/\.jsonl\.gz$/, '')
       if (opts.session && opts.session !== id) continue
+      const recorded = manifest[`${key}/${id}.jsonl`]?.mtimeMs
+      if (opts.since && recorded && recorded < Date.parse(opts.since)) continue
       const s = parseSession(chatLines(join(root, key, f)), id, cfg.home)
       if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || isOff(cfg, s.cwd) || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
       if (opts.since && Date.parse(s.end) < dateMs(opts.since)) continue

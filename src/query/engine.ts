@@ -234,6 +234,8 @@ export class Graph {
     this.roots = new Map()
     const cache = new Map<string, string>()
     const of = (f: string) => (f ? (cache.get(f) ?? (cache.set(f, projectRoot(f)), cache.get(f)!)) : '')
+    const repos = new Map<string, boolean>()
+    const inRepo = (cwd: string) => repos.get(cwd) ?? (repos.set(cwd, !!repoRoot(cwd)), repos.get(cwd)!)
     const team: Node[] = []
     for (const n of this.ofKind('session', 'commit')) {
       if (n.extra?.team) {
@@ -244,7 +246,7 @@ export class Graph {
       // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
       if (n.kind === 'session') {
         const cwd = String(n.extra?.cwd ?? '')
-        this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '')
+        this.roots.set(n.id, inRepo(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '')
         this.keyRoots.set(n.project, this.roots.get(n.id)!)
       }
       else if (n.kind === 'commit') this.roots.set(n.id, of(n.source))

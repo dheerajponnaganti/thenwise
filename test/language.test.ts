@@ -9,7 +9,7 @@ import { loadConfig } from '../src/ingest/config.ts'
 import { ingest } from '../src/ingest/ingest.ts'
 import { search } from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
-import { buildLanguage } from '../src/query/language.ts'
+import { buildLanguage, fillSynonyms } from '../src/query/language.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
 
 // Synthetic only. Six notes are titled with the same four words, so those words co-occur far above chance.
@@ -77,4 +77,18 @@ test('ingest reads answers and aliases from front matter', () => {
   const g = new Graph(r.db)
   assert.deepEqual(g.nodes.get('note:Backup.md')!.extra, { answers: ['How do I preserve my records?'], aliases: ['cold storage'], edited: g.nodes.get('note:Backup.md')!.extra.edited })
   assert.equal(g.search('preserve records').good[0]?.node.id, 'note:Backup.md')
+})
+
+test('#120: synonyms come from labelled nodes only, so turns and sessions with the same words change nothing', () => {
+  const db = new DatabaseSync(fixture())
+  const rows = () => db.prepare('SELECT * FROM synonyms ORDER BY word, syn').all()
+  const before = rows()
+  assert.ok(before.length > 0)
+  for (let i = 0; i < 20; i++) {
+    db.prepare('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)').run(`turn:x${i}`, 'turn', `Shards quorum cutover ${i}`, '', '2026-10-01T10:00:00Z', '', 'p', '', '{}')
+    db.prepare('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)').run(`ses:x${i}`, 'session', `Replica cutover ${i}`, '', '2026-10-01T10:00:00Z', '', 'p', '', '{}')
+  }
+  fillSynonyms(db)
+  assert.deepEqual(rows(), before)
+  db.close()
 })

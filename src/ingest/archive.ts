@@ -6,6 +6,7 @@ import { appendFileSync, chmodSync, closeSync, existsSync, unlinkSync, mkdirSync
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
+import { listDir } from '../core/home.ts'
 import { errFields, logger } from '../core/log.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
@@ -224,14 +225,18 @@ export function maskTranscript(text: string): { text: string; unparsed: number[]
 const isSessionPath = (p: string[]) => p.length === 2 || (p.length === 4 && p[2] === 'subagents')
 
 function collect(dir: string, into: Map<string, Source>, prefer: boolean) {
-  if (!existsSync(dir)) return
   const walk = (abs: string, rel: string) => {
-    for (const e of readdirSync(abs, { withFileTypes: true })) {
+    for (const e of listDir(abs)) {
       const p = join(abs, e.name)
       const r = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) walk(p, r)
       else if (e.isFile() && e.name.endsWith('.jsonl') && isSessionPath(r.split('/'))) {
-        const st = statSync(p)
+        let st: ReturnType<typeof statSync>
+        try {
+          st = statSync(p)
+        } catch {
+          continue // removed since the listing, or in a folder this user can list but not search
+        }
         const old = into.get(r)
         // Same session in both places: keep the longer one; on a tie keep the live copy.
         if (!old || st.size > old.size || (st.size === old.size && prefer)) into.set(r, { rel: r, path: p, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs })
@@ -259,6 +264,26 @@ function remaskPlans(base: string) {
   }
   walk(dir)
   writeFileSync(mark, String(MASK_VERSION), { mode: 0o600 })
+}
+
+/** Masks the archived copy again, for a source that is gone or holds fewer turns than the copy. Read and written a member at a
+ * time, so a long chat never becomes one string. An archived copy ends each line, so nothing is pending. */
+function remaskKept(dest: string, tmp: string) {
+  const sha = createHash('sha256')
+  const unparsed: number[] = []
+  let lines = 0
+  function* masked() {
+    for (const line of chatLines(dest)) {
+      const m = maskLine(line)
+      if (m.bad) unparsed.push(lines + 1)
+      lines++
+      sha.update(`${m.text}\n`)
+      yield m.text
+    }
+  }
+  writeMembers(masked(), dest, tmp)
+
+  return { sha256: sha.digest('hex'), mask: MASK_VERSION, unparsed, pending: false, lines }
 }
 
 type ArchiveOpts = { prune?: boolean; onProgress?: (done: number, total: number) => void }
@@ -304,6 +329,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   const leftover = (rel: string) => existsSync(join(out, `${rel}.gz`)) && res.leftover.push(rel)
   const tombs = loadTombs(cfg.memDir)
   const keys = [...sources.keys()].sort()
+  const shrankLog = (tool: string | undefined, rel: string, lines: number, kept: number) => logger('archive', cfg.memDir).warn(`${tool ?? 'converted'}_chat_shrank`, { rel, lines, kept })
   let done = 0
   for (const rel of keys) {
     try {
@@ -362,20 +388,18 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
           // Newer patterns reach old files. Re-read Claude Code's own file when it still exists (words an older mask ate come
           // back); masking is idempotent, so otherwise re-mask the archived copy.
           const fromSrc = existsSync(src.path) && statSync(src.path).size === old.size
-          if (fromSrc) {
-            const m = streamMask(src.path, tmp, false, src.convert?.())
-            // Converting again only adds lines: a shorter result means the archived copy holds turns the source lost, so it stays.
-            if (reconvert && old.mask === MASK_VERSION && m.lines < old.lines) (rmSync(tmp, { force: true }), (manifest[rel] = { ...cur, conv: CONVERT_VERSION }))
-            else {
-              renameSync(tmp, dest)
-              manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: m.sha, mask: MASK_VERSION, ...(src.convert ? { conv: CONVERT_VERSION } : {}), unparsed: m.unparsed, pending: m.pending, lines: m.lines }
-            }
-          } else {
-            // shortcut: the archived copy is gunzipped whole here (no sync streaming gunzip), only when the source is gone and the mask version moved
-            const m = maskTranscript(chatText(readFileSync(dest)))
-            writeFileSync(tmp, gzipSync(m.text), { mode: 0o600 })
+          const m = fromSrc ? streamMask(src.path, tmp, false, src.convert?.()) : undefined
+          // Converting or masking again only adds lines: a shorter result means the archived copy holds turns the source lost, so it stays.
+          const shrank = !!src.convert && !!m && m.lines < old.lines
+          if (m && !shrank) {
             renameSync(tmp, dest)
-            manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: createHash('sha256').update(m.text).digest('hex'), mask: MASK_VERSION, unparsed: m.unparsed, pending: m.pending, lines: m.text.split('\n').length - 1 }
+            manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, sha256: m.sha, mask: MASK_VERSION, ...(src.convert ? { conv: CONVERT_VERSION } : {}), unparsed: m.unparsed, pending: m.pending, lines: m.lines }
+          } else {
+            rmSync(tmp, { force: true })
+            if (shrank) shrankLog(src.tool, rel, m.lines, old.lines)
+            // A source whose size moved since the check above is read at the next sync, so it is not marked converted.
+            if (old.mask !== MASK_VERSION) manifest[rel] = { ...cur, ctimeMs: src.ctimeMs, ...remaskKept(dest, tmp), ...(shrank && reconvert ? { conv: CONVERT_VERSION } : {}) }
+            else if (shrank) manifest[rel] = { ...cur, conv: CONVERT_VERSION }
           }
           res.remasked++
         }
@@ -400,9 +424,11 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
       // shortcut: the archived copy is kept only until the file outgrows it, merge by event id if this log line ever shows up.
       if (src.convert && old && masked.lines < old.lines && existsSync(dest) && !(src.tool === 'copilot' && /"infoType":\s*"rewind"/.test(readFileSync(src.path, 'utf8')))) {
         rmSync(tmp, { force: true })
-        logger('archive', cfg.memDir).warn(`${src.tool ?? 'converted'}_chat_shrank`, { rel, lines: masked.lines, kept: old.lines })
-        manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, pending: masked.pending }
-        for (const line of old.unparsed) res.unparsed.push({ rel, line })
+        shrankLog(src.tool, rel, masked.lines, old.lines)
+        const remask = old.mask !== MASK_VERSION
+        manifest[rel] = { ...old, source: src.path, size: src.size, mtimeMs: src.mtimeMs, ctimeMs: src.ctimeMs, cwd: info.cwd, checked: check, ...(remask ? remaskKept(dest, tmp) : {}), pending: masked.pending }
+        if (remask) res.remasked++
+        for (const line of manifest[rel]!.unparsed) res.unparsed.push({ rel, line })
         res.skipped++
         res.bytes += statSync(dest).size
         continue

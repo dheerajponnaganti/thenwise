@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 
 import { compactedMark, nothingToDo } from '../src/hooks/entry.ts'
 import { runHook } from '../src/hooks/hook.ts'
@@ -72,6 +72,51 @@ test('a Copilot hook payload reads as Claude Code input; Claude Code input is un
   const claude = { tool_name: 'Read', tool_input: { file_path: '/p/a.ts' }, session_id: 's' }
   assert.deepEqual(claudeHookInput(claude), claude)
   assert.deepEqual(claudeHookInput({ prompt: 'hi' }), { prompt: 'hi' })
+})
+
+test('#98: a mask version bump keeps the turns a Copilot chat lost', () => {
+  const w = new World()
+  try {
+    const rel = copilotChat(w, 'cp-m', 'why do we split the cache?')
+    const file = join(w.home, '.copilot/session-state/cp-m/events.jsonl')
+    const first = readFileSync(file, 'utf8')
+    const archived = () => gunzipSync(readFileSync(join(w.memDir, 'archive/sessions', `${rel}.gz`))).toString('utf8')
+    writeFileSync(file, `${first}${ev('user.message', { content: 'a prompt about zebras' })}\n${ev('assistant.message', { content: 'zebra reply', toolRequests: [] })}\n`)
+    w.archive()
+    writeFileSync(file, first.split('\n').slice(0, 3).join('\n') + '\n')
+    w.archive()
+    assert.match(archived(), /zebras/)
+
+    // Text an older mask missed: a newer mask version must reach it in the kept copy.
+    const key = 'sk-ant-api03-' + 'k'.repeat(90)
+    const gz = join(w.memDir, 'archive/sessions', `${rel}.gz`)
+    const plant = () => writeFileSync(gz, gzipSync(archived().replace('zebra reply', `zebra reply ${key}`)))
+    plant()
+
+    // A newer mask version: the shorter source must not replace the kept copy.
+    const mf = join(w.memDir, 'archive/manifest.json')
+    const manifest = JSON.parse(readFileSync(mf, 'utf8'))
+    const mask = manifest[rel].mask
+    manifest[rel].mask = mask - 1
+    writeFileSync(mf, JSON.stringify(manifest))
+    assert.equal(w.archive().remasked, 1)
+    assert.match(archived(), /zebras/)
+    assert.equal(JSON.parse(readFileSync(mf, 'utf8'))[rel].mask, mask)
+    assert.ok(!archived().includes(key), 'the kept copy is masked again')
+
+    // The source changes but still holds fewer turns: the kept copy is masked again in the same pass.
+    const again = JSON.parse(readFileSync(mf, 'utf8'))
+    again[rel].mask = mask - 1
+    writeFileSync(mf, JSON.stringify(again))
+    plant()
+    writeFileSync(file, first.split('\n').slice(0, 4).join('\n') + '\n')
+    assert.equal(w.archive().remasked, 1)
+    assert.match(archived(), /zebras/)
+    assert.equal(JSON.parse(readFileSync(mf, 'utf8'))[rel].mask, mask)
+    assert.ok(!archived().includes(key))
+  } finally {
+    w.destroy()
+  }
 })
 
 test('Copilot CLI chats are archived masked in Claude Code shape, then ingested; update equals rebuild', () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -162,6 +162,68 @@ test('S2-B3: wrong types are named errors, unknown keys are warnings', () => {
   assert.ok(r.errors.some((e) => /"off" must be a boolean/.test(e)))
   assert.ok(r.errors.some((e) => /"vault.place" must be one of/.test(e)))
   assert.deepEqual(r.warnings, ['unknown key "surprise" (ignored)'])
+})
+
+// Windows has no mode 000 and links need extra rights there; root reads mode 000 files.
+test('#102: an unreadable chat file, folder or dangling link is skipped, and loading the config still works', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  const f = f1()
+  const proj = (key: string) => join(f.home, '.claude', 'projects', key)
+  const rollouts = join(f.home, '.codex', 'sessions', '2026', '11', '10')
+  mkdirSync(rollouts, { recursive: true })
+  mkdirSync(proj('-work-delta'))
+  const brain = join(f.home, '.gemini', 'antigravity', 'brain')
+  const logs = join(brain, 'agy-file', '.system_generated', 'logs')
+  mkdirSync(logs, { recursive: true })
+  mkdirSync(join(brain, 'agy-folder'))
+  writeFileSync(join(logs, 'transcript_full.jsonl'), '{}\n')
+  writeFileSync(join(proj('-work-beta'), 'locked.jsonl'), '{}')
+  writeFileSync(join(rollouts, 'rollout-locked.jsonl'), '{}')
+  for (const p of [join(proj('-work-beta'), 'locked.jsonl'), join(rollouts, 'rollout-locked.jsonl'), proj('-work-delta'), join(brain, 'agy-folder'), join(logs, 'transcript_full.jsonl')]) chmodSync(p, 0)
+  // Listed but not searchable: the stat of a chat inside it fails.
+  chat(proj('-work-eps'), 'e1', join(f.work, 'eps'), 'x')
+  chmodSync(proj('-work-eps'), 0o444)
+  symlinkSync(join(f.home, 'gone.jsonl'), join(proj('-work-alpha'), 'dangling.jsonl'))
+  symlinkSync(join(f.home, 'gone.jsonl'), join(rollouts, 'rollout-dangling.jsonl'))
+  try {
+    const { config, errors } = loadConfigSafe(f.home)
+    assert.deepEqual(errors, [])
+    assert.deepEqual(config!.roots.sort(), [join(f.work, 'alpha'), join(f.work, 'beta'), join(f.work, 'personal')], 'an unreadable chat names no folder, not the home')
+    const r = archive(config!)
+    assert.equal(r.archived, 3, 'the readable chats are archived; the marked one is not')
+  } finally {
+    for (const p of [proj('-work-delta'), proj('-work-eps'), join(brain, 'agy-folder')]) chmodSync(p, 0o700)
+  }
+})
+
+test('#102: a wrong views.projects shape is a warning naming the field; the view keeps its good fields', () => {
+  const cases: [unknown, RegExp, string[][]][] = [
+    [null, /"views\.projects\.a" must be a table, found null \(view ignored\)/, [['b', 'cache']]],
+    [{ words: 'x' }, /"views\.projects\.a\.words" must be a list of text, found string "x" \(ignored\)/, [['a'], ['b', 'cache']]],
+    [{ words: [1] }, /"views\.projects\.a\.words" must be a list of text, found a list holding number 1 \(ignored\)/, [['a'], ['b', 'cache']]],
+    [{ words: ['Billing'], paths: 'src' }, /"views\.projects\.a\.paths" must be a list of text, found string "src" \(ignored\)/, [['a', 'billing'], ['b', 'cache']]],
+    [{ words: ['Billing'], paths: {} }, /"views\.projects\.a\.paths" must be a list of text, found a table \(ignored\)/, [['a', 'billing'], ['b', 'cache']]],
+  ]
+  for (const [a, warning, views] of cases) {
+    const f = f1()
+    mkdirSync(f.data)
+    writeFileSync(join(f.data, 'config.json'), JSON.stringify({ views: { projects: { a, b: { words: ['Cache'] } } } }))
+    const r = loadConfigSafe(f.home)
+    assert.deepEqual(r.errors, [])
+    assert.match(r.warnings.join('\n'), warning)
+    assert.deepEqual(r.config!.viewProjects.map((v) => [v.name, ...v.words]), views)
+    const s = f.cli(['status'])
+    assert.equal(s.status, 0, s.stderr)
+    assert.match(s.stderr, /warning: "views\.projects\.a/)
+    // A command that saves the config keeps what the person wrote, bad parts included.
+    assert.equal(f.cli(['off', '--project', f.work]).status, 0)
+    assert.deepEqual(f.cfg().views.projects.a, a)
+  }
+  // A key named like an Object method is an unknown key, not a type error.
+  const f = f1()
+  mkdirSync(f.data)
+  writeFileSync(join(f.data, 'config.json'), JSON.stringify({ constructor: 1, views: { projects: { a: { toString: 1 } } } }))
+  const r = readConfigFile(f.data)
+  assert.deepEqual([r.errors, r.warnings], [[], ['unknown key "constructor" (ignored)', 'unknown key "views.projects.a.toString" (ignored)']])
 })
 
 test('S2-B4: a newer config version is refused', () => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A team sync no longer unshares your shared chats when the archive manifest is damaged or missing. It leaves the shares alone, sends nothing that sync and says why.
+
 ## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.

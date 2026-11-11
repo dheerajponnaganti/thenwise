@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 
+import { logger } from '../core/log.ts'
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
 import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
 import type { SessionPart } from '../ingest/parts.ts'
@@ -123,13 +124,17 @@ export interface Candidate {
   at: number
 }
 /** The archived chats (main files, with their subagent files), from the manifest. */
-export function archived(cfg: Config): Candidate[] {
+export const archived = (cfg: Config): Candidate[] => readArchived(cfg).chats
+
+/** The archived chats, and `bad` when the manifest cannot be read: then nobody knows which chats the archive keeps.
+ * A missing manifest counts too, as after a first archive killed before it wrote one. */
+export function readArchived(cfg: Config): { chats: Candidate[]; bad?: string } {
   const base = join(cfg.memDir, 'archive')
   let manifest: Record<string, { cwd?: string; sha256?: string; mtimeMs?: number }> = {}
   try {
     manifest = JSON.parse(readFileSync(join(base, 'manifest.json'), 'utf8'))
-  } catch {
-    return [] // nothing archived yet
+  } catch (e) {
+    return { chats: [], bad: (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'manifest.json is missing' : `manifest.json cannot be read: ${(e as Error).message}` }
   }
   const subs = new Map<string, string[]>()
   for (const rel of Object.keys(manifest).sort()) {
@@ -146,7 +151,7 @@ export function archived(cfg: Config): Candidate[] {
     out.push({ rel, session, path, cwd: e.cwd ?? '', sha: [e.sha256 ?? '', ...sub.map((r) => manifest[r]?.sha256 ?? '')].join('+'), subagents: sub, at: e.mtimeMs ?? 0 })
   }
 
-  return out
+  return { chats: out }
 }
 
 const worktreeTop = (cwd: string): string | undefined => {
@@ -375,8 +380,16 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   if (reached) out.push(reached)
   const lost = await readOwnTombs(dir, projects)
   if (lost) out.push(lost)
+  const arch = readArchived(cfg)
+  // An unreadable manifest says nothing about what is kept, so nothing is unshared. Nothing is pushed either: there is no chat list to push from.
+  if (arch.bad) {
+    logger('teams', dir).warn('manifest_unreadable', { err: arch.bad })
+    out.push(`archive ${arch.bad}; nothing unshared or pushed this sync`)
+
+    return tag(out.join('; '))
+  }
   // A shared chat the archive no longer keeps (a [no-memory] marker added later drops it) leaves the team too.
-  const kept = new Set(archived(cfg).map((c) => c.session))
+  const kept = new Set(arch.chats.map((c) => c.session))
   const dropped = await unshareForgotten(cfg, Object.keys(loadShares(dir).chats).filter((s) => !kept.has(s)))
   if (dropped) out.push(`${dropped} chat${dropped === 1 ? '' : 's'} no longer kept, unshared`)
   const tombs = loadTombs(dir)

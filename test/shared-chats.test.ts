@@ -14,6 +14,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
+import { readLog } from '../src/core/log.ts'
 import { loadConfigSafe } from '../src/ingest/config.ts'
 import { runHook, trimTrace } from '../src/hooks/hook.ts'
 import * as c from '../src/query/commands.ts'
@@ -551,6 +552,60 @@ test('a [no-memory] marker added after a chat was shared takes it off the server
     assert.equal(Object.keys(loadShares(t.a.memDir).chats).length, 0)
     await fetchShared(t.b.memDir)
     assert.equal(readChats(t.b.memDir).length, 0)
+  } finally {
+    await t.stop()
+  }
+})
+
+/** Shares c1, breaks the archive with `harm`, syncs, and checks that nothing was unshared and one warning was logged. */
+async function brokenManifest(harm: (manifest: string) => void, why: RegExp) {
+  const t = await team()
+  try {
+    t.share(t.a)
+    await pushShared(t.a.cfg)
+    harm(join(t.a.memDir, 'archive', 'manifest.json'))
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    let said: string
+    try {
+      said = await pushShared(t.a.cfg)
+    } finally {
+      process.env.THENWISE_LOG = 'off'
+    }
+    assert.doesNotMatch(said, /no longer kept/)
+    assert.match(said, why)
+    const sh = loadShares(t.a.memDir)
+    assert.ok(sh.chats.c1, 'the chat stays shared')
+    assert.deepEqual(sh.removed, {})
+    assert.deepEqual(sh.deletes, [])
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 1)
+    const warns = readLog(t.a.memDir).filter((e) => e.ev === 'manifest_unreadable')
+    assert.equal(warns.length, 1)
+    assert.match(String(warns[0]!.err), why)
+  } finally {
+    await t.stop()
+  }
+}
+
+test('#100: a corrupt manifest never unshares chats', needs, () => brokenManifest((m) => writeFileSync(m, `${readFileSync(m, 'utf8')}{`), /manifest\.json cannot be read/))
+
+test('#100: a missing manifest with archived chats on disk never unshares chats, as after a first archive killed before it wrote one', needs, () =>
+  brokenManifest((m) => {
+    rmSync(m)
+    assert.ok(readdirSync(join(dirname(m), 'sessions'), { recursive: true }).some((f) => String(f).endsWith('.gz')), 'the archived chat is still on disk')
+  }, /manifest\.json is missing/))
+
+test('#100: a chat that really left a readable archive is still unshared', needs, async () => {
+  const t = await team()
+  try {
+    t.share(t.a)
+    await pushShared(t.a.cfg)
+    const m = join(t.a.memDir, 'archive', 'manifest.json')
+    const kept = JSON.parse(readFileSync(m, 'utf8'))
+    for (const k of Object.keys(kept)) if (k.endsWith('/c1.jsonl')) delete kept[k]
+    writeFileSync(m, JSON.stringify(kept))
+    assert.match(await pushShared(t.a.cfg), /1 chat no longer kept, unshared/)
+    assert.deepEqual(loadShares(t.a.memDir).removed, { c1: 'proj' })
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 0)
   } finally {
     await t.stop()
   }

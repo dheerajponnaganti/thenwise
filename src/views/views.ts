@@ -5,6 +5,7 @@ import { basename } from 'node:path'
 
 import { Graph } from '../query/engine.ts'
 import type { Node } from '../query/engine.ts'
+import { under } from '../ingest/parts.ts'
 
 
 const flat = (s: string) => s.replace(/\[\[|\]\]/g, '').replace(/\s+/g, ' ').trim()
@@ -47,7 +48,7 @@ export function sessionProjects(g: Graph, projects: { name: string; words: strin
         const x = g.nodes.get(t.to)
         if (t.out && (t.kind === 'made' || t.kind === 'opened') && x) votes.set(repo(x.project), (votes.get(repo(x.project)) ?? 0) + 1)
         if (t.out && x?.kind === 'file' && (t.kind === 'edited' || t.kind === 'ran_in'))
-          for (const p of projects ?? []) if (p.paths.some((r) => x.id.slice(5) === r || x.id.slice(5).startsWith(`${r}/`))) named.add(p.name)
+          for (const p of projects ?? []) if (p.paths.some((r) => under(x.id.slice(5), r))) named.add(p.name) // under normalizes: a Windows view path matches
         if (t.out && x?.kind === 'file' && t.kind !== 'mentions') {
           ;(touchedBy.get(x.id) ?? touchedBy.set(x.id, new Set()).get(x.id)!).add(s.id)
           const f = folderOf(x.id)

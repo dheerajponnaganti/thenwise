@@ -11,6 +11,7 @@ import { maskSecrets } from '../core/secrets.ts'
 import { dateMs } from '../core/time.ts'
 import type { Config } from '../ingest/config.ts'
 import { globMatch, isOff } from '../ingest/config.ts'
+import { under } from '../ingest/parts.ts' // normalizes both paths, so Windows backslashes match
 import { chatLines, parseSession } from '../ingest/transcript.ts'
 import { expireInbox, makeId, readNotes, saveNote } from './notes.ts'
 import type { NoteType } from './notes.ts'
@@ -128,7 +129,6 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
     appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 }) // read for one more release
   }
   const root = join(cfg.memDir, 'archive/sessions')
-  const under = (p: string, r: string) => p === r || p.startsWith(`${r}/`)
   // The manifest records each chat's source time: a chat last written before `since` also ended before it.
   let manifest: Record<string, { mtimeMs?: number }> = {}
   if (opts.since) {

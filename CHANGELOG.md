@@ -7,6 +7,7 @@
 - A long ingest, or a laptop asleep for over 30 minutes, no longer lets a second ingest or sync take the lock from a live process. A lock is taken only when its process is dead, the machine restarted since, or its process number now belongs to a program that started later. That last case kept syncing stopped until the next restart.
 - An unreadable chat file or folder, or a broken link, in any tool's chat folders no longer stops every hook, command and sync. It is skipped. A wrong shape under `views.projects` in the config gives a warning that names the field. Only that field is left out, so the view keeps working as before, and `config.json` is kept as you wrote it.
 - A team sync no longer unshares your shared chats when the archive manifest is damaged or missing. It leaves the shares alone, sends nothing that sync and says why. `team share-chats` and `export` name the damaged manifest instead of finding no chats.
+- `thenwise forget` for a project folder no longer removes the chats of a sibling folder whose name differs only in punctuation, such as `my-app` and `my.app`, and no longer blocks that folder's later chats. A chat that names no folder, under a name two folders share, stays, and `forget` says how to forget it by id. `forget` also waits for a running `thenwise archive`, which could otherwise write back what it removed.
 
 ## 0.3.1
 

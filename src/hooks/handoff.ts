@@ -62,7 +62,7 @@ export function checkouts(cwd: string): string[] {
 const under = (p: string, roots: string[]) => roots.some((r) => normPath(p) === normPath(r) || normPath(p).startsWith(`${normPath(r)}/`))
 
 /** The folder a Claude Code chat ran in, from the `cwd` of its first lines; '' when none shows there. */
-function headCwd(path: string): string {
+export function headCwd(path: string): string {
   const b = Buffer.alloc(16 << 10)
   let fd: number | undefined
   try {

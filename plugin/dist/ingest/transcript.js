@@ -1,6 +1,6 @@
 // Parse one (already masked) Claude Code transcript into sessions, turns, compaction summaries and tool facts.
 import { createHash } from 'node:crypto';
-import { isTestRun } from "../core/testrun.js";
+import { commandParts, isTestRun } from "../core/testrun.js";
 import { posix } from 'node:path';
 import { crc32, gunzipSync, inflateRawSync } from 'node:zlib';
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
@@ -42,6 +42,42 @@ const BASH_ABS = /(?:^|[\s"'=(])(\/[^\s"'`;|&)<>]+)/g;
 const BASH_REL = /(?:^|[\s"'=(])((?:\.\.?\/)?[\w.@-]+(?:\/[\w.@+-]+)*\/[\w.@+-]+\.[A-Za-z]\w{0,7})(?=$|[\s"'`;|&)<>:,])/g;
 const LEADING_CD = /^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|;)/;
 const GIT_COMMIT = /\bgit(?:\s+(?:-[cC]\s+\S+|--\S+))*\s+commit\b/;
+// What git prints for a commit it made: `[main 1a2b3c4] Subject`, `[main (root-commit) ...]`, `[detached HEAD ...]`.
+const COMMIT_LINE = /\[(?:detached HEAD|[\w./-]+)(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g;
+// What git prints when it commits nothing. Seen even when `|| true` or a later command hides the failed exit code.
+const GIT_FAILED = /^(?:fatal|error): |^nothing (?:added )?to commit|^no changes added to commit|^Aborting commit/m;
+const GH_PR = /\bgh\s+pr\s+create\b/;
+// Output that shows a command ran at all, which proves every test before it in an && chain passed. A commit line or git's
+// own refusal; a PR url or gh's own refusal. A bare `fatal:` or `error:` is no proof: a failing test prints those too
+// (`cargo test` ends with `error: test failed`, and tests that run git echo its `fatal:` lines).
+const RAN = {
+    commit: new RegExp(`${COMMIT_LINE.source}|^(?:nothing (?:added )?to commit|no changes added to commit|Aborting commit)`, 'm'),
+    pr: /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+|^(?:pull request create failed|a pull request for branch .* already exists|No commits between|could not find any commits between|aborted: you must first push)/m,
+};
+/** For each test part of a command, the commands after it in its && chain whose output can show they ran: `b` in
+ * `a && b` runs only if `a` passed. Undefined when some test part has none, since then its result is only the exit code.
+ * Past a `;`, `||` or `|` nothing is known: the next command runs whether the test passed or not (or, for `|`, the
+ * pipeline's exit code is the last command's). */
+function testProof(cmd) {
+    const parts = commandParts(cmd);
+    const proof = [];
+    for (const [i, p] of parts.entries()) {
+        if (!isTestRun(p.text))
+            continue;
+        const after = [];
+        for (let j = i; parts[j].op === '&&' && j + 1 < parts.length; j++) {
+            const next = parts[j + 1].text;
+            if (GIT_COMMIT.test(next))
+                after.push('commit');
+            else if (GH_PR.test(next))
+                after.push('pr');
+        }
+        if (!after.length)
+            return undefined;
+        proof.push(after);
+    }
+    return proof.length ? proof : undefined;
+}
 const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|system-reminder|task-notification|command-message|bash-input|bash-stdout|bash-stderr|user-prompt-submit-hook|ide_opened_file|ide_selection|ide_diagnostics';
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`);
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`);
@@ -190,6 +226,7 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
     let lastAt = '';
     let pastCut = false;
     const run = { base: { input: 0, cached: 0, output: 0 }, last: undefined, start: undefined };
+    // `cmd` is a test run the call makes, whatever else it does: `npm test && git commit` is a commit and a test run.
     const pending = new Map();
     // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
     const editCalls = new Map();
@@ -264,21 +301,29 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                         continue;
                     }
                     const out = textOf(b.content);
+                    // A nonzero exit is the tests' only when no later command in their && chain shows it ran.
+                    const passed = !!hit.proof?.every((after) => after.some((k) => RAN[k].test(out)));
+                    if (hit.cmd)
+                        hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true && !passed, cmd: hit.cmd });
                     if (hit.kind === 'agent') {
                         const report = agentReport(out).slice(0, 8000); // a subagent's report to the turn that asked
                         if (report)
                             (hit.turn.reply.push(report), hit.turn.agentReports.push(report));
                     }
-                    else if (hit.kind === 'test')
-                        hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, ...(hit.cmd ? { cmd: hit.cmd } : {}) });
                     else if (hit.kind === 'commit') {
-                        for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {
+                        const made = [...out.matchAll(COMMIT_LINE)];
+                        // The typed -m subject stands for the first commit git prints; any later commit in the call keeps git's subject.
+                        for (const [i, m] of made.entries()) {
                             hit.turn.commitShas.add(m[1]);
-                            if (hit.at && m[2]?.trim())
+                            if (m[2]?.trim() && !(i === 0 && hit.msg))
                                 hit.turn.commitMsgs.push({ subject: m[2].trim(), at: hit.at });
                         }
+                        // No commit printed and git or the call failed: nothing was committed, so the typed subject goes. A quiet
+                        // commit prints no line and keeps it.
+                        if (hit.msg && !made.length && (b.is_error === true || GIT_FAILED.test(out)))
+                            hit.turn.commitMsgs = hit.turn.commitMsgs.filter((c) => c !== hit.msg);
                     }
-                    else
+                    if (hit.pr)
                         for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g))
                             hit.turn.prUrls.add(m[0]);
                 }
@@ -340,20 +385,26 @@ export function parseSession(text, id, home, until = '', sub = false, fileMs = 0
                         s.paths.add(p);
                         turn?.ran.add(p);
                     }
-                    if (turn && isTestRun(inp.command))
-                        pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) });
-                    if (turn && GIT_COMMIT.test(inp.command)) {
-                        const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command);
-                        const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n');
+                    // One entry per call, whatever it combines: `npm test && git commit && gh pr create` is a test run, a commit and a PR.
+                    const cmd = isTestRun(inp.command) ? inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined;
+                    const pr = GH_PR.test(inp.command);
+                    const commit = GIT_COMMIT.exec(inp.command);
+                    let typed;
+                    if (turn && commit) {
+                        const tail = inp.command.slice(commit.index);
+                        const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(tail);
+                        // An -m past the end of this git command is another command's: `git commit -F f && python -m pytest`.
+                        const own = m && !/[;&|\n]/.test(tail.slice(0, m.index).replace(/"[^"]*"|'[^']*'/g, ''));
+                        const msg = own ? (m[1] ?? m[2] ?? m[3] ?? '').split('\n') : [''];
                         // -m "$(cat <<'EOF' ... EOF)": the subject is the first line after the heredoc opener.
                         const subject = (/^\$\(cat\s*<</.test(msg[0]) ? (msg.slice(1).find((l) => l.trim()) ?? '') : msg[0]).trim();
-                        // -F file, --amend or an editor: the subject comes from what git prints.
-                        pending.set(b.id, { turn, kind: 'commit', at: subject ? undefined : (d.timestamp ?? turn.at) });
+                        // -F file, --amend or an editor: the subject comes from what git prints. A typed subject is kept now, so a
+                        // commit whose result never came still counts; a result that shows the commit failed takes it back.
                         if (subject)
-                            turn.commitMsgs.push({ subject, at: d.timestamp ?? turn.at });
+                            turn.commitMsgs.push((typed = { subject, at: d.timestamp ?? turn.at }));
                     }
-                    if (turn && !GIT_COMMIT.test(inp.command) && /\bgh\s+pr\s+create\b/.test(inp.command))
-                        pending.set(b.id, { turn, kind: 'pr' });
+                    if (turn && (cmd || pr || commit))
+                        pending.set(b.id, { turn, kind: commit ? 'commit' : pr ? 'pr' : 'test', at: d.timestamp ?? turn.at, cmd, msg: typed, pr, ...(cmd ? { proof: testProof(inp.command) } : {}) });
                 }
             }
         }

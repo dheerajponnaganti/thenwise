@@ -1,5 +1,5 @@
 // What the background sync is doing, for the person: first sync, a rebuild or an automatic one, which phase, and how far it
-// got. The sync writes <data folder>/sync-progress.json as it goes; status, the hooks and the memory tools read it.
+// got. Only the sync writes <data folder>/sync-progress.json; status, the hooks and the memory tools read it.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 export const progressFile = (dir) => join(dir, 'sync-progress.json');
@@ -11,7 +11,8 @@ export function readProgress(dir) {
         return null;
     }
 }
-/** Merges fields into the file, through a temp file and a rename, so a reader never sees half of it. */
+/** Merges fields into the file, through a temp file and a rename, so a reader never sees half of it. Only the sync
+ * process and its steps call it, one at a time, so no merge loses another's fields. */
 export function writeProgress(dir, p, replace = false) {
     try {
         mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -21,6 +22,22 @@ export function writeProgress(dir, p, replace = false) {
         renameSync(tmp, progressFile(dir));
     }
     catch { } // progress is a courtesy: it never fails a sync
+}
+// When the person was last shown a line about a sync. Hooks write it from any session, so it has its own file.
+const toldFile = (dir) => join(dir, 'sync-told');
+export function readTold(dir) {
+    try {
+        return readFileSync(toldFile(dir), 'utf8').trim();
+    }
+    catch {
+        return readProgress(dir)?.told ?? ''; // older versions kept it in the progress file
+    }
+}
+export function writeTold(dir, iso) {
+    try {
+        writeFileSync(toldFile(dir), iso, { mode: 0o600 });
+    }
+    catch { } // the worst case is one repeated line
 }
 /** A callback for a phase's loop that writes at most every half second, and always the last step. Null when no sync asked. */
 export function reporter(dir, phase) {
@@ -63,6 +80,8 @@ const NAME = { first: 'first sync', rebuild: 'rebuild after an update', auto: 's
 export function progressLine(p, now = Date.now()) {
     if (!p)
         return '';
+    if (p.finished && p.failed)
+        return `${NAME[p.kind]} failed; /thenwise:logs shows why`;
     if (p.finished)
         return `${NAME[p.kind]} done${p.chats ? `: ${n(p.chats)} chats remembered` : ''}${p.ms ? ` in ${secs(p.ms)}` : ''}`;
     if (!running(p))

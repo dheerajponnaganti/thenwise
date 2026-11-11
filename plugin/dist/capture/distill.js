@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
-import { globMatch } from "../ingest/config.js";
+import { dateMs } from "../core/time.js";
+import { globMatch, isOff } from "../ingest/config.js";
+import { under } from "../ingest/parts.js"; // normalizes both paths, so Windows backslashes match
 import { chatLines, parseSession } from "../ingest/transcript.js";
 import { expireInbox, makeId, readNotes, saveNote } from "./notes.js";
 import { related } from "./similar.js";
@@ -97,7 +99,14 @@ export function distill(cfg, opts = {}) {
         appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 }); // read for one more release
     };
     const root = join(cfg.memDir, 'archive/sessions');
-    const under = (p, r) => p === r || p.startsWith(`${r}/`);
+    // The manifest records each chat's source time: a chat last written before `since` also ended before it.
+    let manifest = {};
+    if (opts.since) {
+        try {
+            manifest = JSON.parse(readFileSync(join(cfg.memDir, 'archive', 'manifest.json'), 'utf8'));
+        }
+        catch { } // no manifest: nothing is skipped early
+    }
     for (const key of existsSync(root) ? readdirSync(root).sort() : []) {
         if (cfg.ingestExcludeProjects.some((g) => globMatch(g, key)))
             continue;
@@ -105,10 +114,13 @@ export function distill(cfg, opts = {}) {
             const id = f.replace(/\.jsonl\.gz$/, '');
             if (opts.session && opts.session !== id)
                 continue;
-            const s = parseSession(chatLines(join(root, key, f)), id, cfg.home);
-            if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r))))
+            const recorded = manifest[`${key}/${id}.jsonl`]?.mtimeMs;
+            if (opts.since && recorded && recorded < Date.parse(opts.since))
                 continue;
-            if (opts.since && Date.parse(s.end) < Date.parse(opts.since))
+            const s = parseSession(chatLines(join(root, key, f)), id, cfg.home);
+            if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || isOff(cfg, s.cwd) || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r))))
+                continue;
+            if (opts.since && Date.parse(s.end) < dateMs(opts.since))
                 continue;
             const st = state[id] ?? { turn: '', summaries: [] };
             const at = s.turns.findIndex((t) => t.id === st.turn);

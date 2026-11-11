@@ -32,11 +32,11 @@ export const similarity = (a, b) => {
 /** Mines `synonyms(word, syn, pmi, n)` from the labelled nodes and the links between them. Replaces what the table holds. */
 export function fillSynonyms(db) {
     db.exec('DELETE FROM synonyms');
-    const rows = db.prepare('SELECT id, kind, title, extra FROM nodes ORDER BY id').all();
+    const kinds = [...LABELLED];
+    const rows = db.prepare(`SELECT id, kind, title, extra FROM nodes WHERE kind IN (${kinds.map(() => '?').join(',')}) ORDER BY id`).all(...kinds);
     const own = new Map();
     for (const r of rows)
-        if (LABELLED.has(r.kind))
-            own.set(r.id, labelWords(r.title, JSON.parse(r.extra || '{}')));
+        own.set(r.id, labelWords(r.title, JSON.parse(r.extra || '{}')));
     const links = new Map();
     for (const e of db.prepare("SELECT src, dst FROM edges WHERE kind <> 'part_of' ORDER BY src, dst").all()) {
         if (!own.has(e.src) || !own.has(e.dst))

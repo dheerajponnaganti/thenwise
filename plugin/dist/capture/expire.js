@@ -4,9 +4,8 @@
 // accepted decision as superseded; rejecting it keeps the decision. No model.
 import { realpathSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { normPath } from "../core/vault-index.js";
-import { swapPending } from "../query/engine.js";
+import { Graph } from "../query/engine.js";
 import { makeId, readNotes, saveNote } from "./notes.js";
 // One file can be stored under two spellings (a symlinked folder, /var and /private/var on macOS): compare real paths.
 // A deleted file has no real path, so its folder's is used.
@@ -29,12 +28,18 @@ const canon = (p) => {
 };
 const cut = (s, n) => (s.length > n ? `${s.slice(0, n).trimEnd()}...` : s);
 const day = (at) => at.slice(0, 10);
-/** Writes "changed since decided" questions to the inbox; returns how many were new. */
-export function proposeExpiry(memDir, dbPath, now = new Date()) {
-    swapPending(dbPath);
+/** Writes "changed since decided" questions to the inbox; returns how many were new. `off` is the paused-folder check:
+ * their decisions and commits ask nothing. */
+export function proposeExpiry(memDir, dbPath, now = new Date(), off) {
     const notes = readNotes(memDir);
-    const db = new DatabaseSync(dbPath, { readOnly: true });
-    const decisions = [];
+    const g = new Graph(dbPath, { lazy: true }); // it swaps in a rebuilt store first
+    g.off = off;
+    const db = g.db;
+    const hidden = (id) => {
+        const n = g.nodes.get(id);
+        return !!n && g.paused(n);
+    };
+    let decisions = [];
     const later = new Map();
     try {
         const changed = db.prepare("SELECT dst FROM edges WHERE src = ? AND kind = 'changed' AND dst LIKE 'file:%'");
@@ -65,13 +70,14 @@ export function proposeExpiry(memDir, dbPath, now = new Date()) {
                     decisions.push({ ref: r.id, title, at: r.at, files, own: new Set([r.id]), supersedes: '', project: r.project });
             }
         }
+        decisions = decisions.filter((d) => !hidden(d.ref));
         // The newest commit after each decision that changed one of its files. Only commits newer than the oldest decision are read.
         const oldest = decisions.map((d) => d.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0]; // times carry different offsets: order by time, not text
         const rows = oldest ? db.prepare("SELECT n.id, n.at, n.title, json_extract(n.extra, '$.sha') AS sha, e.dst FROM edges e JOIN nodes n ON n.id = e.src WHERE e.kind = 'changed' AND n.kind = 'commit' AND julianday(n.at) > julianday(?) AND e.dst LIKE 'file:%'").all(oldest) : [];
         // Each file's later commits, read once (stash commits are no change to the code).
         const byFile = new Map();
         for (const c of rows) {
-            if (/^(WIP on|index on|On) [^\s:]+:/.test(c.title))
+            if (/^(WIP on|index on|On) [^\s:]+:/.test(c.title) || hidden(c.id))
                 continue;
             const f = canon(c.dst.slice(5));
             byFile.set(f, [...(byFile.get(f) ?? []), { id: c.id, ms: Date.parse(c.at), title: c.title, sha: c.sha }]);

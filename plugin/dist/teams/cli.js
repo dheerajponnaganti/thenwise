@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { dateMs } from "../core/time.js";
 import { loadConfig } from "../ingest/config.js";
 import { real } from "../ingest/repos.js";
 import { clonesOf, formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from "./chats.js";
@@ -125,10 +126,10 @@ export async function teamMain(argv, flag) {
         else if (sub === 'share-chats') {
             if (!words[0])
                 return (console.error(TEAM_USAGE), 2);
-            loadTeam(dir);
             const since = flag('since');
-            if (since && Number.isNaN(Date.parse(since)))
+            if (since && Number.isNaN(dateMs(since)))
                 return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2);
+            loadTeam(dir);
             const pv = previewShare(cfg, words[0], since ? { since } : {});
             console.log(formatPreview(pv, cfg.redact));
             if (!pv.chats)

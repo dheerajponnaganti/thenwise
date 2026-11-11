@@ -2,7 +2,7 @@
 // Only dead ends the store saw happen count (a failed test, an undone edit, a closed PR, a revert, a [dead-end] line
 // someone wrote). A sentence picked from a reply does not: a release turn that mentions one would tie it to every file
 // the release touched. No model; the same evidence never proposes twice, and a rejected proposal stays rejected.
-import { DatabaseSync } from 'node:sqlite';
+import { Graph } from "../query/engine.js";
 import { trigramSim } from "./similar.js";
 import { makeId, readNotes, saveNote } from "./notes.js";
 /** Chats or commits that must hit a dead end at one file before it is proposed as a rule. */
@@ -14,14 +14,16 @@ export const MAX_FILES = 5;
 const CHURN = 0.3;
 const CHURN_MIN = 10;
 const cut = (s, n) => (s.length > n ? `${s.slice(0, n).trimEnd()}...` : s);
-/** Writes rule proposals to the inbox; returns how many were new. */
-export function mineRules(memDir, dbPath, now = new Date()) {
-    const db = new DatabaseSync(dbPath, { readOnly: true });
+/** Writes rule proposals to the inbox; returns how many were new. `off` is the paused-folder check: their dead ends never count. */
+export function mineRules(memDir, dbPath, now = new Date(), off) {
+    const g = new Graph(dbPath, { lazy: true });
+    g.off = off;
+    const db = g.db;
     let dead;
     const files = new Map();
     const alias = new Map();
     try {
-        dead = db.prepare("SELECT id, kind, source, at, project, json_extract(extra, '$.deadEnd') AS text, json_extract(extra, '$.deadEndKind') AS how FROM nodes WHERE kind IN ('turn', 'commit', 'pr') AND json_extract(extra, '$.deadEnd') IS NOT NULL AND coalesce(json_extract(extra, '$.deadEndKind'), 'phrase') != 'phrase' ORDER BY at, id").all().map((d) => ({ ...d, text: String(d.text ?? '') }));
+        dead = db.prepare("SELECT id, kind, source, at, project, json_extract(extra, '$.deadEnd') AS text, json_extract(extra, '$.deadEndKind') AS how FROM nodes WHERE kind IN ('turn', 'commit', 'pr') AND json_extract(extra, '$.deadEnd') IS NOT NULL AND coalesce(json_extract(extra, '$.deadEndKind'), 'phrase') != 'phrase' ORDER BY at, id").all().filter((d) => !g.paused(g.nodes.get(d.id))).map((d) => ({ ...d, text: String(d.text ?? '') }));
         const edges = db.prepare("SELECT dst FROM edges WHERE src = ? AND kind IN ('edited', 'changed', 'touches') AND dst LIKE 'file:%'");
         const fileNode = db.prepare('SELECT extra FROM nodes WHERE id = ?');
         const touched = db.prepare("SELECT dst, count(DISTINCT src) AS n FROM edges WHERE kind IN ('edited', 'changed', 'touches') AND dst LIKE 'file:%' GROUP BY dst").all();

@@ -7,7 +7,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDir } from "../core/home.js";
 import { errFields, errorCode, logger, queryFields, redact } from "../core/log.js";
-import { isOff, loadConfigSafe } from "../ingest/config.js";
+import { isOff, loadConfigSafe, offCheck } from "../ingest/config.js";
 import { copilotSessionCwd } from "../ingest/copilot.js";
 import { handoffBlock, ownChat } from "../hooks/handoff.js";
 import { incompleteNote, percent, readProgress, running } from "../core/progress.js";
@@ -24,6 +24,21 @@ function afterPointer() {
     catch {
         return false;
     }
+}
+// The config load scans four tools' chat folders when roots or repos are unset (#120). A few seconds' reuse saves that per
+// call; keyed on the file's text, so `thenwise off` and `on` show at once, and a new chat folder shows within seconds.
+let cfgMemo;
+export function serverConfig(now = Date.now()) {
+    const file = join(resolveDataDir(), 'config.json');
+    let text = '';
+    try {
+        text = readFileSync(file, 'utf8');
+    }
+    catch { } // no config: loadConfigSafe says so
+    const key = `${homedir()}\0${file}\0${text}`;
+    if (!cfgMemo || cfgMemo.key !== key || now - cfgMemo.at > 5000)
+        cfgMemo = { key, at: now, res: loadConfigSafe() };
+    return cfgMemo.res;
 }
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
@@ -113,12 +128,20 @@ export function createServer(dbPath, fixedProject) {
         if (!existsSync(p))
             return undefined;
         const s = statSync(p);
-        const now = `${s.ino}:${s.size}:${s.mtimeMs}`;
+        // `thenwise off` and `on` change only the config, so its text is part of the signature. Text, not mtime: a save in
+        // the same clock tick can keep the inode, size and mtime.
+        let conf = '';
+        try {
+            conf = readFileSync(join(resolveDataDir(), 'config.json'), 'utf8');
+        }
+        catch { } // no config yet
+        const now = `${s.ino}:${s.size}:${s.mtimeMs}\0${conf}`;
         if (!graph || now !== sig) {
             const g = new Graph(p, { lazy: true });
-            const cfg = loadConfigSafe().config;
+            const cfg = serverConfig().config;
             // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
             const project = here();
+            g.off = cfg ? offCheck(cfg) : undefined;
             if (cfg && isOff(cfg, project))
                 g.scope = OFF;
             else if (project && cfg?.scope !== 'all')
@@ -164,7 +187,7 @@ export function createServer(dbPath, fixedProject) {
             const g = open();
             if (name === 'memory_resume') {
                 // The live handoff needs no store: it reads the other session's chat file now.
-                const cfg = loadConfigSafe().config;
+                const cfg = serverConfig().config;
                 const project = here();
                 // A memory server always runs inside an agent: with no session record (Codex before its hooks are trusted, the
                 // Antigravity App), the newest chat written in the last minute is the asking session's own.
@@ -194,12 +217,9 @@ export function createServer(dbPath, fixedProject) {
             // Never lose an answer to the scope: nothing in this project falls back to every project, and says so.
             if (g.scope !== undefined && g.scope !== OFF && /^not recorded/.test(out)) {
                 const scope = g.scope;
-                const cfg = loadConfigSafe().config;
-                g.scope = undefined;
-                g.hide = cfg ? (root) => isOff(cfg, root) : undefined; // paused projects stay out of the fallback
+                g.scope = undefined; // paused folders stay out of the fallback too: g.off holds whatever the scope
                 const all = t.run(g, args);
                 g.scope = scope;
-                g.hide = undefined;
                 if (!/^not recorded/.test(all))
                     out = `Nothing in this project; from all projects:\n${all}`;
             }
@@ -294,7 +314,7 @@ export function createServer(dbPath, fixedProject) {
 /** Reads lines from `input` until it ends, writes one JSON line per reply to `output`. */
 export function serveStdio(input, output, dbPath) {
     // tools.output_chars in config.json sets the budget unless the environment already does.
-    const chars = loadConfigSafe().config?.outputChars;
+    const chars = serverConfig().config?.outputChars;
     if (chars && !process.env.THENWISE_OUTPUT_CHARS)
         process.env.THENWISE_OUTPUT_CHARS = String(chars);
     const server = createServer(dbPath);

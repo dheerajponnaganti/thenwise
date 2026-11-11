@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { parseFrontMatter, yamlValue } from "../core/frontmatter.js";
 import { maskSecrets } from "../core/secrets.js";
+import { offCheck } from "../ingest/config.js";
+import { Graph } from "../query/engine.js";
 export const TYPES = ['decision', 'dead_end', 'finding', 'rule', 'now'];
 export const EXPIRY_DAYS = 14;
 const FIELDS = ['id', 'type', 'title', 'summary', 'status', 'valid_from', 'valid_to', 'supersedes', 'sources', 'created', 'project', 'files'];
@@ -51,15 +53,42 @@ export function saveNote(memDir, n) {
     writeFileSync(n.path, `---\n${fm.join('\n')}\n---\n${n.summary}\n`, { mode: 0o600 });
     return n;
 }
+/** An unreviewed proposal older than EXPIRY_DAYS. Every place that shows the inbox expires these first, or leaves them out. */
+export const overdue = (n, nowMs) => n.status === 'inbox' && nowMs - Date.parse(n.created) > EXPIRY_DAYS * 86400000;
 export function expireInbox(memDir, nowMs) {
     const out = [];
     for (const n of readNotes(memDir)) {
-        if (n.status === 'inbox' && nowMs - Date.parse(n.created) > EXPIRY_DAYS * 86400000) {
+        if (overdue(n, nowMs)) {
             saveNote(memDir, { ...n, status: 'expired' });
             out.push(n.id);
         }
     }
     return out;
+}
+/** The ids of these notes that `thenwise off` holds back: off for everything, a source in the store from a paused folder
+ * (a chat, a commit, a PR), or a file in one. They are kept as they are and come back with `thenwise on`. */
+export function pausedNotes(notes, cfg, dbPath = join(cfg.memDir, 'graph.db')) {
+    const off = offCheck(cfg);
+    if (!off || !notes.length)
+        return new Set();
+    if (cfg.off)
+        return new Set(notes.map((n) => n.id));
+    let g;
+    try {
+        if (existsSync(dbPath))
+            (g = new Graph(dbPath, { lazy: true })).off = off;
+    }
+    catch { } // no readable store: the files still say where a note is from
+    const held = (id) => {
+        const x = g?.nodes.get(id);
+        return !!x && g.paused(x);
+    };
+    try {
+        return new Set(notes.filter((n) => (n.files ?? []).some(off) || n.sources.some(held)).map((n) => n.id));
+    }
+    finally {
+        g?.db.close();
+    }
 }
 /** Accept inbox (or expired) notes. A note keeps the date its evidence gives (a commit's `Decision:` line, a mined rule);
  * one with no date holds from now. A note that supersedes another closes it, with valid_to = the new valid_from. */

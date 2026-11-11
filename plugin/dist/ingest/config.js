@@ -1,6 +1,6 @@
 // Config for archive and ingest: <data folder>/config.json merged over defaults. All paths derive from `home`
 // so tests can run against a temp directory.
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expandHome, resolveDataDir } from "../core/home.js";
@@ -121,7 +121,8 @@ export function loadConfigSafe(home = homedir()) {
     const user = read.raw;
     const ing = user.ingest ?? {};
     const claudeDir = join(home, '.claude');
-    const expand = (p) => expandHome(p, home);
+    // A trailing slash would cut a letter off every path sliced by its root's length (#109). A disk root (`/`, `C:\`) keeps its own.
+    const expand = (p) => expandHome(p, home).replace(/(?<=[^\\/:])[\\/]+$/, '');
     const list = (v, dflt) => (Array.isArray(v) ? v : dflt).map(expand);
     const excludeProjects = user.exclude_projects ?? ['-private-tmp*', '*-claude-mem-observer-sessions'];
     // A fresh install ingests the projects found in its own history.
@@ -177,14 +178,30 @@ export function loadConfig(home = homedir()) {
     }
     return r.config;
 }
+/** A folder as written and as its real path: `/tmp/x` and `/private/tmp/x`, or a folder and a symlink to it, match. */
+function spellings(p) {
+    try {
+        return [...new Set([normPath(p), normPath(realpathSync(p))])];
+    }
+    catch {
+        return [normPath(p)]; // a folder that is gone is matched as written
+    }
+}
 /** True when Thenwise is paused everywhere, or for this folder or a folder inside a paused one. */
 export function isOff(cfg, projectPath) {
     if (cfg.off)
         return true;
-    if (!projectPath)
+    if (!projectPath || !cfg.offProjects.length)
         return false;
-    const p = normPath(projectPath);
-    return cfg.offProjects.some((o) => p === normPath(o) || p.startsWith(`${normPath(o)}/`));
+    const ps = spellings(projectPath);
+    return cfg.offProjects.some((o) => spellings(o).some((x) => ps.some((p) => p === x || p.startsWith(`${x}/`))));
+}
+/** The paused-folder check a Graph applies, once per folder; none when nothing is paused, so a search does no extra work. */
+export function offCheck(cfg) {
+    if (!cfg.off && !cfg.offProjects.length)
+        return undefined;
+    const seen = new Map();
+    return (f) => seen.get(f) ?? (seen.set(f, isOff(cfg, f)), seen.get(f));
 }
 /** Glob with `*` only, matched against a whole project key. */
 export function globMatch(pattern, text) {

@@ -39,10 +39,9 @@ function nodeTest(w) {
     }
     return false;
 }
-/** True when one of the command's parts (split at && || ; | and newlines, outside quotes) starts with a test runner.
- * A runner named inside a quoted string, an argument or a file name (`cat jest.config.js`, `git commit -m "npm test"`)
- * is no test run. */
-export function isTestRun(cmd) {
+/** A command's parts, split at && || ; | & and newlines outside quotes, each with the operator after it ('' for the
+ * last). The & of a redirect (`2>&1`, `&>log`) splits nothing. */
+export function commandParts(cmd) {
     const parts = [];
     let cur = '';
     let quote = '';
@@ -52,14 +51,22 @@ export function isTestRun(cmd) {
             (ch === quote && (quote = ''), (cur += ch));
         else if (ch === '"' || ch === "'")
             (quote = ch), (cur += ch);
-        else if (ch === ';' || ch === '\n' || ch === '|' || ch === '&')
-            (parts.push(cur), (cur = ''));
-        else
-            cur += ch;
+        else {
+            const two = cmd.slice(i, i + 2);
+            const op = two === '&&' || two === '||' ? two : ch === ';' || ch === '\n' || ch === '|' || (ch === '&' && !/[<>]$/.test(cur) && cmd[i + 1] !== '>') ? ch : '';
+            if (op)
+                (parts.push({ text: cur, op }), (cur = ''), (i += op.length - 1));
+            else
+                cur += ch;
+        }
     }
-    parts.push(cur);
-    return parts.some((p) => {
-        const w = runWords(p.trim().replace(/^\(+/, '').replace(/^cd\s+\S+\s*$/, ''));
-        return RUNNER.test(w.join(' ')) || nodeTest(w);
-    });
+    parts.push({ text: cur, op: '' });
+    return parts;
 }
+/** True when one part of the command (see `commandParts`) starts with a test runner. A runner named inside a quoted
+ * string, an argument or a file name (`cat jest.config.js`, `git commit -m "npm test"`) is no test run. */
+export const isTestRun = (cmd) => commandParts(cmd).some((p) => testPart(p.text));
+const testPart = (p) => {
+    const w = runWords(p.trim().replace(/^\(+/, '').replace(/^cd\s+\S+\s*$/, ''));
+    return RUNNER.test(w.join(' ')) || nodeTest(w);
+};

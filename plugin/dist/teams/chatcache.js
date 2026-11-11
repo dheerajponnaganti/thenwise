@@ -23,10 +23,12 @@ export function openChatCache(dir) {
     remaskCache(db);
     return db;
 }
+/** True when a newer Thenwise masked the cache: this one then neither masks it again nor adds to it (#137). */
+export const newerCache = (db) => Number(db.prepare("SELECT v FROM since WHERE k = 'mask'").get()?.v ?? 0) > MASK_VERSION;
 /** Text fetched under an older MASK_VERSION is masked again in place, so newer patterns reach chats fetched before, with no refetch. */
 function remaskCache(db) {
     const v = Number(db.prepare("SELECT v FROM since WHERE k = 'mask'").get()?.v ?? 0);
-    if (v === MASK_VERSION)
+    if (v >= MASK_VERSION)
         return;
     const m = (t) => (t == null ? t : maskSecrets(t).text);
     db.exec('BEGIN');

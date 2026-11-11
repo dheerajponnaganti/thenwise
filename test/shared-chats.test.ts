@@ -21,6 +21,7 @@ import { runHook, trimTrace } from '../src/hooks/hook.ts'
 import * as c from '../src/query/commands.ts'
 import { Graph } from '../src/query/engine.ts'
 import { teamChats, teamChatsPart, teamClaims } from '../src/ingest/parts.ts'
+import { MASK_VERSION } from '../src/core/secrets.ts'
 import { dropChat, openChatCache, putChat, readChats } from '../src/teams/chatcache.ts'
 import type { WireChat } from '../src/teams/chatcache.ts'
 import { archived, buildChat, formatPreview, loadShares, previewShare, pushShared, scrubber, setServerStatus, sharesStatus, unshareChats, updateShares } from '../src/teams/chats.ts'
@@ -1643,4 +1644,24 @@ test('GHSA-84q4 item 7: a synced chat or note is checked and masked like an impo
   } finally {
     srv.close()
   }
+})
+
+test('GHSA-84q4: a mask version bump masks again what the team caches already hold', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-remask-'))
+  const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  const db = openChatCache(dir)
+  db.prepare("INSERT INTO since VALUES ('mask', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(MASK_VERSION - 1) // fetched before the bump
+  db.prepare('INSERT INTO chats (owner, session, project, rev, started_at, ended_at, head, mask, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('ana', 's1', 'proj', 1, 1, 2, `deploy with ${token}`, 1, 9)
+  db.prepare('INSERT INTO passages (owner, session, turn, n, at, line, kind, text, paths, shas, prs, dead_end, dead_kind, dead_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('ana', 's1', 't1', 0, 1, `use ${token}`, 'turn', `DB_PASSWORD=correcthorse9 ${token}`, '[]', '[]', '[]', 1, 'phrase', `${token} failed`)
+  db.close()
+  const again = openChatCache(dir)
+  const held = JSON.stringify([again.prepare('SELECT * FROM chats').all(), again.prepare('SELECT * FROM passages').all()])
+  const v = (again.prepare("SELECT v FROM since WHERE k = 'mask'").get() as { v: number }).v
+  again.close()
+  assert.ok(!held.includes('a1B2c3D4e5'), held)
+  assert.equal(v, MASK_VERSION)
+  writeFileSync(join(dir, 'team-cache.json'), JSON.stringify({ since: 3, notes: { 'ana/n1': { owner: 'ana', id: 'n1', rev: 3, title: `rotate ${token}`, text: 'x' } } }))
+  const notes = readCache(dir)
+  assert.ok(!JSON.stringify(notes).includes('a1B2c3D4e5'))
+  assert.equal(notes.since, 3, 'no refetch is needed')
 })

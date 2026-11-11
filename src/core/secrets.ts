@@ -51,7 +51,7 @@ const SHELL_SET = /(\bsetx\s+\w*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTI
 
 export const MASK = '[secret masked]'
 /** Raise when the patterns change: the archive re-masks files masked by an older version. */
-export const MASK_VERSION = 7
+export const MASK_VERSION = 8
 
 export function maskSecrets(text: string): { text: string; count: number } {
   let count = 0

@@ -5,6 +5,8 @@ import { chmodSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
+
 export interface WireTurn {
   id: string
   at: number
@@ -49,7 +51,31 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS chats(owner TEXT NOT NULL, session TE
 CREATE TABLE IF NOT EXISTS passages(owner TEXT NOT NULL, session TEXT NOT NULL, turn TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER, line TEXT, kind TEXT, text TEXT NOT NULL, paths TEXT, shas TEXT, prs TEXT, dead_end INTEGER, dead_kind TEXT, dead_text TEXT DEFAULT '', PRIMARY KEY(owner, session, turn, n));
 CREATE TABLE IF NOT EXISTS since(k TEXT PRIMARY KEY, v INTEGER NOT NULL);`
 
-export const openChatCache = (dir: string): DatabaseSync => openChatFile(chatCacheFile(dir))
+export function openChatCache(dir: string): DatabaseSync {
+  const db = openChatFile(chatCacheFile(dir))
+  remaskCache(db)
+
+  return db
+}
+
+/** Text fetched under an older MASK_VERSION is masked again in place, so newer patterns reach chats fetched before, with no refetch. */
+function remaskCache(db: DatabaseSync) {
+  const v = Number((db.prepare("SELECT v FROM since WHERE k = 'mask'").get() as { v: number } | undefined)?.v ?? 0)
+  if (v === MASK_VERSION) return
+  const m = (t: string | null) => (t == null ? t : maskSecrets(t).text)
+  db.exec('BEGIN')
+  try {
+    const up = db.prepare('UPDATE passages SET line = ?, text = ?, dead_text = ?, prs = ? WHERE owner = ? AND session = ? AND turn = ? AND n = ?')
+    for (const r of db.prepare('SELECT owner, session, turn, n, line, text, dead_text, prs FROM passages').all() as any[]) up.run(m(r.line), m(r.text), m(r.dead_text), m(r.prs), r.owner, r.session, r.turn, r.n)
+    const uc = db.prepare('UPDATE chats SET head = ? WHERE owner = ? AND session = ?')
+    for (const r of db.prepare('SELECT owner, session, head FROM chats').all() as any[]) uc.run(m(r.head), r.owner, r.session)
+    db.prepare("INSERT INTO since VALUES ('mask', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(MASK_VERSION)
+    db.exec('COMMIT')
+  } catch (e) {
+    db.exec('ROLLBACK')
+    throw e
+  }
+}
 /** Any file in the chat cache's schema (an export file too), mode 0600. */
 export function openChatFile(f: string): DatabaseSync {
   const db = new DatabaseSync(f)

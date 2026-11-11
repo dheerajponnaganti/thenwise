@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { parseFrontMatter } from '../core/frontmatter.ts'
 import { logger } from '../core/log.ts'
 import { takeLock } from '../ingest/lock.ts'
-import { maskDeep, maskSecrets } from '../core/secrets.ts'
+import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'
 import type { Config } from '../ingest/config.ts'
@@ -292,11 +292,15 @@ export interface TeamNote {
 }
 export const cacheFile = (dir: string) => join(dir, 'team-cache.json')
 /** The teammates' notes this machine holds, keyed `owner/id`, and the newest team revision it has seen. */
-export function readCache(dir: string): { since: number; notes: Record<string, TeamNote> } {
+export function readCache(dir: string): { since: number; notes: Record<string, TeamNote>; mask?: number } {
   try {
-    return JSON.parse(readFileSync(cacheFile(dir), 'utf8'))
+    const c = JSON.parse(readFileSync(cacheFile(dir), 'utf8'))
+    // Notes fetched under an older MASK_VERSION are masked again; the next fetch writes them back with the version.
+    if (c.mask !== MASK_VERSION) c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION)
+
+    return c
   } catch {
-    return { since: 0, notes: {} }
+    return { since: 0, notes: {}, mask: MASK_VERSION }
   }
 }
 

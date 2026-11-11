@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Your chats, store and team caches are masked again and rebuilt once after this update, so the new masking reaches what was saved before. It runs in the background on the first sync.
 - The team server checks roles, token expiry, quotas and times more strictly.
 - A first archive stopped partway, such as by the background sync's 10-minute limit, keeps the chats it finished. The next sync goes on from there instead of starting over, and the half-written files a stopped run left are removed.
 - A mask update no longer drops the turns a Copilot, Codex or Antigravity chat file lost. The archive keeps its copy and masks that copy again.

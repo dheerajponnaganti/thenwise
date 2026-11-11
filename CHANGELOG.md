@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `thenwise forget` for a project folder no longer removes the chats of a sibling folder whose name differs only in punctuation, such as `my-app` and `my.app`.
+- `thenwise forget` for a project folder no longer removes the chats of a sibling folder whose name differs only in punctuation, such as `my-app` and `my.app`, and no longer blocks that folder's later chats. A chat that names no folder, under a name two folders share, stays, and `forget` says how to forget it by id.
 
 ## 0.3.1
 

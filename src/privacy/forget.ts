@@ -144,8 +144,11 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   const out = opts.print ?? ((l: string) => console.log(l))
   const folder = normPath(resolve(expandHome(target, cfg.home)))
   const all = chatsOf(cfg)
-  // A mangled key is shared by /x/my.app and /x/my-app: match by key only when the chat's folder is unknown.
-  const byProject = (c: Chat) => c.key === target || (c.cwd ? underFolder(c.cwd, folder) : c.key === claudeKey(folder))
+  // A mangled key is shared by /x/my.app and /x/my-app: match by key only when the chat's folder is unknown, and only when no
+  // chat under that key ran in another folder. Otherwise the chat could be the other folder's.
+  const shared = new Set(all.filter((c) => c.cwd && !underFolder(c.cwd, folder)).map((c) => c.key))
+  const unsure = (c: Chat) => !c.cwd && c.key === claudeKey(folder) && shared.has(c.key)
+  const byProject = (c: Chat) => c.key === target || (c.cwd ? underFolder(c.cwd, folder) : c.key === claudeKey(folder) && !shared.has(c.key))
   const named = (c: Chat) => `${c.id}${chatSuffix(c.key)}`
   // One session id in several project folders: the bare id is ambiguous, `<id>@<folder>` picks one.
   const same = all.filter((c) => c.id === target)
@@ -168,6 +171,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   const keys = [...new Set([...chats.map((c) => c.key), ...plans])]
   const base = join(cfg.memDir, 'archive')
   const gz = chats.flatMap((c) => [join(base, 'sessions', c.key, `${c.id}.jsonl.gz`), join(base, 'sessions', c.key, c.id), join(base, 'claude-projects', c.key, `${c.id}.jsonl`), join(base, 'claude-projects', c.key, c.id)]).filter(existsSync)
+  const left = all.filter((c) => unsure(c) && !chats.includes(c))
+  if (left.length) out(`${left.length} chat${left.length === 1 ? '' : 's'} in ${claudeKey(folder)} name${left.length === 1 ? 's' : ''} no folder and could be another folder's, so ${left.length === 1 ? 'it stays' : 'they stay'}. Forget by id: ${left.map((c) => `thenwise forget ${named(c)}`).join(', ')}`)
   out(`Will forget ${sessions.length} chat${sessions.length === 1 ? '' : 's'} (${projectWide ? `project ${target}` : `session ${target}`}); ${gz.length} archived item${gz.length === 1 ? '' : 's'} will be removed.`)
   if (!opts.yes && !(await (opts.confirm ?? confirmTty)('Forget them? This cannot be undone. [y/N] '))) return (out('Nothing was removed.'), 1)
 
@@ -175,8 +180,9 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   try {
     const tombs = loadTombs(cfg.memDir)
     if (projectWide) {
-      // A mangled key is shared by /x/my.app and /x/my-app: record one only for a key target or a chat with no folder known.
-      tombs.projects.push(...chats.filter((c) => byProject(c) && (c.key === target || !c.cwd)).map((c) => c.key))
+      // A mangled key is shared by /x/my.app and /x/my-app, so it is recorded only for a key target. A folder target is recorded as
+      // the folder, and its chats by session id, so the other folder's later chats still arrive.
+      tombs.projects.push(...chats.filter((c) => c.key === target).map((c) => c.key))
       tombs.folders.push(folder)
       tombs.sessions.push(...sessions)
     } else if (scoped) tombs.chats = [...(tombs.chats ?? []), ...chats.map((c) => `${c.key}/${c.id}`)]

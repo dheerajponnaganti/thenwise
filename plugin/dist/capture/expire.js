@@ -15,11 +15,11 @@ const canon = (p) => {
     if (!seen.has(p)) {
         let r = p;
         try {
-            r = realpathSync(p);
+            r = realpathSync.native(p);
         }
         catch {
             try {
-                r = join(realpathSync(dirname(p)), basename(p));
+                r = join(realpathSync.native(dirname(p)), basename(p));
             }
             catch { /* the folder is gone too: keep the path as stored */ }
         }

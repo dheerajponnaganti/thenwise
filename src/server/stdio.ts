@@ -119,7 +119,13 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     }
     if (!existsSync(p)) return undefined
     const s = statSync(p)
-    const now = `${s.ino}:${s.size}:${s.mtimeMs}`
+    // `thenwise off` and `on` change only the config, so its text is part of the signature. Text, not mtime: a save in
+    // the same clock tick can keep the inode, size and mtime.
+    let conf = ''
+    try {
+      conf = readFileSync(join(resolveDataDir(), 'config.json'), 'utf8')
+    } catch {} // no config yet
+    const now = `${s.ino}:${s.size}:${s.mtimeMs}\0${conf}`
     if (!graph || now !== sig) {
       const g = new Graph(p, { lazy: true })
       const cfg = loadConfigSafe().config

@@ -1,6 +1,8 @@
-// One holder at a time per lock file. A lock holds its pid, and is stale only when that process is dead or the machine restarted
-// since the lock was written. Its age alone never makes it stale: an ingest can run for long, and a laptop can sleep.
+// One holder at a time per lock file. A lock holds its pid, and is stale when that process is dead, the machine restarted since the
+// lock was written, or the process with that pid started after the lock was written (the pid was reused). Its age alone never makes
+// it stale: an ingest can run for long, and a laptop can sleep.
 
+import { spawnSync } from 'node:child_process'
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { uptime } from 'node:os'
 
@@ -8,28 +10,54 @@ import { alive } from '../core/progress.ts'
 
 const POLL_MS = 50
 // shortcut: the boot time is the wall clock minus uptime, so a clock step over a minute (NTP, a VM resume) can make a live lock look
-// older than this boot; store the holder's process start time if double runs show up after such steps.
+// older than this boot; compare the holder's start time instead of the boot time if double runs show up after such steps.
 const BOOT_SLACK_MS = 60_000 // two reads of the boot time differ by clock steps and rounding
 const TAKEOVER_MS = 10_000 // a takeover lasts microseconds; one this old was left by a crash
 
 // Locks this process took. A lock that names this process but is not in here was left by a dead process with the same pid.
 const taken = new Set<string>()
 
+const starts = new Map<string, number | undefined>()
+
+/** When the process with this pid started, or undefined when the OS cannot say (no `ps`, as in some containers). Asked once per
+ * lock seen, since a waiting taker reads the same lock many times. */
+function startedAt(pid: number, key: string): number | undefined {
+  if (starts.has(key)) return starts.get(key)
+  let at: number | undefined
+  try {
+    const r =
+      process.platform === 'win32'
+        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], { encoding: 'utf8', timeout: 10_000, windowsHide: true })
+        : spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000, env: { ...process.env, LC_ALL: 'C' } })
+    const t = Date.parse((r.stdout ?? '').trim()) // ps prints local time in whole seconds, which Date.parse reads as local
+    at = Number.isFinite(t) ? t : undefined
+  } catch {} // no way to ask: trust the pid
+  starts.set(key, at)
+
+  return at
+}
+
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const read = (f: string) => ({ text: readFileSync(f, 'utf8'), mtimeMs: statSync(f).mtimeMs })
 
-/** An empty lock is a holder that has not written its pid yet. A lock written before this boot is stale even if its pid lives again. */
-function holds({ text, mtimeMs }: { text: string; mtimeMs: number }): boolean {
+/** An empty lock is a holder that has not written its pid yet. A lock written before this boot is stale even if its pid lives again.
+ * With `deep`, a live pid whose process started after the lock was written is a reused pid, so the lock is stale too. */
+function holds({ text, mtimeMs }: { text: string; mtimeMs: number }, deep: boolean): boolean {
   const pid = Number(text.trim())
   if (!pid) return Date.now() - mtimeMs < 10_000
+  if (!alive(pid) || mtimeMs <= Date.now() - uptime() * 1000 - BOOT_SLACK_MS) return false
+  const start = deep ? startedAt(pid, `${pid}:${mtimeMs}`) : undefined
 
-  return alive(pid) && mtimeMs > Date.now() - uptime() * 1000 - BOOT_SLACK_MS
+  return start === undefined || start <= mtimeMs + 1000 // start times are whole seconds
 }
 
-/** True while a live process of this boot holds the lock. */
-export function lockHeld(file: string): boolean {
+/** True while a live process holds the lock. Asking the OS when that process started costs a process spawn, so a lock younger than
+ * `deepAfterMs` is trusted on its pid alone; a pid is reused only long after its process died. */
+export function lockHeld(file: string, deepAfterMs = 30 * 60000): boolean {
   try {
-    return holds(read(file))
+    const seen = read(file)
+
+    return holds(seen, Date.now() - seen.mtimeMs > deepAfterMs)
   } catch {
     return false // no lock, or released between the two reads
   }
@@ -54,7 +82,7 @@ export function takeLock(file: string, pid = process.pid): boolean {
       // A lock naming this very process that it did not take was left by a dead process with our pid, as in a container that
       // restarts with the same pids. One it took is still held: a second take waits like any other.
       const ours = Number(seen.text.trim()) === pid
-      if (ours ? taken.has(`${pid}:${file}`) : holds(seen)) return false
+      if (ours ? taken.has(`${pid}:${file}`) : holds(seen, true)) return false
     } catch {
       continue // released between our create and our read: try again
     }

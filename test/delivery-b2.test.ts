@@ -1,6 +1,6 @@
 // Delivery fixes B2: query scope and paths, branch labels, paging, resume brief, plans, and the hooks.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
 import { uptime } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
 import { readTarget, runHook, shortPath, syncRun } from '../src/hooks/hook.ts'
-import { dropLock, takeLock } from '../src/ingest/lock.ts'
+import { dropLock, lockHeld, takeLock } from '../src/ingest/lock.ts'
 import { keyOf, plansPart } from '../src/ingest/plans.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -254,7 +254,8 @@ test('#101: a lock is taken only from a dead process or an earlier boot, never f
   const lock = join(tempDir(), 'sync.lock')
   const at = (ms: number) => utimesSync(lock, new Date(ms), new Date(ms))
   const boot = Date.now() - uptime() * 1000
-  writeFileSync(lock, String(process.pid))
+  // A holder that has run since boot (pid 1, or the System process on Windows), so its lock can be old and still its own.
+  writeFileSync(lock, String(process.platform === 'win32' ? 4 : 1))
   at(Date.now() - Math.min(2 * 3_600_000, (Date.now() - boot) / 2)) // old, but after this boot
   assert.equal(takeLock(lock, process.pid + 1), false, 'a live pid with an old mtime holds')
   at(boot - 3_600_000)
@@ -284,6 +285,24 @@ test('#101: a lock is taken only from a dead process or an earlier boot, never f
   assert.ok(existsSync(lock))
   dropLock(lock, process.pid + 1)
   assert.ok(!existsSync(lock))
+})
+
+test('#101: a lock whose pid now belongs to a process started after the lock is stale, since the pid was reused', async () => {
+  const lock = join(tempDir(), 'sync.lock')
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+  try {
+    await new Promise((r) => setTimeout(r, 300))
+    writeFileSync(lock, String(child.pid))
+    const before = new Date(Date.now() - 5000)
+    utimesSync(lock, before, before) // written before the process with that pid started
+    assert.equal(lockHeld(lock, 0), false)
+    assert.equal(takeLock(lock, process.pid + 1), true)
+    writeFileSync(lock, String(child.pid)) // written while that process runs: its own lock
+    assert.equal(lockHeld(lock, 0), true)
+    assert.equal(takeLock(lock, process.pid + 1), false)
+  } finally {
+    child.kill()
+  }
 })
 
 // Windows has no signals: a killed child there reports no signal, and its pid is dead, so its lock is stale anyway.

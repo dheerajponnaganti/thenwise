@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -155,4 +155,21 @@ test('trailers wait in the inbox, once, until accepted', () => {
   accept(f.cfg.memDir, { ids: first.map((n) => n.id) }, new Date().toISOString())
   f.run()
   assert.equal([...new Graph(f.db).nodes.keys()].filter((k) => k.startsWith('curated:tr-')).length, 2)
+})
+
+test('#120: distill --since skips a chat recorded before the date without parsing it, and reads a recent chat whatever its file time', () => {
+  const f = fixture()
+  f.items([])
+  const dir = join(f.home, '.memory/archive')
+  const gz = (id: string) => join(dir, 'sessions/-proj', `${id}.jsonl.gz`)
+  const longAgo = new Date('2025-01-01T00:00:00Z')
+  // Not gzip: parsing it throws, so only the skip by the recorded time keeps this run alive.
+  writeFileSync(gz('s0'), 'not a chat')
+  // A recent chat with an old file time, as after a backup restore: s1 has its recorded time, s2 has none.
+  writeFileSync(gz('s2'), readFileSync(gz('s1')))
+  for (const id of ['s0', 's1', 's2']) utimesSync(gz(id), longAgo, longAgo)
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ '-proj/s0.jsonl': { mtimeMs: longAgo.getTime() }, '-proj/s1.jsonl': { mtimeMs: Date.parse('2026-10-01T10:01:01Z') } }))
+  const r = distill(f.cfg, { dryRun: true, since: '2026-01-01', now: Date.parse('2026-10-02T00:00:00Z') })
+  for (const id of ['s1', 's2']) assert.ok(r.lines.some((l) => l.startsWith(`session ${id}:`)), r.lines.join('\n'))
+  assert.ok(!r.lines.some((l) => l.includes('s0')))
 })

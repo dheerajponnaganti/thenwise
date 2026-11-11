@@ -345,7 +345,7 @@ function hintBlock(env: HookEnv, input: Record<string, any>, file: string): stri
   if (typeof session !== 'string' || !existsSync(join(env.dir, 'graph.db'))) return ''
   if (seen(env, session, input.agent_id, file)) return ''
   const path = shortPath(file, cwd)
-  const block = trimTrace(query(env, ['trace', path, '--fast', ...(cwd ? ['--project', cwd] : [])]), path)
+  const block = trimTrace(query(env, ['trace', path, ...(cwd ? ['--project', cwd] : [])]), path)
   if (block !== '') markSeen(env, session, input.agent_id, file)
 
   return block
@@ -392,7 +392,7 @@ function resumeAfterCompact(env: HookEnv, cwd: string, graph: string, tail: stri
   if (!existsSync(graph) && !tail) return log(env, 'no memory yet, no resume brief') ?? ''
   const topic = projectName(cwd)
   // Inside a repo the project is the repo root (the scope), not a folder-name substring; elsewhere the name is all there is.
-  const brief = existsSync(graph) ? query(env, ['resume', '--fast', ...(cwd && repoRoot(cwd) ? [] : [topic]), ...(cwd ? ['--project', cwd] : [])]).trim() : ''
+  const brief = existsSync(graph) ? query(env, ['resume', ...(cwd && repoRoot(cwd) ? [] : [topic]), ...(cwd ? ['--project', cwd] : [])]).trim() : ''
 
   return resumeBlock([tail, brief.startsWith('not recorded') ? '' : brief].filter(Boolean).join('\n\n'), topic)
 }

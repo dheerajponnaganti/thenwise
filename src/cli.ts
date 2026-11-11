@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // Entry point: checks the runtime before anything loads SQLite, then runs main.ts.
 
+// A pipe can be asynchronous (it is on macOS), so process.exit would drop output past 64 KB. This covers every command and hook.
+// Node does the same for TTYs and Windows pipes; a file has no handle and is already synchronous.
+for (const s of [process.stdout, process.stderr]) (s as unknown as { _handle?: { setBlocking?: (b: boolean) => void } })._handle?.setBlocking?.(true)
+
 // The hooks on most tool calls stop here when they have nothing to do, before SQLite and the store code load.
 if (process.argv[2] === 'hook' && ['post', 'read', 'prompt', 'stop', 'stop-failure'].includes(process.argv[3]!)) {
   const { hookInput, nothingToDo } = await import('./hooks/entry.ts')

@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
+import { World } from './world.ts'
+
 const run = (data: string, ...args: string[]) => {
   const home = mkdtempSync(join(tmpdir(), 'tw-err-'))
   return spawnSync(process.execPath, [resolve('src/cli.ts'), ...args], { encoding: 'utf8', env: { ...process.env, HOME: home, THENWISE_HOME: data } })
@@ -80,4 +82,19 @@ test('#75: a damaged team chat cache is named as the cache, to delete and fetch 
   const r = run(data, 'ingest')
   oneLine(r, /The team chat cache .*team-chats\.db is damaged: delete it, and the next team sync fetches the chats again\./)
   assert.doesNotMatch(r.stderr, /delete graph\.db/)
+})
+
+test('#104: piped output longer than 64 KB arrives whole', () => {
+  const w = new World()
+  try {
+    w.chat('s1', { turns: [{ prompt: `walrus ${'tusk '.repeat(40_000)}`, at: '2026-10-12T10:00:00Z' }] })
+    w.archive()
+    w.ingest('x.db', { db: join(w.memDir, 'graph.db') })
+    // spawnSync reads stdout through a pipe, like the agent's Bash tool, and get prints one large string, then exits.
+    const r = spawnSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), 'get', 'turn:s1-0'], { cwd: w.proj, encoding: 'utf8', env: { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir } })
+    assert.equal(r.status, 0)
+    assert.ok(r.stdout.length > 200_000, `${r.stdout.length} characters arrived`)
+  } finally {
+    w.destroy()
+  }
 })

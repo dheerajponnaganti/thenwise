@@ -135,6 +135,23 @@ test('the first run is silent; after an update it says so, once, with the link',
   assert.equal(updateNotice(w.cfg, '0.1.26'), '')
 })
 
+test('#113: two tools on different versions announce an update once, and a downgrade never repeats it', () => {
+  const w = world()
+  updateNotice(w.cfg, '0.3.0')
+  assert.match(updateNotice(w.cfg, '0.3.1'), /updated to 0\.3\.1/)
+  // Copilot still runs 0.3.0 and Claude Code runs 0.3.1; they share one state file.
+  for (let i = 0; i < 3; i++) {
+    assert.equal(updateNotice(w.cfg, '0.3.0'), '', 'the older tool says nothing')
+    assert.equal(updateNotice(w.cfg, '0.3.1'), '', 'the newer tool said it once already')
+  }
+  assert.equal(w.state().ran, '0.3.1', 'ran keeps the newest version seen')
+  // A real downgrade and a return to the same version: that version was already announced.
+  assert.equal(updateNotice(w.cfg, '0.2.9'), '')
+  assert.equal(updateNotice(w.cfg, '0.3.1'), '')
+  // Moving past the newest version seen is a new update.
+  assert.match(updateNotice(w.cfg, '0.3.2'), /updated to 0\.3\.2/)
+})
+
 test('with auto-update on, only the update itself is mentioned', () => {
   const w = world()
   mkdirSync(join(w.cfg.claudeDir, 'plugins'), { recursive: true })

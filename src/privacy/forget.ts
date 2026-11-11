@@ -10,6 +10,7 @@ import { backup } from '../backup/backup.ts'
 import { readNotes } from '../capture/notes.ts'
 import { expandHome, legacyDir } from '../core/home.ts'
 import { normPath } from '../core/vault-index.ts'
+import { headCwd } from '../hooks/handoff.ts'
 import { takeLock } from '../hooks/hook.ts'
 import { antigravityDirs, antigravitySources } from '../ingest/antigravity.ts'
 import { codexDir, codexSources } from '../ingest/codex.ts'
@@ -75,7 +76,17 @@ function chatsOf(cfg: Config): Chat[] {
     }
   } catch {} // no manifest yet: the folder scan below still finds every chat
   for (const root of [join(base, 'sessions'), join(base, 'claude-projects'), join(cfg.claudeDir, 'projects')]) {
-    for (const p of list(root).filter((e) => e.isDirectory())) for (const e of list(join(root, p.name))) add(p.name, e.name.replace(/\.jsonl(\.gz)?$/, ''))
+    for (const p of list(root).filter((e) => e.isDirectory())) {
+      for (const e of list(join(root, p.name))) {
+        const id = e.name.replace(/\.jsonl(\.gz)?$/, '')
+        // A chat not yet archived has no cwd in the manifest: its own first lines name the folder.
+        if (!cwds.has(`${p.name}/${id}`) && e.isFile() && e.name.endsWith('.jsonl')) {
+          const cwd = headCwd(join(root, p.name, e.name))
+          if (cwd) cwds.set(`${p.name}/${id}`, cwd)
+        }
+        add(p.name, id)
+      }
+    }
   }
   for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home)]) {
     cwds.set(`${c.rel.split('/')[0]}/${c.id}`, c.cwd)
@@ -133,7 +144,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   const out = opts.print ?? ((l: string) => console.log(l))
   const folder = normPath(resolve(expandHome(target, cfg.home)))
   const all = chatsOf(cfg)
-  const byProject = (c: Chat) => c.key === target || c.key === claudeKey(folder) || (!!c.cwd && underFolder(c.cwd, folder))
+  // A mangled key is shared by /x/my.app and /x/my-app: match by key only when the chat's folder is unknown.
+  const byProject = (c: Chat) => c.key === target || (c.cwd ? underFolder(c.cwd, folder) : c.key === claudeKey(folder))
   const named = (c: Chat) => `${c.id}${chatSuffix(c.key)}`
   // One session id in several project folders: the bare id is ambiguous, `<id>@<folder>` picks one.
   const same = all.filter((c) => c.id === target)

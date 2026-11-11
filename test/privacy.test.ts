@@ -270,6 +270,31 @@ test('S7-H3: forget a project folder removes every chat of that project and no o
   assert.equal(archived(w.data).length, 1, 'a later sync leaves the project out')
 })
 
+test('#99: forget removes only the named folder\'s chats, not a sibling with the same mangled key', () => {
+  const w = world({})
+  const dash = join(w.work, 'my-app')
+  const dot = join(w.work, 'my.app')
+  // Claude Code files both folders under one key.
+  const key = w.proj(dash.replace(/[^A-Za-z0-9]/g, '-'))
+  chat(key, 'dash1', dash, 'dash archived heron')
+  chat(key, 'dot1', dot, 'dot archived walrus')
+  w.sync()
+  chat(key, 'dash2', dash, 'dash fresh heron')
+  chat(key, 'dot2', dot, 'dot fresh walrus')
+  const r = w.cli(['forget', dash, '--yes'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /Will forget 2 chats/)
+  const names = () => archived(w.data).map((f) => basename(f)).sort()
+  assert.deepEqual(names(), ['dot1.jsonl.gz'])
+  const tombs = JSON.parse(readFileSync(join(w.data, 'forgotten.json'), 'utf8'))
+  assert.deepEqual(tombs.sessions, ['dash1', 'dash2'])
+  assert.deepEqual(tombs.projects, [])
+  w.sync()
+  assert.deepEqual(names(), ['dot1.jsonl.gz', 'dot2.jsonl.gz'], 'a re-archive brings back nothing of my-app')
+  assert.match(search(w, 'walrus'), /walrus/)
+  assert.match(search(w, 'heron'), /not recorded/)
+})
+
 test('S7-B7: forget waits for a running sync, and the item is gone after both end', async () => {
   const w = world()
   w.sync()

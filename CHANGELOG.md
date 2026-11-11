@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `thenwise forget` for a project folder no longer removes the chats of a sibling folder whose name differs only in punctuation, such as `my-app` and `my.app`.
+
 ## 0.3.1
 
 - A paused project (`thenwise off --project`) no longer gets a brief of its past work when a session starts there. The sync for your other projects still runs.

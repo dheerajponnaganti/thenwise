@@ -52,7 +52,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
   // With no words the text comes on stdin, so an agent's command line never holds it.
   const text = (words.length || process.stdin.isTTY ? words.join(' ') : readFileSync(0, 'utf8')).trim()
   if (!text) (console.error(`usage: thenwise ${cmd} "<what>" [--here] [--file <path>]... (or the text on stdin)`), process.exit(2))
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const { makeId, readNotes, saveNote } = await import('./capture/notes.ts')
   const { related } = await import('./capture/similar.ts')
   const { Graph } = await import('./query/engine.ts')
@@ -62,6 +62,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
   let project = ''
   if (existsSync(db)) {
     const g = new Graph(db, { lazy: true })
+    g.off = offCheck(cfg) // a paused chat is never a note's source
     if (process.argv.includes('--here')) g.scopeTo(process.cwd())
     const ses = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team).sort((a, b) => Date.parse(b.until || b.at) - Date.parse(a.until || a.at))[0]
     if (ses) [source, project] = [ses.id, ses.project]
@@ -308,7 +309,7 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
 const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'digest', 'path', 'get', 'tests', 'cost']
 if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const { Graph, endOf, sinceOf } = await import('./query/engine.ts')
   const c = await import('./query/commands.ts')
   // Positional words are everything after the command that is not a flag or a flag value.
@@ -337,6 +338,7 @@ if (cmd && QUERY.includes(cmd)) {
   }
   if (!existsSync(dbPath)) (live ? (console.log(live), process.exit(0)) : (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2)))
   const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }) // lazy reads only what the command touches; --full loads the whole graph
+  g.off = offCheck(cfg) // with or without a scope, and for the hooks' queries too
   g.expand = process.argv.includes('--expand')
   // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
   const opts = cmd === 'tests' ? lead : process.argv

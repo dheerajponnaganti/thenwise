@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
-import { isOff, loadConfigSafe } from '../ingest/config.ts'
+import { isOff, loadConfigSafe, offCheck } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { handoffBlock, ownChat } from '../hooks/handoff.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
@@ -131,6 +131,7 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       const cfg = loadConfigSafe().config
       // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
       const project = here()
+      g.off = cfg ? offCheck(cfg) : undefined
       if (cfg && isOff(cfg, project)) g.scope = OFF
       else if (project && cfg?.scope !== 'all') g.scopeTo(project)
       try {
@@ -202,12 +203,9 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       // Never lose an answer to the scope: nothing in this project falls back to every project, and says so.
       if (g.scope !== undefined && g.scope !== OFF && /^not recorded/.test(out)) {
         const scope = g.scope
-        const cfg = loadConfigSafe().config
-        g.scope = undefined
-        g.hide = cfg ? (root) => isOff(cfg, root) : undefined // paused projects stay out of the fallback
+        g.scope = undefined // paused folders stay out of the fallback too: g.off holds whatever the scope
         const all = t.run(g, args)
         g.scope = scope
-        g.hide = undefined
         if (!/^not recorded/.test(all)) out = `Nothing in this project; from all projects:\n${all}`
       }
 

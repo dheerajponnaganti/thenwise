@@ -60,32 +60,46 @@ interface Remotes {
   unknown: boolean
 }
 const remoteCache = new Map<string, Remotes>()
-/** A repo's remotes, read from its git config (no git run). A path, a `file://` url or a relative path is a local remote. */
-function remotesOf(root: string): Remotes {
-  const key = real(root)
-  const have = remoteCache.get(key)
-  if (have) return have
-  const out: Remotes = { urls: [], locals: [], unknown: false }
+/** The fetch urls of a repo's remotes as git resolves them (`insteadOf` rewrites, `include`d files): one git run. */
+function remoteUrls(key: string): string[] {
+  try {
+    const out = execFileSync('git', ['-C', key, 'remote', '-v'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+
+    return out.split('\n').map((l) => /^\S+\t(.+) \(fetch\)$/.exec(l)?.[1]?.trim()).filter((u): u is string => !!u)
+  } catch {
+    // git cannot run here: read the config file as written, without rewrites
+  }
+  const urls: string[] = []
   try {
     const dot = join(key, '.git')
     const dir = existsSync(join(dot, 'config')) ? dot : existsSync(dot) ? resolve(key, /^gitdir:\s*(.+)$/m.exec(readFileSync(dot, 'utf8'))?.[1]?.trim() ?? '.git') : key // key itself: a bare repo
     let inRemote = false
     for (const l of readFileSync(join(dir, 'config'), 'utf8').split(/\r?\n/)) {
       if (/^\s*\[/.test(l)) inRemote = /^\s*\[\s*remote\s+"/.test(l)
-      else if (inRemote && /^\s*url\s*=/.test(l)) {
-        const u = l.replace(/^\s*url\s*=\s*/, '').trim()
-        // git reads a url with no scheme and no colon before the first slash as a path; `C:\\` is a Windows path.
-        const path = /^file:\/\//i.test(u) ? decodeURIComponent(u.replace(/^file:\/\//i, '')) : /^[a-z][\w+.-]*:\/\//i.test(u) || (/^[^/\\]*:/.test(u) && !/^[A-Za-z]:[/\\]/.test(u)) ? undefined : u
-        if (path === undefined) out.urls.push(normRemote(u))
-        else {
-          const r = localRepo(resolve(key, path.replace(/^~(?=[/\\]|$)/, homedir())))
-          if (r) out.locals.push(r)
-          else out.unknown = true
-        }
-      }
+      else if (inRemote && /^\s*url\s*=/.test(l)) urls.push(l.replace(/^\s*url\s*=\s*/, '').trim())
     }
   } catch {
     // no readable config: no remotes known
+  }
+
+  return urls
+}
+/** A repo's remotes. A path, a `file://` url or a relative path is a local remote. */
+function remotesOf(root: string): Remotes {
+  const key = real(root)
+  const have = remoteCache.get(key)
+  if (have) return have
+  const out: Remotes = { urls: [], locals: [], unknown: false }
+  for (const u of remoteUrls(key)) {
+    // git reads a url with no scheme and no colon before the first slash as a path; `C:\\` is a Windows path.
+    const path = /^file:\/\//i.test(u) ? decodeURIComponent(u.replace(/^file:\/\//i, '')) : /^[a-z][\w+.-]*:\/\//i.test(u) || (/^[^/\\]*:/.test(u) && !/^[A-Za-z]:[/\\]/.test(u)) ? undefined : u
+    const host = /^(?:[^@/:]+@)?([^/:]+):/.exec(u)?.[1]
+    if (path !== undefined) {
+      const r = localRepo(resolve(key, path.replace(/^~(?=[/\\]|$)/, homedir())))
+      if (r) out.locals.push(r)
+      else out.unknown = true
+    } else if (!/^[a-z][\w+.-]*:\/\//i.test(u) && host && !host.includes('.') && host !== 'localhost') out.unknown = true // an alias git did not rewrite
+    else out.urls.push(normRemote(u))
   }
   remoteCache.set(key, out)
 

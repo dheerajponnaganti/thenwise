@@ -1333,6 +1333,28 @@ test('GHSA-5jmx item 1: a clone of a local repo is the same project', needs, asy
   }
 })
 
+test('GHSA-5jmx item 1: a remote written through insteadOf matches its full url', () => {
+  const w = sender()
+  try {
+    git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+    const short = join(w.home, 'short', 'proj')
+    const alias = join(w.home, 'alias', 'proj')
+    for (const d of [short, alias]) execFileSync('git', ['clone', '-q', w.proj, d])
+    git(short, 'remote', 'set-url', 'origin', 'gl:acme/proj')
+    git(short, 'config', 'url.git@gitlab.com:.insteadOf', 'gl:')
+    // An alias git cannot rewrite proves nothing, so the first commit decides.
+    git(alias, 'remote', 'set-url', 'origin', 'zz:acme/proj')
+    w.chat('inshort', { turns: [{ prompt: 'Work in the short clone', reply: 'Done there.' }], cwd: short }, '-home-short-proj')
+    w.chat('inalias', { turns: [{ prompt: 'Work in the alias clone', reply: 'Done there too.' }], cwd: alias }, '-home-alias-proj')
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inalias', 'inshort'])
+  } finally {
+    w.destroy()
+  }
+})
+
 test('GHSA-5jmx item 5: a second clone of a non-GitHub repo is added, not swapped', needs, async () => {
   const t = await team()
   try {

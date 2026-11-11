@@ -8,6 +8,7 @@ import { trigramSim } from '../capture/similar.ts'
 import { isTestFile } from '../ingest/facts.ts'
 import { checkoutTop } from '../ingest/repos.ts'
 import { ago } from '../core/time.ts'
+import { normPath } from '../core/vault-index.ts'
 
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i]
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i]
@@ -162,7 +163,7 @@ function turnDid(g: Graph, n: Node): string {
  * the same file the same way. */
 export const inRoot = (g: Graph, turn: Node, file: string) => {
   const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/') // file ids use forward slashes
-  const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`))
+  const root = [checkoutTop(cwd), g.rootOf(turn), cwd].map((r) => r && normPath(r)).find((r) => r && file.startsWith(`${r}/`))
   return root ? file.slice(root.length + 1) : file
 }
 /** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable

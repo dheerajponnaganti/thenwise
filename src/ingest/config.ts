@@ -184,7 +184,8 @@ export function loadConfigSafe(home: string = homedir()): { config: Config | nul
   const user = read.raw
   const ing = user.ingest ?? {}
   const claudeDir = join(home, '.claude')
-  const expand = (p: string) => expandHome(p, home)
+  // A trailing slash would cut a letter off every path sliced by its root's length (#109). A disk root (`/`, `C:\`) keeps its own.
+  const expand = (p: string) => expandHome(p, home).replace(/(?<=[^\\/:])[\\/]+$/, '')
   const list = (v: unknown, dflt: string[]) => (Array.isArray(v) ? (v as string[]) : dflt).map(expand)
   const excludeProjects: string[] = user.exclude_projects ?? ['-private-tmp*', '*-claude-mem-observer-sessions']
   // A fresh install ingests the projects found in its own history.

@@ -33,7 +33,12 @@ function check(ref, sha) {
   const fresh = lines(git('rev-list', commit, '--not', `--remotes=${REMOTE}`))
   if (!fresh.length) return hits
   const base = baseOf(commit)
-  if (!base) return [...hits, `${ref} does not start from ${REMOTE}/main or ${REMOTE}/release, so it would publish private history`]
+  if (!base) {
+    // Shares history with a public branch but not its tip: an old cut, so say how to fix it.
+    const behind = ['main', 'release'].find((b) => attempt('merge-base', `refs/remotes/${REMOTE}/${b}`, commit))
+    if (behind) return [...hits, `${ref} is behind ${REMOTE}/${behind}: rebase on ${REMOTE}/${behind}`]
+    return [...hits, `${ref} does not start from ${REMOTE}/main or ${REMOTE}/release, so it would publish private history`]
+  }
   for (const c of fresh) hits.push(...scanMessage(git('log', '-1', '--format=%B', c)).map((h) => `commit ${c.slice(0, 7)}: ${h}`))
   for (const file of lines(git('diff', '--name-only', '--diff-filter=ACMR', base, commit))) {
     const text = execFileSync('git', ['show', `${commit}:${file}`], { maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] }).toString('latin1')

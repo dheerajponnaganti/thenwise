@@ -2,7 +2,7 @@
 
 ## 0.3.2
 
-- Windows: a folder written with its short name (such as `RUNNER~1`) now matches the same folder written in full, so its chats are scoped and shared with the right repo.
+- Windows: team sharing knows a second checkout of the shared repo even when the two paths spell a folder differently, such as a short name like `RUNNER~1`.
 - Your chats, store and team caches are masked again and rebuilt once after this update, so the new masking reaches what was saved before. It runs in the background on the first sync.
 - The team server checks roles, token expiry, quotas and times more strictly.
 - A first archive stopped partway, such as by the background sync's 10-minute limit, keeps the chats it finished. The next sync goes on from there instead of starting over, and the half-written files a stopped run left are removed.

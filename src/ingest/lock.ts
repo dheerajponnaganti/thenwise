@@ -5,7 +5,7 @@ import { closeSync, openSync, readFileSync, rmSync, statSync, writeFileSync } fr
 const STALE_MS = 30 * 60000 // a lock this old belongs to a crashed run
 const POLL_MS = 50
 
-const alive = (pid: number) => {
+export const alive = (pid: number) => {
   try {
     process.kill(pid, 0)
 

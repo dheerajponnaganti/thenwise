@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2
 
 - Your chats, store and team caches are masked again and rebuilt once after this update, so the new masking reaches what was saved before. It runs in the background on the first sync.
 - The team server checks roles, token expiry, quotas and times more strictly.

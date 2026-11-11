@@ -3,7 +3,7 @@
 // Claude Code's own chat files. Those files are never touched. The whole run holds the sync lock.
 
 import { chmodSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { backup } from '../backup/backup.ts'
@@ -177,7 +177,11 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
   if (!opts.yes && !(await (opts.confirm ?? confirmTty)('Forget them? This cannot be undone. [y/N] '))) return (out('Nothing was removed.'), 1)
 
   lockSync(join(cfg.memDir, 'sync.lock'), opts.waitMs ?? 10 * 60000)
+  // A manual `thenwise archive` or setup holds only the archive lock: take it too, so it cannot write back the entries removed here.
+  const archiveLock = join(cfg.memDir, 'archive', 'archive.lock')
+  let archiveHeld = false
   try {
+    if (existsSync(dirname(archiveLock))) (lockSync(archiveLock, opts.waitMs ?? 10 * 60000), (archiveHeld = true))
     const tombs = loadTombs(cfg.memDir)
     if (projectWide) {
       // A mangled key is shared by /x/my.app and /x/my-app, so it is recorded only for a key target. A folder target is recorded as
@@ -263,6 +267,7 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     out('  copies teammates already pulled')
   } finally {
     tighten(cfg.memDir)
+    if (archiveHeld) rmSync(archiveLock, { force: true })
     rmSync(join(cfg.memDir, 'sync.lock'), { force: true })
   }
 

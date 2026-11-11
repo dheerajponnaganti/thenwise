@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename, delimiter, dirname } from 'node:path'
 import { test } from 'node:test'
@@ -310,6 +310,27 @@ test('#99: with no sibling folder, a chat that names no folder goes with its pro
   assert.match(r.stdout, /Will forget 2 chats/)
   assert.doesNotMatch(r.stdout, /names no folder/)
   assert.match(search(w, 'ibis'), /not recorded/)
+})
+
+test('#99: forget waits for a manual archive, so the archive cannot write back what forget removed', async () => {
+  const w = world()
+  w.sync()
+  // A manual `thenwise archive` holds only the archive lock, not the sync lock.
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+  const lock = join(w.data, 'archive', 'archive.lock')
+  try {
+    await new Promise((r) => setTimeout(r, 200))
+    writeFileSync(lock, String(holder.pid))
+    const before = readFileSync(join(w.data, 'archive', 'manifest.json'), 'utf8')
+    await assert.rejects(forget(w.cfg(), 'a1', { yes: true, print: () => {}, waitMs: 300 }), /archive\.lock/)
+    assert.equal(readFileSync(join(w.data, 'archive', 'manifest.json'), 'utf8'), before, 'nothing was changed while the archive ran')
+    assert.ok(!existsSync(join(w.data, 'sync.lock')), 'the sync lock is released')
+  } finally {
+    holder.kill()
+  }
+  rmSync(lock, { force: true })
+  assert.equal(await forget(w.cfg(), 'a1', { yes: true, print: () => {} }), 0)
+  assert.ok(!existsSync(lock), 'forget releases the archive lock')
 })
 
 test('S7-B7: forget waits for a running sync, and the item is gone after both end', async () => {

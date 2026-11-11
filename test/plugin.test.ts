@@ -107,6 +107,30 @@ test('S6-B5: a file with no history gets no hint', () => {
   assert.equal(runHook('read', { tool_name: 'Read', tool_input: { file_path: '/elsewhere/photo.png' }, session_id: 's', cwd: '/x/p' }, env), '')
 })
 
+test('#119: a file or test with no history is queried once per session, and a failed query is tried again', () => {
+  const env = withStore()
+  // Stand-in clis that count their runs: one answers with nothing, one fails.
+  const calls = join(env.dir, 'calls')
+  const stub = (name: string, code: number) => {
+    writeFileSync(join(env.dir, name), `require('fs').appendFileSync(${JSON.stringify(calls)}, 'x'); process.exit(${code})\n`)
+    return join(env.dir, name)
+  }
+  const count = () => (existsSync(calls) ? readFileSync(calls, 'utf8').length : 0)
+  const read = (cli: string, session: string) => runHook('read', { tool_name: 'Read', tool_input: { file_path: '/x/p/src/plain.ts' }, session_id: session, cwd: '/x/p' }, { dir: env.dir, cli })
+  const test = (cli: string, session: string) => runHook('post', { tool_name: 'Bash', tool_input: { command: 'npm test' }, session_id: session, cwd: '/x/p' }, { dir: env.dir, cli })
+  const empty = stub('empty.cjs', 0)
+  const failing = stub('failing.cjs', 1)
+  for (const run of [read, test]) {
+    const before = count()
+    assert.equal(run(failing, `${run.name}-a`), '')
+    assert.equal(run(failing, `${run.name}-a`), '')
+    assert.equal(count() - before, 2) // no answer: nothing is marked
+    assert.equal(run(empty, `${run.name}-a`), '')
+    assert.equal(run(empty, `${run.name}-a`), '')
+    assert.equal(count() - before, 3) // answered with nothing: asked once
+  }
+})
+
 test('S6-B6: hook output is cut to its token cap', () => {
   const long = `${'- [decision] x\n   | because '.repeat(2000)}`
   const block = trimTrace(long, 'f')

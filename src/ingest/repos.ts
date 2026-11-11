@@ -42,7 +42,8 @@ export function repoRoot(dir: string): string | undefined {
 
 export const real = (p: string) => {
   try {
-    return realpathSync(p)
+    // native: on Windows it also expands short 8.3 names (RUNNER~1), so two spellings of one folder compare equal
+    return realpathSync.native(p)
   } catch {
     return p
   }

@@ -44,6 +44,8 @@ const sameProject = (found: string | undefined, repo: string) =>
 
 export interface SharedProject {
   repo: string
+  /** More clones shared under the same name, for a repo with no GitHub slug. Older versions read only `repo`. */
+  repos?: string[]
   /** `paused` keeps what is on the server and sends nothing new; `removed` is an unshare (a config entry stays off until shared again). */
   status: 'active' | 'paused' | 'removed'
   /** Only chats that began on or after this ISO date. */
@@ -90,6 +92,8 @@ export function saveShares(dir: string, s: Shares) {
   chmodSync(tmp, 0o600)
   renameSync(tmp, sharesFile(dir))
 }
+/** Every clone a shared project sends from: `repo`, then `repos`. */
+export const clonesOf = (p: SharedProject) => [p.repo, ...(p.repos ?? [])]
 export const updateShares = (dir: string, fn: (s: Shares) => void) =>
   locked(dir, () => {
     const s = loadShares(dir)
@@ -183,7 +187,7 @@ export interface Built {
 const atBoundary = (dir: string) => new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:([/\\\\])|(?![\\w-])(?!\\.\\w))`, 'g')
 
 /** What one archived chat gives as a unit, or why it stays home. `repo` is the shared project's checkout. */
-export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: string) => string, opts: { since?: string; tombs?: ReturnType<typeof loadTombs> } = {}): Built | { skip: Skip } {
+export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: string) => string, opts: { since?: string; tombs?: ReturnType<typeof loadTombs> } = {}): Built | { skip: Skip; repo?: string } {
   const read = (path: string, sub = false) => {
     const s = parseSession(chatLines(path), c.session, cfg.home, '', sub)
     for (const t of s.turns) t.reply = t.reply.filter((r) => !t.agentReports.includes(r)) // tool output never travels
@@ -197,7 +201,8 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   if (isOff(cfg, s.cwd)) return { skip: 'paused' }
   if (!cfg.includeEntrypoints.includes(s.entrypoint)) return { skip: 'entry' }
   const wd = workDirs(cfg, editDirs(s))
-  if (!sameProject(sessionRepo(s.cwd, wd), repo)) return { skip: 'other' }
+  const found = sessionRepo(s.cwd, wd)
+  if (!sameProject(found, repo)) return { skip: 'other', ...(found ? { repo: found } : {}) } // `repo`: the chat's own repo, found on disk
   if (opts.since && Date.parse(s.start) < Date.parse(opts.since)) return { skip: 'since' }
 
   const parts: SessionPart[] = [sessionPart(s, 'x')]
@@ -356,12 +361,12 @@ export interface Active {
 /** The projects to send: those named in config.json and those shared from the command line, minus paused and removed ones. */
 export function activeProjects(cfg: Config, sh: Shares): Active[] {
   const out = new Map<string, Active>()
-  const stop = new Set(Object.values(sh.projects).filter((p) => p.status !== 'active').map((p) => real(p.repo)))
+  const stop = new Set(Object.values(sh.projects).filter((p) => p.status !== 'active').flatMap((p) => clonesOf(p).map(real)))
   for (const r of cfg.shareChats) {
     const root = repoRoot(r)
     if (root && !stop.has(real(root))) out.set(real(root), { name: projectKey(root), repo: real(root) })
   }
-  for (const p of Object.values(sh.projects)) if (p.status === 'active' && existsSync(p.repo)) out.set(real(p.repo), { name: projectKey(p.repo), repo: real(p.repo), ...(p.since ? { since: p.since } : {}) })
+  for (const p of Object.values(sh.projects)) for (const r of p.status === 'active' ? clonesOf(p) : []) if (existsSync(r)) out.set(real(r), { name: projectKey(r), repo: real(r), ...(p.since ? { since: p.since } : {}) })
 
   return [...out.values()].sort((a, b) => (a.name < b.name ? -1 : 1))
 }
@@ -399,6 +404,8 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   if (dropped) out.push(`${dropped} chat${dropped === 1 ? '' : 's'} no longer kept, unshared`)
   const tombs = loadTombs(dir)
   const sc = scrubber(cfg.redact)
+  const strays = await unshareOtherRepo(cfg, projects, arch.chats, sc.scrub, tombs)
+  if (strays) out.push(`${strays} chat${strays === 1 ? '' : 's'} of another repo unshared`)
   const quick = new Map<string, string | undefined>()
   let sent = 0
   let waiting = 0
@@ -451,6 +458,32 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   out.unshift(`${sent} chat${sent === 1 ? '' : 's'} pushed${waiting ? `, ${waiting} more at the next sync` : ''}${fail ? `; stopped: ${fail}` : ''}`)
 
   return tag(out.join('; '))
+}
+
+/** Unshares chats sent before a folder name stopped counting as the project: those whose own repo, found on disk, is none
+ * of the project's shared clones. A shared path missing on disk proves nothing, so then nothing of that project goes. */
+async function unshareOtherRepo(cfg: Config, projects: Active[], chats: Candidate[], scrub: (t: string) => string, tombs: ReturnType<typeof loadTombs>): Promise<number> {
+  const sh = loadShares(cfg.memDir)
+  if (cfg.shareChats.some((r) => !repoRoot(r))) return 0
+  const missing = new Set(Object.entries(sh.projects).filter(([, p]) => clonesOf(p).some((r) => !existsSync(r))).map(([k]) => k))
+  const quick = new Map<string, string | undefined>()
+  const gone: string[] = []
+  for (const c of chats) {
+    const have = sh.chats[c.session]
+    const mine = have && !missing.has(have.project) ? projects.filter((p) => p.name === have.project) : []
+    if (!mine.length) continue
+    if (c.cwd && !quick.has(c.cwd)) quick.set(c.cwd, sessionRepo(c.cwd))
+    const q = c.cwd ? quick.get(c.cwd) : undefined
+    if (q && mine.some((p) => sameProject(q, p.repo))) continue // a quick yes: its folder is a shared clone
+    if (mine.every((p) => {
+      const b = buildChat(cfg, p.repo, c, scrub, { tombs })
+      return 'skip' in b && b.skip === 'other' && !!b.repo
+    })) gone.push(c.session)
+  }
+  for (const s of gone) await unshareChats(cfg, s)
+  if (gone.length) logger('teams', cfg.memDir).info('other_repo_unshared', { n: gone.length })
+
+  return gone.length
 }
 
 /** Chats the server unshared behind the owner's back (admin, Hub, retention, a removed member) are marked removed here, so
@@ -604,6 +637,19 @@ export async function unshareChats(cfg: Config, target: string, opts: { pause?: 
   const name = [...repos.keys()].find((k) => k === target || basename(k) === target || (!!asPath && real(asPath) === real(repos.get(k)!))) ?? (asPath ? projectKey(asPath) : undefined)
   if (!name || (!repos.has(name) && !Object.values(sh.chats).some((c) => c.project === name))) throw new Error(`${target}: not a shared project or a shared chat. \`thenwise team shares\` lists them.`)
   const repo = repos.get(name) ?? (asPath ? real(asPath) : '')
+  // One clone of several: the others keep sharing, and only chats no other clone holds leave the team.
+  const p = sh.projects[name]
+  const clone = asPath && p && !opts.pause && clonesOf(p).length > 1 ? clonesOf(p).find((r) => real(r) === real(asPath)) : undefined
+  if (p && clone) {
+    const rest = clonesOf(p).filter((r) => r !== clone)
+    updateShares(dir, (s) => {
+      const { repos: _, ...base } = s.projects[name]!
+      s.projects[name] = { ...base, repo: rest[0]!, ...(rest.length > 1 ? { repos: rest.slice(1) } : {}) }
+    })
+    const left = await unshareOtherRepo(cfg, rest.filter((r) => existsSync(r)).map((r) => ({ name, repo: real(r) })), archived(cfg), scrubber(cfg.redact).scrub, loadTombs(dir))
+
+    return tag(`${clone} unshared: ${left} chat${left === 1 ? '' : 's'} removed from the team server; ${name} still shares ${rest.join(', ')}`)
+  }
   const n = Object.values(sh.chats).filter((c) => c.project === name).length
   if (opts.pause) {
     updateShares(dir, (s) => void (s.projects[name] = { ...(s.projects[name] ?? {}), repo, status: 'paused' }))
@@ -645,21 +691,23 @@ export function sharesStatus(cfg: Config): { lines: string[]; summary: string } 
   for (const k of [...names].sort()) {
     const own = Object.values(sh.chats).filter((c) => c.project === k)
     const p = sh.projects[k]
-    const a = active.find((x) => x.name === k)
-    const wait = a ? mine.filter((c) => {
+    const as = active.filter((x) => x.name === k)
+    const a = as[0]
+    const wait = mine.filter((c) => {
       if (c.session in sh.removed || sh.chats[c.session]?.src === srcOf(cfg, c)) return false
       const q = c.cwd ? sessionRepo(c.cwd) : undefined
 
-      return (q === undefined || sameProject(q, a.repo)) && !('skip' in buildChat(cfg, a.repo, c, sc.scrub, { ...(a.since ? { since: a.since } : {}), tombs }))
-    }).length : 0
+      return as.some((a) => (q === undefined || sameProject(q, a.repo)) && !('skip' in buildChat(cfg, a.repo, c, sc.scrub, { ...(a.since ? { since: a.since } : {}), tombs })))
+    }).length
     const gone = Object.values(sh.serverGone ?? {}).filter((x) => x === k).length
     const size = own.reduce((x, c) => x + c.bytes, 0)
     chats += own.length
     bytes += size
     waiting += wait
-    lines.push(`${k}  ${a ? 'sharing' : p?.status === 'paused' ? 'paused' : 'not shared'}  ${own.length} chats, ${kb(size)}${p?.lastPush ? `, last pushed ${new Date(p.lastPush).toISOString().slice(0, 16).replace('T', ' ')}` : ''}${wait ? `, ${wait} waiting to push` : ''}${gone ? `, ${gone} unshared on the server` : ''}`)
+    const clones = p ? clonesOf(p) : []
+    lines.push(`${k}  ${a ? 'sharing' : p?.status === 'paused' ? 'paused' : 'not shared'}${clones.length > 1 ? ` from ${clones.join(', ')}` : ''}  ${own.length} chats, ${kb(size)}${p?.lastPush ? `, last pushed ${new Date(p.lastPush).toISOString().slice(0, 16).replace('T', ' ')}` : ''}${wait ? `, ${wait} waiting to push` : ''}${gone ? `, ${gone} unshared on the server` : ''}`)
   }
-  const n = active.length
+  const n = new Set(active.map((a) => a.name)).size
 
   return { lines, summary: n || chats ? `team: sharing chats of ${n} project${n === 1 ? '' : 's'} (${chats} chats, ${kb(bytes)})${waiting ? `, ${waiting} waiting to push` : ''} (${LABEL})` : '' }
 }

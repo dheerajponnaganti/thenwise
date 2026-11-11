@@ -1176,7 +1176,7 @@ test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub
     w.chat('inwt', { turns: [{ prompt: 'Work in the worktree', reply: 'Edited it.', edits: [`${wt}/src/a.ts`] }], cwd: wt }, '-home-wt')
     w.archive()
     const all = archived(w.cfg)
-    assert.deepEqual(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'client')!, (t) => t), { skip: 'other' })
+    assert.deepEqual(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'client')!, (t) => t), { skip: 'other', repo: real(dir) })
     assert.deepEqual(built(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'inwt')!, (t) => t)).unit.turns[0]!.paths, ['src/a.ts'])
     const sent: string[] = []
     const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
@@ -1209,6 +1209,74 @@ test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub
   }
 })
 
+test('GHSA-5jmx item 1: chats of another repo already on the server are unshared at the next sync', needs, async () => {
+  const t = await team()
+  try {
+    const dir = stranger(t.a)
+    // What an older version left behind: the other repo's chat sent under the project's name.
+    updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo: dir, status: 'active' }))
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    // A shared clone missing on disk proves nothing, so nothing is unshared.
+    updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo: t.a.proj, repos: [join(t.a.home, 'gone', 'proj')], status: 'active' }))
+    assert.doesNotMatch(await pushShared(t.a.cfg), /another repo/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'client'"), 1)
+    t.share(t.a)
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    let said: string
+    try {
+      said = await pushShared(t.a.cfg)
+    } finally {
+      process.env.THENWISE_LOG = 'off'
+    }
+    assert.match(said, /1 chat of another repo unshared/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'client'"), 0)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'c1'"), 1, 'the chosen repo\'s chat stays')
+    const sh = loadShares(t.a.memDir)
+    assert.ok(sh.chats.c1 && !sh.chats.client && sh.removed.client === 'proj')
+    assert.deepEqual(readLog(t.a.memDir).filter((e) => e.ev === 'other_repo_unshared').map((e) => e.n), [1])
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 5: a second clone of a non-GitHub repo is added, not swapped', needs, async () => {
+  const t = await team()
+  try {
+    const backup = join(t.a.home, 'backup', 'proj')
+    execFileSync('git', ['clone', '-q', t.a.proj, backup])
+    t.a.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')
+    t.a.archive()
+    const run = (...args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+      const p = spawn(process.execPath, ['src/main.ts', 'team', ...args], { env: { ...process.env, HOME: t.a.home, THENWISE_HOME: t.a.memDir, THENWISE_SYNC: 'off' }, stdio: ['ignore', 'pipe', 'pipe'] })
+      let [stdout, stderr] = ['', '']
+      p.stdout.on('data', (d) => (stdout += d))
+      p.stderr.on('data', (d) => (stderr += d))
+      p.on('close', (status) => done({ status, stdout, stderr }))
+    })
+    for (const repo of [t.a.proj, backup]) {
+      const r = await run('share-chats', repo, '--yes')
+      assert.equal(r.status, 0, r.stderr)
+      assert.match(r.stdout, /1 chat pushed/)
+    }
+    // The old shape stays: `repo` is the first clone, so an older version keeps syncing it.
+    const p = loadShares(t.a.memDir).projects.proj!
+    assert.deepEqual([p.repo, p.repos], [real(t.a.proj), [real(backup)]])
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 2)
+    assert.ok(sharesStatus(t.a.cfg).lines.join().includes(`proj  sharing from ${real(t.a.proj)}, ${real(backup)}  2 chats`))
+    assert.match(sharesStatus(t.a.cfg).summary, /sharing chats of 1 project \(2 chats/)
+    const un = await run('unshare-chats', backup)
+    assert.match(un.stdout, /unshared: 1 chat removed from the team server; proj still shares/)
+    assert.deepEqual(loadShares(t.a.memDir).projects.proj, { repo: real(t.a.proj), status: 'active', lastPush: p.lastPush })
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'c1'"), 1)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 1)
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed \(/)
+  } finally {
+    await t.stop()
+  }
+})
+
 test('GHSA-5jmx item 1: a repo with a GitHub slug still shares its clones, and never a folder that is only named like it', () => {
   const w = sender()
   try {
@@ -1222,7 +1290,7 @@ test('GHSA-5jmx item 1: a repo with a GitHub slug still shares its clones, and n
     const sent: string[] = []
     const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
     assert.deepEqual([pv.project, sent.sort()], ['me/proj', ['c1', 'inclone']])
-    assert.deepEqual(buildChat(w.cfg, w.proj, archived(w.cfg).find((x) => x.session === 'client')!, (t) => t), { skip: 'other' })
+    assert.deepEqual(buildChat(w.cfg, w.proj, archived(w.cfg).find((x) => x.session === 'client')!, (t) => t), { skip: 'other', repo: real(dir) })
     assert.equal(previewShare(w.cfg, dir).project, 'proj')
   } finally {
     w.destroy()

@@ -6,7 +6,8 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { loadConfig } from '../ingest/config.ts'
-import { formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from './chats.ts'
+import { real } from '../ingest/repos.ts'
+import { clonesOf, formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from './chats.ts'
 import { fetchShared, flush, joinTeam, LABEL, load as loadTeam, payloadOf, pull, resolveNote, search, sharedIds, share, unshare } from './client.ts'
 import { backupTeam, createTeamServer, invite, listMembers, openTeamDb, removeMember, restoreTeam, rotate } from './server.ts'
 
@@ -113,7 +114,10 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       if (!process.argv.includes('--yes') && !(await confirm('Share these chats with the team? Type yes: '))) return (console.log('not shared'), 1)
       updateShares(dir, (s) => {
         for (const [id, p] of Object.entries(s.removed)) if (p === pv.project) (delete s.removed[id], delete s.serverGone?.[id])
-        s.projects[pv.project] = { repo: pv.repo, status: 'active', reshare: true, ...(since ? { since } : {}) }
+        // Another clone of a project already shared is added to it; an unshared project starts again from this one.
+        const old = s.projects[pv.project]
+        const all = [...new Set([...(old && old.status !== 'removed' ? clonesOf(old) : []), pv.repo].map(real))]
+        s.projects[pv.project] = { repo: all[0]!, ...(all.length > 1 ? { repos: all.slice(1) } : {}), status: 'active', reshare: true, ...(since ? { since } : {}) }
       })
       await setServerStatus(dir, pv.project, 'active')
       console.log(await pushShared(cfg))

@@ -54,7 +54,7 @@ test('codex: the TOML stays as written around our block, comments included', () 
   assert.equal(readFileSync(file, 'utf8').trimEnd(), before.trimEnd())
 })
 
-test('#115: connect codex and --remove keep the next table\'s comments, indented tables and CRLF line endings', () => {
+test('#115: connect codex and --remove keep the next table\'s comments, indented tables, CRLF line endings and multi-line values, and replace an inline entry', () => {
   const ours = '[mcp_servers.thenwise]\ncommand = "/old/node"\nargs = ["/old/cli.js", "mcp"]\n'
   const cases = [
     // [what is in the file, what remove leaves]
@@ -63,6 +63,14 @@ test('#115: connect codex and --remove keep the next table\'s comments, indented
     [`model = "x"\n\n${ours}[mcp_servers.thenwise.env]\nA = "1"\n\n# trailing note\n`, 'model = "x"\n\n# trailing note\n'],
     // An older Thenwise appended a second table to CRLF files.
     [`model = "x"\n\n${ours}\n${ours}`, 'model = "x"\n'],
+    // A multi-line array whose lines start with [, and a string that holds a header, are values and not headers.
+    ['[mcp_servers.thenwise]\ncommand = "/old/node"\nargs = [\n  ["/old/cli.js"],\n  "mcp", # a ] in a comment\n  "]",\n]\n\n# keep\n[mcp_servers.other]\ncommand = "y"\n', '# keep\n[mcp_servers.other]\ncommand = "y"\n'],
+    ['[notes]\ntext = \"\"\"\n  [mcp_servers.thenwise]\ncommand = "fake"\n\"\"\"\n', '[notes]\ntext = \"\"\"\n  [mcp_servers.thenwise]\ncommand = "fake"\n\"\"\"\n'],
+    // The same entry as a key: an inline table, on one line or several, or dotted keys. A table left empty goes.
+    ['model = "x"\n\n[mcp_servers]\nthenwise = { command = "/old/node", args = ["mcp"] }\n\n[mcp_servers.other]\ncommand = "y"\n', 'model = "x"\n\n[mcp_servers.other]\ncommand = "y"\n'],
+    ['[mcp_servers] # my servers\nother = { command = "y" }\n"thenwise" = {\n  command = "/old/node",\n  args = ["mcp"],\n}\n', '[mcp_servers] # my servers\nother = { command = "y" }\n'],
+    ['a = 1\n\n[mcp_servers] # my servers\nthenwise = { command = "/old/node" }\n', 'a = 1\n\n# my servers\n'],
+    ['mcp_servers.thenwise.command = "/old/node"\nmodel = "x"\n', 'model = "x"\n'],
   ]
   for (const crlf of [false, true]) {
     for (const [input, removed] of cases) {
@@ -74,17 +82,22 @@ test('#115: connect codex and --remove keep the next table\'s comments, indented
       const label = JSON.stringify({ crlf, input })
       apply(plan('codex', opts(h)))
       const on = readFileSync(file, 'utf8')
-      assert.equal(on.match(/\[mcp_servers\.thenwise\]/g)?.length, 1, label)
+      assert.equal(on.match(/^\[mcp_servers\.thenwise\]/gm)?.length, 1, label)
       assert.ok(on.includes(eol('[mcp_servers.thenwise]\ncommand = "/n/node"\n')), label)
       assert.equal(on.includes('/old/'), false, label)
       assert.equal(/(^|[^\r])\n/.test(on), !crlf, `line endings kept: ${label}`)
-      for (const keep of ['# keep', '[mcp_servers.other]', 'args = ["z"]', '# trailing note']) assert.equal(on.includes(keep), input!.includes(keep), `${keep}: ${label}`)
+      for (const keep of ['# keep', '[mcp_servers.other]', 'args = ["z"]', '# trailing note', '# my servers', 'other = { command = "y" }', 'command = "fake"']) assert.equal(on.includes(keep), input!.includes(keep), `${keep}: ${label}`)
       assert.equal(plan('codex', opts(h)).next, null, `a second connect changes nothing: ${label}`)
       apply(plan('codex', { ...opts(h), remove: true }))
       assert.equal(readFileSync(file, 'utf8'), eol(removed!), `remove: ${label}`)
       assert.equal(plan('codex', { ...opts(h), remove: true }).next, null, label)
     }
   }
+  // A value that never closes is not TOML, so where a table ends is unknown and the file is left alone.
+  const h = home()
+  mkdirSync(join(h, '.codex'))
+  writeFileSync(join(h, '.codex', 'config.toml'), 'args = [\n  "x",\n')
+  for (const remove of [false, true]) assert.match(plan('codex', { ...opts(h), remove }).note, /cannot read this file as TOML/)
 })
 
 test('a config with comments is left alone, and the entry is shown to add by hand', () => {

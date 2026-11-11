@@ -247,6 +247,9 @@ if (cmd === 'mine') {
   const cfg = loadConfig()
   const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
+  // The sync mines without `capture.auto`, so unreviewed proposals expire here even when distill never runs.
+  const ex = (await import('./capture/notes.ts')).expireInbox(cfg.memDir, Date.now())
+  if (ex.length) console.log(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`)
   const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
   console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
   const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db)
@@ -261,6 +264,7 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
   const args: string[] = []
   const rest = process.argv.slice(3)
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]!)
+  if (cmd !== 'distill') notes.expireInbox(cfg.memDir, Date.now()) // the inbox shows what status counts; distill expires its own way
   if (cmd === 'distill') {
     const { distill } = await import('./capture/distill.ts')
     const r = distill(cfg, { since: flag('since'), session: flag('session'), dryRun: process.argv.includes('--dry-run'), last: flag('last') ? Number(flag('last')) : undefined })

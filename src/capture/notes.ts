@@ -78,10 +78,13 @@ export function saveNote(memDir: string, n: CNote): CNote {
   return n
 }
 
+/** An unreviewed proposal older than EXPIRY_DAYS. Every place that shows the inbox expires these first, or leaves them out. */
+export const overdue = (n: CNote, nowMs: number) => n.status === 'inbox' && nowMs - Date.parse(n.created) > EXPIRY_DAYS * 86400000
+
 export function expireInbox(memDir: string, nowMs: number): string[] {
   const out: string[] = []
   for (const n of readNotes(memDir)) {
-    if (n.status === 'inbox' && nowMs - Date.parse(n.created) > EXPIRY_DAYS * 86400000) {
+    if (overdue(n, nowMs)) {
       saveNote(memDir, { ...n, status: 'expired' })
       out.push(n.id)
     }

@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
 import { mineRules } from '../src/capture/mine.ts'
-import { readNotes, reject } from '../src/capture/notes.ts'
-import { syncRun } from '../src/hooks/hook.ts'
-import { tempDir } from './mcp-fixture.ts'
+import { readNotes, reject, saveNote } from '../src/capture/notes.ts'
+import type { CNote } from '../src/capture/notes.ts'
+import { runHook, syncRun } from '../src/hooks/hook.ts'
+import { tempDir, writeGraph } from './mcp-fixture.ts'
 import { World } from './world.ts'
 
 test('rule mining proposes a file where real dead ends keep happening, and a [dead-end] line written twice; never a reply sentence', () => {
@@ -75,6 +76,39 @@ test('the sync mines only after an ingest that changed the store', () => {
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home
   }
+})
+
+test('#110: unreviewed inbox notes expire after 14 days without distill; rejected ones stay rejected; status counts what is left', () => {
+  const dir = tempDir()
+  const db = writeGraph(dir)
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: dir, USERPROFILE: dir, THENWISE_HOME: dir }
+  const cli = (...a: string[]) => spawnSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), ...a], { encoding: 'utf8', env })
+  const ago = (days: number) => new Date(Date.now() - days * 864e5).toISOString()
+  const note = (id: string, status: CNote['status'], created: string) => saveNote(dir, { id, type: 'rule', title: `Rule ${id}`, summary: 's', status, valid_from: '', valid_to: '', supersedes: '', sources: [], created, project: '', path: '' })
+  note('mine-old', 'inbox', ago(15))
+  note('exp-old', 'inbox', ago(20)) // a decision recheck the sync wrote
+  note('mine-no', 'rejected', ago(15))
+  note('mine-new', 'inbox', ago(1))
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    // Status counts only the notes that have not expired, before any command has run.
+    assert.match(runHook('status', {}, { dir, cli: 'none' }), /^inbox +1 proposed note waits, the oldest expires in 13 days; \/thenwise:inbox$/m)
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+  // `mine` is what the sync runs with capture.auto off: it expires them.
+  const r = cli('mine', '--db', db)
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /^expired 2 unreviewed inbox note\(s\) older than 14 days$/m)
+  const st = () => Object.fromEntries(readNotes(dir).map((n) => [n.id, n.status]))
+  assert.deepEqual(st(), { 'mine-old': 'expired', 'exp-old': 'expired', 'mine-no': 'rejected', 'mine-new': 'inbox' })
+  // The inbox command expires before it lists, and accept still takes an expired note.
+  saveNote(dir, { ...readNotes(dir).find((n) => n.id === 'mine-new')!, created: ago(15) })
+  assert.match(cli('inbox').stdout, /^0 note\(s\) in the inbox$/m)
+  assert.match(cli('accept', 'mine-old').stdout, /^mine-old: accepted/m)
+  assert.deepEqual(st(), { 'mine-old': 'active', 'exp-old': 'expired', 'mine-no': 'rejected', 'mine-new': 'expired' })
 })
 
 test('rule mining skips churn files and dead ends that changed many files at once', () => {

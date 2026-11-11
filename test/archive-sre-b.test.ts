@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { test } from 'node:test'
 import { spawn, spawnSync } from 'node:child_process'
 import { gunzipSync, gzipSync } from 'node:zlib'
@@ -147,4 +148,42 @@ test('#9: a chat an older version zipped whole is rewritten as members once, wit
   const bytes = readFileSync(dest(w.home))
   archive(w.cfg)
   assert.ok(readFileSync(dest(w.home)).equals(bytes), 'a later archive leaves it alone')
+})
+
+const manifestOf = (home: string): Record<string, unknown> => JSON.parse(readFileSync(join(home, '.memory/archive/manifest.json'), 'utf8'))
+
+test('#97: an archive killed partway keeps the chats it finished, and the next run archives only the rest', () => {
+  const w = world()
+  for (let i = 0; i < 300; i++) writeFileSync(join(w.dir, `s${String(i).padStart(3, '0')}.jsonl`), `${row(1, `chat ${i}`)}\n`)
+  // A real kill with no finally, as the sync's timeout gives: the child stops itself on chat 250, after the checkpoint at 200.
+  const src = (f: string) => pathToFileURL(join(import.meta.dirname, '../src/ingest', f)).href
+  const code = `import { archive } from '${src('archive.ts')}'; import { loadConfig } from '${src('config.ts')}'; archive(loadConfig(process.env.HOME), { onProgress: (done) => done === 250 && process.kill(process.pid, 'SIGKILL') })`
+  const r = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', code], { env: { ...process.env, HOME: w.home, THENWISE_HOME: join(w.home, '.memory') }, encoding: 'utf8' })
+  assert.notEqual(r.status, 0, r.stderr)
+  assert.equal(readdirSync(join(w.home, '.memory/archive/sessions/-x')).filter((f) => f.endsWith('.gz')).length, 249, r.stderr)
+  const kept = Object.keys(manifestOf(w.home))
+  assert.equal(kept.length, 200)
+  for (const rel of kept) assert.ok(existsSync(join(w.home, '.memory/archive/sessions', `${rel}.gz`)), `${rel} is named but its .gz is missing`)
+  const again = archive(w.cfg)
+  assert.deepEqual([again.archived, again.skipped, again.seen], [100, 200, 300])
+  // Update equals rebuild: the resumed manifest is the one a clean run writes.
+  const resumed = manifestOf(w.home)
+  rmSync(join(w.home, '.memory/archive'), { recursive: true })
+  assert.equal(archive(w.cfg).archived, 300)
+  assert.deepEqual(manifestOf(w.home), resumed)
+})
+
+test('#97: tmp files a dead archive left are removed at the next start, a live run\'s are kept', () => {
+  const w = world()
+  writeFileSync(join(w.dir, 's.jsonl'), `${row(1, 'hi')}\n`)
+  archive(w.cfg)
+  const dead = spawnSync(process.execPath, ['-e', '']).pid! // exited, so no live process has this pid
+  const at = (f: string) => join(w.home, '.memory/archive', f)
+  const stale = [at(`sessions/-x/s.jsonl.gz.${dead}.tmp`), at(`manifest.json.${dead}.tmp`), at(`sessions/-x/old.jsonl.gz.${process.ppid}.tmp`)]
+  const live = at(`sessions/-x/t.jsonl.gz.${process.ppid}.tmp`)
+  for (const f of [...stale, live]) writeFileSync(f, 'half')
+  utimesSync(stale[2]!, new Date(Date.now() - 2 * 3600e3), new Date(Date.now() - 2 * 3600e3)) // a reused pid: no writer leaves a tmp untouched this long
+  archive(w.cfg)
+  for (const f of stale) assert.ok(!existsSync(f), `${f} is still there`)
+  assert.ok(existsSync(live), 'a live run\'s tmp file is kept')
 })

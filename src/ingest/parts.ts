@@ -18,7 +18,7 @@ import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
 import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from './deadend.ts'
 import { sessionFacts } from './facts.ts'
-import { githubSlug, repoRoot } from './repos.ts'
+import { githubSlug, projectRoot, real, repoRoot } from './repos.ts'
 import { loadImports, readChats } from '../teams/chatcache.ts'
 import type { WireChat } from '../teams/chatcache.ts'
 import { normalizePath } from './transcript.ts'
@@ -570,9 +570,25 @@ export function teamPart(cfg: Config): Part {
   return out
 }
 
-/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one whose folder is. */
-export function checkoutOf(project: string, repos: string[]): string | undefined {
-  return repos.find((r) => githubSlug(r) === project) ?? repos.find((r) => basename(r) === project)
+/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one repo with no slug whose
+ * folder is the name. Several such folders: the one this member shares chats of, else none (a folder name says too little). */
+export function checkoutOf(project: string, repos: string[], shared: () => Set<string> = () => new Set()): string | undefined {
+  const slugs = new Map(repos.map((r) => [r, githubSlug(r)]))
+  const named = repos.filter((r) => !slugs.get(r) && basename(r) === project)
+  const mine = named.length > 1 ? named.filter((r) => shared().has(real(r))) : named
+
+  return repos.find((r) => slugs.get(r) === project) ?? (mine.length === 1 ? mine[0] : undefined)
+}
+
+/** The repos this member shares chats of (config, or `team share-chats` and not unshared since), as real paths. */
+function sharedRepos(cfg: Config): Set<string> {
+  let projects: { repo: string; status: string }[] = []
+  try {
+    projects = Object.values(JSON.parse(readFileSync(join(cfg.memDir, 'team-shares.json'), 'utf8')).projects ?? {})
+  } catch {} // not sharing chats
+  const gone = new Set(projects.filter((p) => p.status === 'removed').map((p) => real(p.repo)))
+
+  return new Set([...cfg.shareChats.map((r) => real(repoRoot(r) ?? r)), ...projects.map((p) => real(p.repo))].filter((r) => !gone.has(r)))
 }
 
 /** Session ids this machine holds itself (archived): a teammate's copy of the same chat is dropped, our own records win. */
@@ -599,12 +615,14 @@ export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: W
   const out: Part = { nodes: [], edges: [] }
   const checkouts = new Map<string, string | undefined>()
   const imports = loadImports(cfg.memDir)
+  let shared: Set<string> | undefined
   for (const c of chats) {
     const imported = (imports[c.owner] ?? []).includes(c.session) ? { imported: true } : {}
-    if (!checkouts.has(c.project)) checkouts.set(c.project, checkoutOf(c.project, repos))
+    if (!checkouts.has(c.project)) checkouts.set(c.project, checkoutOf(c.project, repos, () => (shared ??= sharedRepos(cfg))))
     const repo = checkouts.get(c.project)
     const sid = `tses:${c.owner}/${c.session}`
-    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}) } }))
+    // `root` is the checkout search scopes the chat to, so search never guesses one from a folder name.
+    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}), ...(repo ? { root: projectRoot(repo) } : {}) } }))
     for (const t of c.turns) {
       const at = iso(t.at)
       const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`

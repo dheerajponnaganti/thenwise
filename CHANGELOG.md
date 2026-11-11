@@ -10,6 +10,7 @@
 - `thenwise forget` for a project folder no longer removes the chats of a sibling folder whose name differs only in punctuation, such as `my-app` and `my.app`, and no longer blocks that folder's later chats. A chat that names no folder, under a name two folders share, stays, and `forget` says how to forget it by id. `forget` also waits for a running `thenwise archive`, which could otherwise write back what it removed.
 - Hints show less text from outside your own work, and slash commands ask before running anything but Thenwise.
 - Masking catches more secrets in stored chats, notes and team shares.
+- Team sharing sends only the chats of the repo you chose.
 
 ## 0.3.1
 

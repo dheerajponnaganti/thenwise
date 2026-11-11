@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { newerThenwise } from '../core/notices.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import type { Config } from './config.ts'
 import type { PrInput } from './parts.ts'
@@ -58,13 +59,16 @@ export function fetchPrs(cfg: Config, repos: string[], opts: PrOptions = {}): Pr
   if (!cfg.prs) return (out.lines.push('PRs: off in the config'), out)
   let dirty = false
   // Masked before it is stored; a newer mask version rewrites older entries (also masks caches written unmasked).
-  for (const e of Object.values(cache)) if (e.mask !== MASK_VERSION) ((e.prs = maskDeep(e.prs) as any[]), (e.mask = MASK_VERSION), (dirty = true))
+  for (const e of Object.values(cache)) if ((e.mask ?? 0) < MASK_VERSION) ((e.prs = maskDeep(e.prs) as any[]), (e.mask = MASK_VERSION), (dirty = true))
+  // An entry a newer Thenwise wrote is neither masked again nor fetched here: it stays as that one wrote it (#137).
+  const newer = (e?: Entry) => (e?.mask ?? 0) > MASK_VERSION
+  if (Object.values(cache).some(newer)) newerThenwise(cfg.memDir, 'the PR cache')
   let noGh = false
   for (const { slug, repo } of slugsOf(cfg, repos)) {
     const e = cache[slug]
     const fresh = !!e && !!e.fetchedAt && !e.error && now - e.fetchedAt < DAY
     const backoff = !!e && !!e.error && now - e.tried < RETRY
-    if (!fresh && !backoff && !noGh) {
+    if (!fresh && !backoff && !noGh && !newer(e)) {
       const timeout = (opts.timeoutMs ?? cfg.ghTimeoutMs) * 2 ** Math.min(e?.slow ?? 0, 3)
       try {
         const raw = execFileSync('gh', ['pr', 'list', '--repo', slug, '--state', 'all', '--limit', '2000', '--json', FIELDS], { encoding: 'utf8', maxBuffer: 1 << 29, timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })

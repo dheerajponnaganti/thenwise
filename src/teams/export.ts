@@ -8,8 +8,9 @@ import { userInfo } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 
 import { maskSecrets } from '../core/secrets.ts'
+import { dateMs } from '../core/time.ts'
 import type { Config } from '../ingest/config.ts'
-import { chatsIn, dropChat, importsFile, loadImports, openChatCache, openChatFile, putChat } from './chatcache.ts'
+import { chatsIn, dropChat, importsFile, loadImports, newerCache, openChatCache, openChatFile, putChat } from './chatcache.ts'
 import type { WireChat } from './chatcache.ts'
 import { formatPreview, previewShare } from './chats.ts'
 import type { Built } from './chats.ts'
@@ -75,6 +76,7 @@ export function importChats(dir: string, chats: WireChat[]): { added: number; sy
   const seen = loadImports(dir)
   let added = 0
   try {
+    if (newerCache(db)) throw new Error('the team chat cache was written by a newer Thenwise. Update Thenwise.')
     db.exec('BEGIN')
     for (const c of chats) {
       const had = db.prepare('SELECT 1 FROM chats WHERE owner = ? AND session = ?').get(c.owner, c.session)
@@ -153,7 +155,7 @@ export async function exportMain(cmd: 'export' | 'import', cfg: Config, args: st
   const name = flag('name') ?? defaultName(cfg.memDir)
   if (!out) return (console.error('usage: thenwise export [<repo path>] --out <file> [--since <date>] [--name <name>] [--yes]'), 2)
   if (existsSync(out)) return (console.error(`${out} already exists; pick another --out`), 2)
-  if (since && Number.isNaN(Date.parse(since))) return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2)
+  if (since && Number.isNaN(dateMs(since))) return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2)
   if (!NAME_RE.test(name)) return (console.error('--name is lower-case letters, digits, - and _, up to 32 characters'), 2)
   const built: Built[] = []
   let pv

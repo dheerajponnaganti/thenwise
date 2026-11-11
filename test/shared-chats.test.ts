@@ -150,6 +150,25 @@ test('T18-H1: the preview has counts, size, dates, three masked passages and wha
   }
 })
 
+test('#105: a stored share since that names no real day sends no chats and says so once in the log', () => {
+  const w = sender()
+  try {
+    // An older version took 2026-02-30 and read it as March 2. Dropping it would send every older chat.
+    updateShares(w.memDir, (s) => void (s.projects.proj = { repo: w.proj, status: 'active', since: '2026-02-30' }))
+    assert.equal(previewShare(w.cfg, w.proj, { since: '2026-02-30' }).chats, 0)
+    process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+    try {
+      assert.match(sharesStatus(w.cfg).summary, /sharing chats of 1 project/)
+    } finally {
+      process.env.THENWISE_LOG = 'off'
+    }
+    assert.equal(readLog(w.memDir).filter((e) => e.ev === 'share_since_unreadable').length, 1)
+    assert.equal(previewShare(w.cfg, w.proj, { since: '2026-02-28' }).chats, 1, 'a real day still works')
+  } finally {
+    w.destroy()
+  }
+})
+
 test('config: team.share_chats, team.redact and team.share_subagents are read and validated', () => {
   const w = new World()
   try {
@@ -363,6 +382,10 @@ test('a teammate\'s half-finished chat: the brief, resume and a late prompt say 
     const out = JSON.parse(runHook('prompt', { session_id: 'me2', prompt: 'add a button', cwd: w.proj }, env))
     assert.match(out.hookSpecificOutput.additionalContext, /<memory-team[^]*bob \(Copilot\)[^]*stopped by the tool/)
     assert.equal(existsSync(join(w.memDir, 'hook-state', 'me2.late')), false)
+    // #105: a mark whose time does not parse is dropped like an unreadable one, never thrown on.
+    writeFileSync(join(w.memDir, 'hook-state', 'me4.late'), JSON.stringify({ at: '2026-02-30T25:00:00Z', shown: [] }))
+    assert.equal(runHook('prompt', { session_id: 'me4', prompt: 'add a button', cwd: w.proj }, env), '')
+    assert.equal(existsSync(join(w.memDir, 'hook-state', 'me4.late')), false)
   } finally {
     keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
     w.destroy()
@@ -494,6 +517,21 @@ async function team() {
 
   return { dir, app, base, tokens, a, b, share, serverCount, stop }
 }
+
+test('#137: an older Thenwise leaves a chat a newer one shared, even after the chat grew', needs, async () => {
+  const t = await team()
+  try {
+    t.share(t.a)
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    const [id] = Object.keys(loadShares(t.a.memDir).chats)
+    updateShares(t.a.memDir, (s) => void (s.chats[id!]!.mask = MASK_VERSION + 1)) // a newer Thenwise sent it
+    t.a.grow('c1', [{ prompt: 'More about the quokka exporter', reply: 'ok' }])
+    t.a.archive()
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed/)
+  } finally {
+    await t.stop()
+  }
+})
 
 test('T18-H3 T19-H1: A shares, a sync pushes the chat, B fetches it into team-chats.db and its memory finds it', needs, async () => {
   const t = await team()

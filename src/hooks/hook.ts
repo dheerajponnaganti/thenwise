@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { listDir } from '../core/home.ts'
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
+import { dateMs } from '../core/time.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { isTestRun } from '../core/testrun.ts'
 import { testKey } from '../ingest/facts.ts'
@@ -17,14 +18,15 @@ import { codexConverter } from '../ingest/codex.ts'
 import { copilotConverter, copilotDir } from '../ingest/copilot.ts'
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../ingest/plans.ts'
 import { dropLock, lockHeld, takeLock } from '../ingest/lock.ts'
-import { repoRoot } from '../ingest/repos.ts'
+import { real, repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
+import { activeProjects, loadShares } from '../teams/chats.ts'
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from './entry.ts'
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
-import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
+import { progressLine, readProgress, readTold, running, writeProgress, writeTold } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
-import { EXPIRY_DAYS, readNotes } from '../capture/notes.ts'
+import { EXPIRY_DAYS, overdue, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
@@ -119,10 +121,10 @@ export function log(env: HookEnv, msg: string, lvl: Level = 'info', ev = 'note')
   logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg })
 }
 
-/** Runs one query command in a child that is killed after QUERY_MS, so a slow store cannot hold a hook. Undefined when it
- * did not answer. */
-function query(env: HookEnv, args: string[]): string | undefined {
-  const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } })
+/** Runs one query command in a child that is killed after ms (QUERY_MS in a hook), so a slow store cannot hold a hook.
+ * Undefined when it did not answer. */
+function query(env: HookEnv, args: string[], ms = QUERY_MS): string | undefined {
+  const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: ms, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } })
   if (r.status !== 0) {
     log(env, `${args[0]} did not answer: ${r.error?.message ?? (r.stderr.trim().split('\n')[0] || `exit ${r.status}`)}`, 'warn', 'query_failed')
 
@@ -171,16 +173,23 @@ function startSync(env: HookEnv) {
 }
 
 const distillStamp = (dir: string) => join(dir, 'distill-auto.json')
-/** When the last automatic distill ran (a day ago when it never did, so the first run reads one day of chats). */
+/** When the last automatic distill ran (a day ago when it never did, so the first run reads one day of chats).
+ * A stamp that is no real time is ignored with one log line; it never stops distill for good. */
 const lastDistill = (dir: string) => {
+  const day = new Date(Date.now() - 864e5).toISOString()
+  let last: unknown
   try {
-    return JSON.parse(readFileSync(distillStamp(dir), 'utf8')).last as string
+    last = JSON.parse(readFileSync(distillStamp(dir), 'utf8')).last
   } catch {
-    return new Date(Date.now() - 864e5).toISOString()
+    return day
   }
+  if (typeof last === 'string' && !Number.isNaN(dateMs(last))) return last
+  logger('sync', dir).warn('distill_stamp_unreadable', { msg: 'the last distill time is no real time; reading the last day of chats' })
+
+  return day
 }
 /** Once a day, and only with `claude` on the PATH: distill asks it to propose notes. */
-const distillDue = (dir: string) => Date.now() - Date.parse(lastDistill(dir)) >= 864e5 && (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').some((p) => p && ['claude', 'claude.cmd', 'claude.exe'].some((c) => existsSync(join(p, c))))
+const distillDue = (last: string) => Date.now() - Date.parse(last) >= 864e5 && (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').some((p) => p && ['claude', 'claude.cmd', 'claude.exe'].some((c) => existsSync(join(p, c))))
 
 /** The detached worker: archive, then ingest, one at a time across sessions. */
 export function syncRun(env: HookEnv) {
@@ -200,7 +209,8 @@ export function syncRun(env: HookEnv) {
     const vaultStamp = join(env.dir, 'vault.json')
     // The team's notes are fetched before the ingest, so this sync already makes them searchable.
     const cfgNow = loadConfigSafe().config
-    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
+    const last = cfgNow?.captureAuto ? lastDistill(env.dir) : ''
+    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(last && distillDue(last) ? [`distill --since ${last}`] : [])]) {
       // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
       if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
@@ -215,15 +225,17 @@ export function syncRun(env: HookEnv) {
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'ingest') chats = Number(/^(\d+) sessions in scope/m.exec(r.stdout)?.[1]) || undefined
       // The store is ready after the ingest: the person hears "done" then, not after the backup and the vault.
-      if (verb === 'ingest') writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, ...(chats ? { chats } : {}) })
+      if (verb === 'ingest') writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, ...(r.status === 0 ? (chats ? { chats } : {}) : { failed: true }) })
       if (verb === 'vault write' && r.status === 0) writeFileSync(vaultStamp, JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       if (verb.startsWith('distill') && r.status === 0) writeFileSync(distillStamp(env.dir), JSON.stringify({ last: new Date().toISOString() }), { mode: 0o600 })
       log(env, `${verb} ${r.status === 0 ? 'done' : `failed (${r.error?.message ?? (r.stderr.trim() || r.stdout.trim()).split('\n').pop()})`} in ${Date.now() - t} ms`, r.status === 0 ? 'info' : 'error', `sync_${verb.split(' ')[0]}`)
-      // A failed step reaches the person once, at the next session start; the details stay in the log.
-      if (r.status !== 0) addNews(env.dir, `sync-${verb.split(' ')[0]}`, `the background sync's ${verb.split(' ')[0]} step failed; /thenwise:logs shows why`)
+      // A failed step reaches the person once, at the next session start; the details stay in the log. A step that met data
+      // a newer Thenwise wrote has left its own notice, which names the tool to update (#137).
+      if (r.status !== 0 && !/written by a newer Thenwise/.test(r.stderr ?? '')) addNews(env.dir, `sync-${verb.split(' ')[0]}`, `the background sync's ${verb.split(' ')[0]} step failed; /thenwise:logs shows why`)
     }
   } finally {
-    if (!readProgress(env.dir)?.finished) writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started })
+    // Not finished here means the ingest never ran: the sync stopped on an error.
+    if (!readProgress(env.dir)?.finished) writeProgress(env.dir, { phase: 'done', finished: new Date().toISOString(), ms: Date.now() - started, failed: true })
     tighten(env.dir)
     rmSync(lock, { force: true })
   }
@@ -240,7 +252,8 @@ function lateTeam(env: HookEnv, input: Record<string, any>, cwd: string, graph: 
   } catch {
     return (rmSync(mark, { force: true }), '')
   }
-  if (Date.now() - Date.parse(m.at) > 10 * 60_000 || !existsSync(graph)) return (rmSync(mark, { force: true }), '')
+  // A time that does not parse goes the way of an unreadable mark: new Date(NaN) below would throw.
+  if (!(Date.now() - dateMs(m.at) <= 10 * 60_000) || !existsSync(graph)) return (rmSync(mark, { force: true }), '')
   // Teammates' chats of the last day that the start's brief did not name: they arrived with the start's sync.
   const since = new Date(Date.parse(m.at) - 864e5).toISOString()
   const lines = (query(env, ['resume', '--mates-since', since, ...(cwd ? ['--project', cwd] : [])]) ?? '').split('\n').filter((l) => l.trim() && !m.shown.some((id) => l.includes(`(${id})`))).join('\n')
@@ -255,10 +268,10 @@ function lateTeam(env: HookEnv, input: Record<string, any>, cwd: string, graph: 
 export function syncNotice(dir: string, now = Date.now()): string {
   const p = readProgress(dir)
   if (!p || p.kind === 'auto') return ''
-  const told = p.told ? Date.parse(p.told) : 0
+  const told = Date.parse(readTold(dir)) || 0
   if (p.finished ? told >= Date.parse(p.finished) : !running(p) || now - told < 60_000) return ''
   const line = progressLine(p, now)
-  if (line) writeProgress(dir, { told: new Date(now).toISOString() })
+  if (line) writeTold(dir, new Date(now).toISOString())
 
   return line ? `Thenwise: ${line}.${p.finished ? '' : ' /thenwise:status shows more.'}` : ''
 }
@@ -425,9 +438,11 @@ function dashboard(env: HookEnv, storeStatus: string): string {
   const team = existsSync(join(env.dir, 'team.json')) ? `joined; last team sync ${ago(log.filter((e) => e.ev === 'sync_team').at(-1)?.t)}` : 'not in a team'
   let inbox = 'empty'
   try {
-    const waiting = readNotes(env.dir).filter((n) => n.status === 'inbox')
+    // Read only: an overdue note is already gone from `thenwise inbox`, which expires it first.
+    const now = Date.now()
+    const waiting = readNotes(env.dir).filter((n) => n.status === 'inbox' && !overdue(n, now))
     const oldest = waiting.map((n) => Date.parse(n.created)).filter((t) => !Number.isNaN(t)).sort()[0]
-    if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (Date.now() - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
+    if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (now - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
   } catch {} // no notes folder
   const rows: [string, string][] = [['memory', memory], ['session', session], ['hooks', hooks], ['team', team], ['inbox', inbox], ['errors', recentErrors(env.dir)]]
 
@@ -461,7 +476,8 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
       if (!existsSync(graph)) return `No memory yet in ${env.dir}. ${prog ? `Thenwise ${prog}.` : `The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}`}\n${tail}`
       const s = statSync(graph)
 
-      const store = (query(env, ['status']) ?? '').trim()
+      // /thenwise:status runs through Bash, not as a hook, so it can wait for a large store.
+      const store = (query(env, ['status'], 30_000) ?? '').trim()
 
       return `${dashboard(env, store)}\n\nDetails:\n${store || `Memory in ${env.dir}: ${(s.size / 1e6).toFixed(1)} MB, updated ${s.mtime.toISOString()}.`}\nRecent log:\n${tail}`
     }
@@ -485,9 +501,9 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
     }
     if (name === 'stop' || name === 'stop-failure') {
       // A team member's chat reaches the team while it is fresh: after a reply at most every 10 minutes, at once after a cut.
-      // Only in a project whose chats this person shares: elsewhere there is nothing to send.
+      // Only in a project whose chats this person shares (config or `team share-chats`, not paused): elsewhere there is nothing to send.
       const root = cwd ? repoRoot(cwd) : undefined
-      if (stopIdle(name) || !root || !cfg?.shareChats.some((r) => repoRoot(r) === root)) return ''
+      if (stopIdle(name) || !root || !cfg || !activeProjects(cfg, loadShares(env.dir)).some((p) => p.repo === real(root))) return ''
       mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
       writeFileSync(stopStamp(env.dir), new Date().toISOString(), { mode: 0o600 })
       log(env, name === 'stop' ? 'turn ended: team sync' : `turn cut off (${String(input.error_type ?? input.error?.name ?? 'error')}): team sync`, 'info', 'stop_sync')

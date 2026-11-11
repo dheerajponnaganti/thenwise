@@ -133,6 +133,7 @@ if (cmd === 'archive' || cmd === 'ingest') {
     }
     done({ seen: r.seen, archived: r.archived, excluded: r.excluded, unparsed: r.unparsed.length, failed: r.failed.length })
     console.log(`${r.seen} sessions seen: ${r.archived} archived, ${r.skipped} unchanged (${r.remasked} masked again), ${r.excluded} excluded; ${(r.bytes / 1e6).toFixed(1)} MB of archive; ${r.unparsed.length} lines did not parse`)
+    if (r.newer) console.log(`${r.newer} archived chats or plan folders were written by a newer Thenwise and were left as they are. Update Thenwise.`)
     const bad = new Map<string, number[]>()
     for (const u of r.unparsed) bad.set(u.rel, [...(bad.get(u.rel) ?? []), u.line])
     for (const [rel, ls] of bad) console.log(`  ${rel}: ${ls.length} lines did not parse (first: line ${Math.min(...ls)})`)
@@ -247,6 +248,9 @@ if (cmd === 'mine') {
   const cfg = loadConfig()
   const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
+  // The sync mines without `capture.auto`, so unreviewed proposals expire here even when distill never runs.
+  const ex = (await import('./capture/notes.ts')).expireInbox(cfg.memDir, Date.now())
+  if (ex.length) console.log(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`)
   const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
   console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
   const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db)
@@ -261,7 +265,9 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
   const args: string[] = []
   const rest = process.argv.slice(3)
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]!)
+  if (cmd !== 'distill') notes.expireInbox(cfg.memDir, Date.now()) // the inbox shows what status counts; distill expires its own way
   if (cmd === 'distill') {
+    if (flag('since') && Number.isNaN((await import('./core/time.ts')).dateMs(flag('since')!))) (console.error(`--since needs a date such as 2026-11-01, found ${flag('since')}`), process.exit(2))
     const { distill } = await import('./capture/distill.ts')
     const r = distill(cfg, { since: flag('since'), session: flag('session'), dryRun: process.argv.includes('--dry-run'), last: flag('last') ? Number(flag('last')) : undefined })
     for (const l of r.lines) console.log(l)
@@ -310,6 +316,7 @@ if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
   const { loadConfig } = await import('./ingest/config.ts')
   const { Graph, endOf, sinceOf } = await import('./query/engine.ts')
+  const { dateMs } = await import('./core/time.ts')
   const c = await import('./query/commands.ts')
   // Positional words are everything after the command that is not a flag or a flag value.
   const args: string[] = []
@@ -352,7 +359,11 @@ if (cmd && QUERY.includes(cmd)) {
   else if (cmd === 'why') console.log(c.why(g, q))
   else if (cmd === 'tried') console.log(c.tried(g, q))
   else if (cmd === 'trace') console.log(c.trace(g, q))
-  else if (cmd === 'resume' && flag('mates-since')) console.log(c.mateLatest(g, Date.parse(flag('mates-since')!) || 0).join('\n'))
+  else if (cmd === 'resume' && flag('mates-since')) {
+    const t = dateMs(flag('mates-since')!)
+    if (Number.isNaN(t)) (console.error(`--mates-since needs a date such as 2026-11-01, found ${flag('mates-since')}`), process.exit(2))
+    console.log(c.mateLatest(g, t).join('\n'))
+  }
   else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'))
   else if (cmd === 'digest' || cmd === 'cost') {
     // A bare --since has already stopped at the flag check; a value that is no time is an input error too.

@@ -17,6 +17,8 @@ interface UpdateState {
   latest?: string
   notified?: string
   ran?: string
+  /** The newest version that ran here. An older Thenwise in another tool writes `ran` down, never this (#137). */
+  top?: string
 }
 
 export const runningVersion = (): string => JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
@@ -75,10 +77,12 @@ export function updateNotice(cfg: Config, running = runningVersion()): string {
   const s = readState(cfg.memDir)
   const lines: string[] = []
   // A first run has no record to compare: an install is not an update.
-  if (s.ran && compareVersions(running, s.ran) > 0) lines.push(`Thenwise updated to ${running}. What changed: ${RELEASES}/v${running}`)
+  const top = s.top ?? s.ran
+  if (top && compareVersions(running, top) > 0) lines.push(`Thenwise updated to ${running}. What changed: ${RELEASES}/v${running}`)
   const newer = s.latest && compareVersions(s.latest, running) > 0 && s.notified !== s.latest && checkEnabled(cfg) && !autoUpdateOn(cfg) ? s.latest : undefined
   if (newer) lines.push(`Thenwise ${newer} is out, you have ${running}. ${process.env.ANTIGRAVITY_CONVERSATION_ID ? 'Update with: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin' : process.env.COPILOT_PLUGIN_ROOT ? 'Update with: copilot plugin update thenwise' : process.env.PLUGIN_ROOT ? 'Update with: codex plugin marketplace upgrade thenwise' : 'Update in /plugin (Marketplaces, thenwise)'}, or run: npm install -g thenwise@latest. ${OFF_LINE}`)
-  if (s.ran !== running || newer) saveState(cfg.memDir, { ...s, ran: running, ...(newer ? { notified: newer } : {}) })
+  // top is the newest version that ever ran here: older tools write ran back down, but keep fields they do not know.
+  if (s.ran !== running || s.top !== top || newer) saveState(cfg.memDir, { ...s, ran: running, top: top && compareVersions(top, running) > 0 ? top : running, ...(newer ? { notified: newer } : {}) })
 
   return lines.join('\n')
 }

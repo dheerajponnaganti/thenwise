@@ -52,6 +52,18 @@ test('pre-push: a branch that does not start from the public branches is private
   assert.match(out.stderr, /private history/)
 })
 
+test('#116: a branch cut from an older main commit is refused as behind main, not as private history', () => {
+  const r = repo()
+  const old = r.git('rev-parse', 'HEAD')
+  r.commit('src/a.ts', 'a2\n', 'Second')
+  r.git('push', '-q', 'origin', 'main')
+  r.git('checkout', '-q', '-b', 'work', old)
+  const out = r.push(r.commit('src/b.ts', 'b\n', 'Add b'), 'refs/heads/work')
+  assert.equal(out.status, 1)
+  assert.match(out.stderr, /behind origin\/main: rebase on origin\/main/)
+  assert.doesNotMatch(out.stderr, /private history/)
+})
+
 test('pre-push: owner data in a pushed file or commit message is refused', () => {
   const r = repo()
   r.git('checkout', '-q', '-b', 'work')

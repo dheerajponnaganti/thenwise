@@ -24,7 +24,7 @@ import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resum
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
 import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
-import { EXPIRY_DAYS, readNotes } from '../capture/notes.ts'
+import { EXPIRY_DAYS, pausedNotes, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
@@ -424,7 +424,10 @@ function dashboard(env: HookEnv, storeStatus: string): string {
   const team = existsSync(join(env.dir, 'team.json')) ? `joined; last team sync ${ago(log.filter((e) => e.ev === 'sync_team').at(-1)?.t)}` : 'not in a team'
   let inbox = 'empty'
   try {
-    const waiting = readNotes(env.dir).filter((n) => n.status === 'inbox')
+    const cfg = loadConfigSafe().config
+    const inboxNotes = readNotes(env.dir).filter((n) => n.status === 'inbox')
+    const paused = cfg ? pausedNotes(inboxNotes, cfg, join(env.dir, 'graph.db')) : new Set<string>()
+    const waiting = inboxNotes.filter((n) => !paused.has(n.id)) // notes of paused folders wait unseen until `thenwise on`
     const oldest = waiting.map((n) => Date.parse(n.created)).filter((t) => !Number.isNaN(t)).sort()[0]
     if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (Date.now() - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
   } catch {} // no notes folder

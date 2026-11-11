@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { spawnSync } from 'node:child_process'
 
 import { distill } from '../src/capture/distill.ts'
 import { proposeExpiry } from '../src/capture/expire.ts'
 import { mineRules } from '../src/capture/mine.ts'
+import { readNotes, saveNote } from '../src/capture/notes.ts'
 import { parseFrontMatter } from '../src/core/frontmatter.ts'
-import { syncRun } from '../src/hooks/hook.ts'
+import { runHook, syncRun } from '../src/hooks/hook.ts'
 import { offCheck } from '../src/ingest/config.ts'
 import { storeFormat, STORE_FORMAT } from '../src/ingest/ingest.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -113,6 +115,57 @@ test('#111: vault write and other store readers leave out paused folders', () =>
   } finally {
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home
+  }
+})
+
+test('#111: the inbox hides proposals from paused folders', () => {
+  const w = new World() // its first commit's "Decision: keep a tiny" waits in the inbox, from a commit of w.proj
+  try {
+    const scratch = join(w.vault, 'scratch') // a folder outside any repository
+    mkdirSync(scratch)
+    w.chat('c1', { turns: [{ prompt: 'zebra', reply: 'r', edits: [join(w.proj, 'src/a.ts')] }] })
+    w.chat('c2', { cwd: scratch, turns: [{ prompt: 'quokka', reply: 'done' }] })
+    w.archive()
+    w.ingest('.thenwise/graph.db')
+    const note = (id: string, sources: string[], files: string[] = []) => saveNote(w.memDir, { id, type: 'finding', title: `Note ${id}`, summary: 's', status: 'inbox', valid_from: '', valid_to: '', supersedes: '', sources, created: new Date().toISOString(), project: '', path: '', files })
+    note('n-repo', ['ses:c1'])
+    note('n-scratch', ['turn:missing', 'ses:c2'])
+    note('n-file', [], [join(scratch, 'q.md')])
+    note('n-none', [])
+    const tr = readNotes(w.memDir).find((n) => n.id.startsWith('tr-'))!.id
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir }
+    const cli = (...a: string[]) => spawnSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), ...a], { encoding: 'utf8', env }).stdout
+    const shown = () => [...cli('inbox').matchAll(/^(\S+) {2}/gm)].map((m) => m[1]).sort()
+    const home = process.env.THENWISE_HOME
+    process.env.THENWISE_HOME = w.memDir
+    const counted = () => /^inbox +(.*)$/m.exec(runHook('status', {}, { dir: w.memDir, cli: 'none' }))![1]!.split(' ')[0]
+    try {
+      assert.deepEqual(shown(), ['n-file', 'n-none', 'n-repo', 'n-scratch', tr].sort())
+      assert.equal(counted(), '5')
+      cli('off', '--project', w.proj)
+      assert.deepEqual(shown(), ['n-file', 'n-none', 'n-scratch'], 'the repo\'s chat and commit are paused')
+      assert.equal(counted(), '3')
+      assert.match(cli('accept', 'n-repo', tr), /^n-repo: from a paused folder; run `thenwise on` to review it\n.*from a paused folder/)
+      cli('off', '--project', scratch)
+      assert.deepEqual(shown(), ['n-none'], 'a folder outside any repository, by a chat or by a file')
+      cli('on', '--project', scratch)
+      cli('on', '--project', w.proj)
+      cli('off')
+      assert.deepEqual(shown(), [], 'off for everything')
+      assert.equal(counted(), 'empty')
+      cli('on')
+      assert.deepEqual(shown(), ['n-file', 'n-none', 'n-repo', 'n-scratch', tr].sort(), 'on brings them back')
+      // accept --all-of takes only what the inbox shows; a paused note stays as it was.
+      cli('off', '--project', w.proj)
+      assert.match(cli('accept', '--all-of', 'finding'), /^n-file: accepted\nn-none: accepted\nn-scratch: accepted\n/)
+      cli('on', '--project', w.proj)
+      assert.deepEqual(Object.fromEntries(readNotes(w.memDir).map((n) => [n.id, n.status])), { 'n-file': 'active', 'n-none': 'active', 'n-repo': 'inbox', 'n-scratch': 'active', [tr]: 'inbox' })
+    } finally {
+      if (home === undefined) delete process.env.THENWISE_HOME
+      else process.env.THENWISE_HOME = home
+    }
+  } finally {
+    w.destroy()
   }
 })
 

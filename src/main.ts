@@ -262,23 +262,30 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
   const args: string[] = []
   const rest = process.argv.slice(3)
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]!)
+  // Notes from a folder paused with `thenwise off` are neither shown nor acted on until `thenwise on`.
+  const review = cmd === 'distill' ? [] : notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox' || n.status === 'expired')
+  const paused = notes.pausedNotes(review, cfg)
+  const held = args.filter((id) => paused.has(id))
+  for (const id of cmd === 'inbox' ? [] : held) console.log(`${id}: from a paused folder; run \`thenwise on\` to review it`)
+  const ids = args.filter((id) => !paused.has(id))
   if (cmd === 'distill') {
     const { distill } = await import('./capture/distill.ts')
     const r = distill(cfg, { since: flag('since'), session: flag('session'), dryRun: process.argv.includes('--dry-run'), last: flag('last') ? Number(flag('last')) : undefined })
     for (const l of r.lines) console.log(l)
     console.log(`${r.proposals} proposal(s) in the inbox, ${r.dropped} dropped, ${r.calls} model call(s)`)
   } else if (cmd === 'inbox') {
-    const inbox = notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox')
+    const inbox = review.filter((n) => n.status === 'inbox' && !paused.has(n.id))
     for (const n of inbox) console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary.split('\n').join('\n   ')}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`)
     console.log(`${inbox.length} note(s) in the inbox`)
   } else if (cmd === 'accept') {
     const active = new Set(notes.readNotes(cfg.memDir).filter((n) => n.status === 'active').map((n) => n.id))
-    for (const m of notes.accept(cfg.memDir, flag('all-of') ? { type: flag('all-of') } : { ids: args }, new Date().toISOString())) console.log(m)
+    const all = flag('all-of') ? review.filter((n) => n.status === 'inbox' && n.type === flag('all-of') && !paused.has(n.id)).map((n) => n.id) : ids
+    for (const m of notes.accept(cfg.memDir, { ids: all }, new Date().toISOString())) console.log(m)
     const { autoShare } = await import('./teams/client.ts')
     for (const m of await autoShare(cfg, notes.readNotes(cfg.memDir).filter((n) => n.status === 'active' && !active.has(n.id)))) console.log(m)
   }
-  else if (cmd === 'reject') for (const m of notes.reject(cfg.memDir, args)) console.log(m)
-  else console.log(notes.readNotes(cfg.memDir).find((n) => n.id === args[0])?.path ?? `${args[0]}: no such note`)
+  else if (cmd === 'reject') for (const m of notes.reject(cfg.memDir, ids)) console.log(m)
+  else if (!held.length) console.log(notes.readNotes(cfg.memDir).find((n) => n.id === args[0])?.path ?? `${args[0]}: no such note`)
   process.exit(0)
 }
 

@@ -787,8 +787,8 @@ export function get(g: Graph, id: string): string {
   const p = /^(.*)#p(\d+)$/.exec(id)
   const nid = p && g.nodes.has(p[1]!) ? p[1]! : id
   const n = g.nodes.get(nid)
-  if (!n) {
-    const near = g.idsContaining(id, 5)
+  if (!n || g.paused(n)) {
+    const near = g.idsContaining(id, 5).filter((x) => !g.paused(g.nodes.get(x)!))
     return `not recorded: no node with id "${id}".${near.length ? `\nIds containing it: ${near.join(', ')}` : ''}`
   }
   const full = g.fullText(nid)

@@ -52,7 +52,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
   // With no words the text comes on stdin, so an agent's command line never holds it.
   const text = (words.length || process.stdin.isTTY ? words.join(' ') : readFileSync(0, 'utf8')).trim()
   if (!text) (console.error(`usage: thenwise ${cmd} "<what>" [--here] [--file <path>]... (or the text on stdin)`), process.exit(2))
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const { makeId, readNotes, saveNote } = await import('./capture/notes.ts')
   const { related } = await import('./capture/similar.ts')
   const { Graph } = await import('./query/engine.ts')
@@ -62,6 +62,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
   let project = ''
   if (existsSync(db)) {
     const g = new Graph(db, { lazy: true })
+    g.off = offCheck(cfg) // a paused chat is never a note's source
     if (process.argv.includes('--here')) g.scopeTo(process.cwd())
     const ses = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team).sort((a, b) => Date.parse(b.until || b.at) - Date.parse(a.until || a.at))[0]
     if (ses) [source, project] = [ses.id, ses.project]
@@ -244,16 +245,16 @@ if (cmd === 'status') {
 }
 
 if (cmd === 'mine') {
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const cfg = loadConfig()
   const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
   // The sync mines without `capture.auto`, so unreviewed proposals expire here even when distill never runs.
   const ex = (await import('./capture/notes.ts')).expireInbox(cfg.memDir, Date.now())
   if (ex.length) console.log(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`)
-  const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
+  const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db, new Date(), offCheck(cfg))
   console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
-  const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db)
+  const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db, new Date(), offCheck(cfg))
   console.log(`${e} decision${e === 1 ? '' : 's'} to recheck added to the inbox${e ? '; `thenwise inbox` lists them' : ''}`)
   process.exit(0)
 }
@@ -266,6 +267,12 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
   const rest = process.argv.slice(3)
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]!)
   if (cmd !== 'distill') notes.expireInbox(cfg.memDir, Date.now()) // the inbox shows what status counts; distill expires its own way
+  // Notes from a folder paused with `thenwise off` are neither shown nor acted on until `thenwise on`.
+  const review = cmd === 'distill' ? [] : notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox' || n.status === 'expired')
+  const paused = notes.pausedNotes(review, cfg)
+  const held = args.filter((id) => paused.has(id))
+  for (const id of cmd === 'inbox' ? [] : held) console.log(`${id}: from a paused folder; run \`thenwise on\` to review it`)
+  const ids = args.filter((id) => !paused.has(id))
   if (cmd === 'distill') {
     if (flag('since') && Number.isNaN((await import('./core/time.ts')).dateMs(flag('since')!))) (console.error(`--since needs a date such as 2026-11-01, found ${flag('since')}`), process.exit(2))
     const { distill } = await import('./capture/distill.ts')
@@ -273,17 +280,18 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
     for (const l of r.lines) console.log(l)
     console.log(`${r.proposals} proposal(s) in the inbox, ${r.dropped} dropped, ${r.calls} model call(s)`)
   } else if (cmd === 'inbox') {
-    const inbox = notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox')
+    const inbox = review.filter((n) => n.status === 'inbox' && !paused.has(n.id))
     for (const n of inbox) console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary.split('\n').join('\n   ')}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`)
     console.log(`${inbox.length} note(s) in the inbox`)
   } else if (cmd === 'accept') {
     const active = new Set(notes.readNotes(cfg.memDir).filter((n) => n.status === 'active').map((n) => n.id))
-    for (const m of notes.accept(cfg.memDir, flag('all-of') ? { type: flag('all-of') } : { ids: args }, new Date().toISOString())) console.log(m)
+    const all = flag('all-of') ? review.filter((n) => n.status === 'inbox' && n.type === flag('all-of') && !paused.has(n.id)).map((n) => n.id) : ids
+    for (const m of notes.accept(cfg.memDir, { ids: all }, new Date().toISOString())) console.log(m)
     const { autoShare } = await import('./teams/client.ts')
     for (const m of await autoShare(cfg, notes.readNotes(cfg.memDir).filter((n) => n.status === 'active' && !active.has(n.id)))) console.log(m)
   }
-  else if (cmd === 'reject') for (const m of notes.reject(cfg.memDir, args)) console.log(m)
-  else console.log(notes.readNotes(cfg.memDir).find((n) => n.id === args[0])?.path ?? `${args[0]}: no such note`)
+  else if (cmd === 'reject') for (const m of notes.reject(cfg.memDir, ids)) console.log(m)
+  else if (!held.length) console.log(notes.readNotes(cfg.memDir).find((n) => n.id === args[0])?.path ?? `${args[0]}: no such note`)
   process.exit(0)
 }
 
@@ -314,7 +322,7 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
 const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'digest', 'path', 'get', 'tests', 'cost']
 if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const { Graph, endOf, sinceOf } = await import('./query/engine.ts')
   const { dateMs } = await import('./core/time.ts')
   const c = await import('./query/commands.ts')
@@ -345,6 +353,7 @@ if (cmd && QUERY.includes(cmd)) {
   }
   if (!existsSync(dbPath)) (live ? (console.log(live), process.exit(0)) : (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2)))
   const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }) // lazy reads only what the command touches; --full loads the whole graph
+  g.off = offCheck(cfg) // with or without a scope, and for the hooks' queries too
   g.expand = process.argv.includes('--expand')
   // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
   const opts = cmd === 'tests' ? lead : process.argv

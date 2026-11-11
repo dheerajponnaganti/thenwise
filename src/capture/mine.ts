@@ -3,8 +3,7 @@
 // someone wrote). A sentence picked from a reply does not: a release turn that mentions one would tie it to every file
 // the release touched. No model; the same evidence never proposes twice, and a rejected proposal stays rejected.
 
-import { DatabaseSync } from 'node:sqlite'
-
+import { Graph } from '../query/engine.ts'
 import { trigramSim } from './similar.ts'
 import { makeId, readNotes, saveNote } from './notes.ts'
 
@@ -21,14 +20,16 @@ interface Dead { id: string; kind: string; source: string; at: string; project: 
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).trimEnd()}...` : s)
 
-/** Writes rule proposals to the inbox; returns how many were new. */
-export function mineRules(memDir: string, dbPath: string, now = new Date()): number {
-  const db = new DatabaseSync(dbPath, { readOnly: true })
+/** Writes rule proposals to the inbox; returns how many were new. `off` is the paused-folder check: their dead ends never count. */
+export function mineRules(memDir: string, dbPath: string, now = new Date(), off?: (folder: string) => boolean): number {
+  const g = new Graph(dbPath, { lazy: true })
+  g.off = off
+  const db = g.db
   let dead: Dead[]
   const files = new Map<string, Dead[]>()
   const alias = new Map<string, string>()
   try {
-    dead = (db.prepare("SELECT id, kind, source, at, project, json_extract(extra, '$.deadEnd') AS text, json_extract(extra, '$.deadEndKind') AS how FROM nodes WHERE kind IN ('turn', 'commit', 'pr') AND json_extract(extra, '$.deadEnd') IS NOT NULL AND coalesce(json_extract(extra, '$.deadEndKind'), 'phrase') != 'phrase' ORDER BY at, id").all() as unknown as Dead[]).map((d) => ({ ...d, text: String(d.text ?? '') }))
+    dead = (db.prepare("SELECT id, kind, source, at, project, json_extract(extra, '$.deadEnd') AS text, json_extract(extra, '$.deadEndKind') AS how FROM nodes WHERE kind IN ('turn', 'commit', 'pr') AND json_extract(extra, '$.deadEnd') IS NOT NULL AND coalesce(json_extract(extra, '$.deadEndKind'), 'phrase') != 'phrase' ORDER BY at, id").all() as unknown as Dead[]).filter((d) => !g.paused(g.nodes.get(d.id)!)).map((d) => ({ ...d, text: String(d.text ?? '') }))
     const edges = db.prepare("SELECT dst FROM edges WHERE src = ? AND kind IN ('edited', 'changed', 'touches') AND dst LIKE 'file:%'")
     const fileNode = db.prepare('SELECT extra FROM nodes WHERE id = ?')
     const touched = db.prepare("SELECT dst, count(DISTINCT src) AS n FROM edges WHERE kind IN ('edited', 'changed', 'touches') AND dst LIKE 'file:%' GROUP BY dst").all() as { dst: string; n: number }[]

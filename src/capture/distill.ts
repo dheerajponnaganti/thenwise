@@ -10,7 +10,8 @@ import { logger } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { dateMs } from '../core/time.ts'
 import type { Config } from '../ingest/config.ts'
-import { globMatch } from '../ingest/config.ts'
+import { globMatch, isOff } from '../ingest/config.ts'
+import { under } from '../ingest/parts.ts' // normalizes both paths, so Windows backslashes match
 import { chatLines, parseSession } from '../ingest/transcript.ts'
 import { expireInbox, makeId, readNotes, saveNote } from './notes.ts'
 import type { NoteType } from './notes.ts'
@@ -128,7 +129,6 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
     appendFileSync(logFile, `${JSON.stringify({ time: new Date(now).toISOString(), ...o })}\n`, { mode: 0o600 }) // read for one more release
   }
   const root = join(cfg.memDir, 'archive/sessions')
-  const under = (p: string, r: string) => p === r || p.startsWith(`${r}/`)
   // The manifest records each chat's source time: a chat last written before `since` also ended before it.
   let manifest: Record<string, { mtimeMs?: number }> = {}
   if (opts.since) {
@@ -145,7 +145,7 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
       const recorded = manifest[`${key}/${id}.jsonl`]?.mtimeMs
       if (opts.since && recorded && recorded < Date.parse(opts.since)) continue
       const s = parseSession(chatLines(join(root, key, f)), id, cfg.home)
-      if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
+      if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || isOff(cfg, s.cwd) || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
       if (opts.since && Date.parse(s.end) < dateMs(opts.since)) continue
 
       const st = state[id] ?? { turn: '', summaries: [] }

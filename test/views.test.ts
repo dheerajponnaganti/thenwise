@@ -38,3 +38,17 @@ test('a configured project claims a chat by the words of its first prompt', asyn
   const cfg = loadConfig(home)
   assert.deepEqual(cfg.viewProjects, [{ name: 'launch film', words: ['product demo'], paths: [join(home, 'film')] }])
 })
+
+test('#111: a project view path written with backslashes claims the chats that edited files under it', async () => {
+  const { sessionProjects } = await import('../src/views/views.ts')
+  const { Graph } = await import('../src/query/engine.ts')
+  const { writeGraph } = await import('./mcp-fixture.ts')
+  const file = writeGraph(mkdtempSync(join(tmpdir(), 'tw-view-win-')))
+  const db = new DatabaseSync(file)
+  db.prepare('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)').run('file:/x/q/src/a.ts', 'file', 'a.ts', '', '2026-10-05T10:00:00Z', '', 'p', '', '{}')
+  db.prepare('INSERT INTO edges VALUES (?,?,?,?,?)').run('turn:t1', 'file:/x/q/src/a.ts', 'edited', '', '{}')
+  db.close()
+  // On Windows a configured path keeps its backslashes, while file ids always use forward slashes.
+  const { projectOf } = sessionProjects(new Graph(file), [{ name: 'win view', words: [], paths: ['\\x\\q'] }])
+  assert.equal(projectOf.get('ses:s1'), 'win view')
+})

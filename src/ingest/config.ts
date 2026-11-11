@@ -1,7 +1,7 @@
 // Config for archive and ingest: <data folder>/config.json merged over defaults. All paths derive from `home`
 // so tests can run against a temp directory.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -243,13 +243,30 @@ export function loadConfig(home: string = homedir()): Config {
   return r.config
 }
 
+/** A folder as written and as its real path: `/tmp/x` and `/private/tmp/x`, or a folder and a symlink to it, match. */
+function spellings(p: string): string[] {
+  try {
+    return [...new Set([normPath(p), normPath(realpathSync(p))])]
+  } catch {
+    return [normPath(p)] // a folder that is gone is matched as written
+  }
+}
+
 /** True when Thenwise is paused everywhere, or for this folder or a folder inside a paused one. */
 export function isOff(cfg: Pick<Config, 'off' | 'offProjects'>, projectPath?: string): boolean {
   if (cfg.off) return true
-  if (!projectPath) return false
-  const p = normPath(projectPath)
+  if (!projectPath || !cfg.offProjects.length) return false
+  const ps = spellings(projectPath)
 
-  return cfg.offProjects.some((o) => p === normPath(o) || p.startsWith(`${normPath(o)}/`))
+  return cfg.offProjects.some((o) => spellings(o).some((x) => ps.some((p) => p === x || p.startsWith(`${x}/`))))
+}
+
+/** The paused-folder check a Graph applies, once per folder; none when nothing is paused, so a search does no extra work. */
+export function offCheck(cfg: Pick<Config, 'off' | 'offProjects'>): ((folder: string) => boolean) | undefined {
+  if (!cfg.off && !cfg.offProjects.length) return undefined
+  const seen = new Map<string, boolean>()
+
+  return (f) => seen.get(f) ?? (seen.set(f, isOff(cfg, f)), seen.get(f)!)
 }
 
 /** Glob with `*` only, matched against a whole project key. */

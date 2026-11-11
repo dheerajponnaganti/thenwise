@@ -26,7 +26,7 @@ import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resum
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
 import { progressLine, readProgress, readTold, running, writeProgress, writeTold } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
-import { EXPIRY_DAYS, overdue, readNotes } from '../capture/notes.ts'
+import { EXPIRY_DAYS, overdue, pausedNotes, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
@@ -211,8 +211,10 @@ export function syncRun(env: HookEnv) {
     const cfgNow = loadConfigSafe().config
     const last = cfgNow?.captureAuto ? lastDistill(env.dir) : ''
     for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(last && distillDue(last) ? [`distill --since ${last}`] : [])]) {
-      // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
-      if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
+      // The vault is rewritten from the whole graph: only after an ingest that changed it, after a config change (`off` and
+      // `on` change what it may hold), or once a day.
+      const configAt = statSync(join(env.dir, 'config.json'), { throwIfNoEntry: false })?.mtimeMs ?? 0
+      if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5 && configAt <= statSync(vaultStamp).mtimeMs) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
         continue
       }
@@ -438,9 +440,13 @@ function dashboard(env: HookEnv, storeStatus: string): string {
   const team = existsSync(join(env.dir, 'team.json')) ? `joined; last team sync ${ago(log.filter((e) => e.ev === 'sync_team').at(-1)?.t)}` : 'not in a team'
   let inbox = 'empty'
   try {
-    // Read only: an overdue note is already gone from `thenwise inbox`, which expires it first.
+    const cfg = loadConfigSafe().config
+    // Read only: an overdue note is already gone from `thenwise inbox`, which expires it first. Notes of paused folders wait
+    // unseen until `thenwise on`.
     const now = Date.now()
-    const waiting = readNotes(env.dir).filter((n) => n.status === 'inbox' && !overdue(n, now))
+    const inboxNotes = readNotes(env.dir).filter((n) => n.status === 'inbox' && !overdue(n, now))
+    const paused = cfg ? pausedNotes(inboxNotes, cfg, join(env.dir, 'graph.db')) : new Set<string>()
+    const waiting = inboxNotes.filter((n) => !paused.has(n.id))
     const oldest = waiting.map((n) => Date.parse(n.created)).filter((t) => !Number.isNaN(t)).sort()[0]
     if (waiting.length) inbox = `${waiting.length} proposed note${waiting.length === 1 ? '' : 's'} wait${waiting.length === 1 ? 's' : ''}${oldest ? `, the oldest expires in ${Math.max(0, Math.ceil(EXPIRY_DAYS - (now - oldest) / 864e5))} days` : ''}; /thenwise:inbox`
   } catch {} // no notes folder

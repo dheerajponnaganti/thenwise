@@ -127,9 +127,9 @@ test('B2-22/23: other projects cannot fill the limit, paused ones leave the fall
   g.scopeTo(a)
   assert.ok(g.search('zebra').hits.some((h) => h.node.id === 'turn:a0'), 'in-scope hit survives 450 stronger hits elsewhere')
   g.scope = undefined
-  g.hide = (r) => r === b
+  g.off = (f) => f === b
   assert.ok(!g.search('zebra').hits.some((h) => h.node.source === 'ses:b'))
-  g.hide = undefined
+  g.off = undefined
   g.scopeTo(a)
   assert.equal(g.rootOf(g.nodes.get('turn:gone')!), gone)
   assert.equal(g.inScope(g.nodes.get('turn:gone')), false, 'a deleted repo is its own project, not global')

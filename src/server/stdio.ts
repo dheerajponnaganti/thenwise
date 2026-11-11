@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import { resolveDataDir } from '../core/home.ts'
 import { errFields, errorCode, logger, queryFields, redact } from '../core/log.ts'
-import { isOff, loadConfigSafe } from '../ingest/config.ts'
+import { isOff, loadConfigSafe, offCheck } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { handoffBlock, ownChat } from '../hooks/handoff.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
@@ -133,12 +133,19 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
     }
     if (!existsSync(p)) return undefined
     const s = statSync(p)
-    const now = `${s.ino}:${s.size}:${s.mtimeMs}`
+    // `thenwise off` and `on` change only the config, so its text is part of the signature. Text, not mtime: a save in
+    // the same clock tick can keep the inode, size and mtime.
+    let conf = ''
+    try {
+      conf = readFileSync(join(resolveDataDir(), 'config.json'), 'utf8')
+    } catch {} // no config yet
+    const now = `${s.ino}:${s.size}:${s.mtimeMs}\0${conf}`
     if (!graph || now !== sig) {
       const g = new Graph(p, { lazy: true })
       const cfg = serverConfig().config
       // With memory off in this project, only global notes answer: an impossible scope keeps every project out.
       const project = here()
+      g.off = cfg ? offCheck(cfg) : undefined
       if (cfg && isOff(cfg, project)) g.scope = OFF
       else if (project && cfg?.scope !== 'all') g.scopeTo(project)
       try {
@@ -210,12 +217,9 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       // Never lose an answer to the scope: nothing in this project falls back to every project, and says so.
       if (g.scope !== undefined && g.scope !== OFF && /^not recorded/.test(out)) {
         const scope = g.scope
-        const cfg = serverConfig().config
-        g.scope = undefined
-        g.hide = cfg ? (root) => isOff(cfg, root) : undefined // paused projects stay out of the fallback
+        g.scope = undefined // paused folders stay out of the fallback too: g.off holds whatever the scope
         const all = t.run(g, args)
         g.scope = scope
-        g.hide = undefined
         if (!/^not recorded/.test(all)) out = `Nothing in this project; from all projects:\n${all}`
       }
 

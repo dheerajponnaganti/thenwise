@@ -7,6 +7,7 @@ import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
 
 import { createServer, serverConfig, serveStdio } from '../src/server/stdio.ts'
+import { switchCommand } from '../src/setup/off.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
 
 const cli = resolve('src/cli.ts')
@@ -196,6 +197,72 @@ test('S6-B10 and S3-H5: tools answer for the session repo, fall back to all proj
     const home2 = tempDir()
     assert.match(ready(writeGraph(home2, '', '/x/p'), b).textOf('memory_why', { query: 'cache shards' }), /^why "cache shards"[\s\S]*turn:t2/)
   } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+})
+
+test('#111: a running MCP server stops answering for a project turned off, everywhere or by --project, and answers again after on', () => {
+  const a = realpathSync(tempDir())
+  execFileSync('git', ['init', '-q', a])
+  const dir = tempDir()
+  const db = writeGraph(dir, '', a)
+  writeFileSync(join(dir, 'config.json'), '{}')
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  const log = console.log
+  try {
+    const { textOf } = ready(db, a)
+    const answers = (): [string, string] => [textOf('memory_why', { query: 'cache shards' }), textOf('memory_resume', {})]
+    const [why, resume] = answers()
+    assert.match(why, /turn:t2/)
+    assert.match(resume, /turn:t2/)
+    console.log = () => {} // switchCommand prints what it did
+    for (const flags of [['--project', a], []]) {
+      assert.equal(switchCommand(false, flags), 0)
+      const [w, r] = answers()
+      assert.doesNotMatch(w, /turn:t2/, `off ${flags.join(' ')}`)
+      assert.doesNotMatch(r, /turn:t2/, `off ${flags.join(' ')}: no brief`)
+      assert.equal(switchCommand(true, flags), 0)
+      assert.deepEqual(answers(), [why, resume], `on ${flags.join(' ')}`)
+    }
+  } finally {
+    console.log = log
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
+})
+
+test('#111: off hides chats from folders outside a repo, in the CLI and in a running MCP server', () => {
+  // Two folders outside any repository: the chats ran in x; the person now works in y.
+  const [x, y] = [realpathSync(tempDir()), realpathSync(tempDir())]
+  const link = join(tempDir(), 'x-link')
+  symlinkSync(x, link, 'junction')
+  mkdirSync(join(x, 'sub')) // a folder that still exists: a gone one keeps its own path as its project
+  const dir = tempDir()
+  const db = writeGraph(dir, '', join(x, 'sub'))
+  writeFileSync(join(dir, 'config.json'), '{}')
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: dir, USERPROFILE: dir, THENWISE_HOME: dir }
+  const cli = (...a: string[]) => execFileSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), ...a, '--db', db, '--project', y], { encoding: 'utf8', env })
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  const log = console.log
+  try {
+    const { textOf } = ready(db, y)
+    // Search, the brief (resume), and a read by id: what hooks, the CLI and the MCP tools answer from.
+    const SEEN = /Telugu|ses:s1/ // the chat's text or its id; a refused read only repeats the asked id
+    const answers = () => [cli('search', 'cache shards'), cli('resume'), textOf('memory_why', { query: 'cache shards' }), textOf('memory_resume', {}), textOf('memory_read', { id: 'turn:t2' })]
+    for (const a of answers()) assert.match(a, SEEN)
+    console.log = () => {} // switchCommand prints what it did
+    // The folder by another spelling (a symlink), and off for everything.
+    for (const flags of [['--project', link], []]) {
+      assert.equal(switchCommand(false, flags), 0)
+      for (const [i, a] of answers().entries()) assert.doesNotMatch(a, SEEN, `off ${flags.join(' ')}: answer ${i}`)
+      assert.equal(switchCommand(true, flags), 0)
+      for (const a of answers()) assert.match(a, SEEN, `on ${flags.join(' ')}`)
+    }
+  } finally {
+    console.log = log
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home
   }

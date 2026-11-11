@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { parseFrontMatter, yamlValue } from '../core/frontmatter.ts'
 import type { Scalar } from '../core/frontmatter.ts'
 import { maskSecrets } from '../core/secrets.ts'
+import { type Config, offCheck } from '../ingest/config.ts'
+import { Graph } from '../query/engine.ts'
 
 export const TYPES = ['decision', 'dead_end', 'finding', 'rule', 'now'] as const
 export type NoteType = (typeof TYPES)[number]
@@ -91,6 +93,27 @@ export function expireInbox(memDir: string, nowMs: number): string[] {
   }
 
   return out
+}
+
+/** The ids of these notes that `thenwise off` holds back: off for everything, a source in the store from a paused folder
+ * (a chat, a commit, a PR), or a file in one. They are kept as they are and come back with `thenwise on`. */
+export function pausedNotes(notes: CNote[], cfg: Pick<Config, 'off' | 'offProjects' | 'memDir'>, dbPath = join(cfg.memDir, 'graph.db')): Set<string> {
+  const off = offCheck(cfg)
+  if (!off || !notes.length) return new Set()
+  if (cfg.off) return new Set(notes.map((n) => n.id))
+  let g: Graph | undefined
+  try {
+    if (existsSync(dbPath)) (g = new Graph(dbPath, { lazy: true })).off = off
+  } catch {} // no readable store: the files still say where a note is from
+  const held = (id: string) => {
+    const x = g?.nodes.get(id)
+    return !!x && g!.paused(x)
+  }
+  try {
+    return new Set(notes.filter((n) => (n.files ?? []).some(off) || n.sources.some(held)).map((n) => n.id))
+  } finally {
+    g?.db.close()
+  }
 }
 
 /** Accept inbox (or expired) notes. A note keeps the date its evidence gives (a commit's `Decision:` line, a mined rule);

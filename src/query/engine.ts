@@ -132,8 +132,8 @@ export class Graph {
   feedback = true
   /** The project folder results are limited to (plus global notes); undefined searches everything. */
   scope: string | undefined
-  /** Roots to leave out even when the scope is everything (paused projects in the all-projects fallback). */
-  hide?: (root: string) => boolean
+  /** Folders paused with `thenwise off`: their chats and records stay out of every answer, whatever the scope. */
+  off?: (folder: string) => boolean
   private roots?: Map<string, string>
   private known: string[] = []
   private slugs: Record<string, string> = {} // project root -> GitHub owner/name, from the store's meta
@@ -263,11 +263,23 @@ export class Graph {
     for (const n of team) this.roots.set(n.id, String(n.extra.root ?? ''))
   }
   inScope(n: Node | undefined): boolean {
-    if (!n || n.kind === 'file' || (this.scope === undefined && !this.hide)) return true
+    if (!n || n.kind === 'file') return true
+    if (this.paused(n)) return false
+    if (this.scope === undefined) return true
     const r = this.rootOf(n)
 
     // Teammates' chats of a project this machine does not hold show only when everything is searched.
-    return !(r && this.hide?.(r)) && (this.scope === undefined || this.ours(r) || (r === '' && !n.extra?.team))
+    return this.ours(r) || (r === '' && !n.extra?.team)
+  }
+  /** Whether `thenwise off` hides this node. A chat goes by the folder it ran in, so a chat outside any repository
+   * (whose project is global) is paused by its own folder, and `off` for everything takes every chat. */
+  paused(n: Node): boolean {
+    if (!this.off) return false
+    const ses = n.kind === 'session' ? n : n.kind === 'turn' || n.kind === 'summary' ? this.nodes.get(n.source) : undefined
+    if (ses?.kind === 'session') return this.off(ses.extra?.team ? this.rootOf(ses) : String(ses.extra?.cwd ?? ''))
+    const r = this.rootOf(n)
+
+    return r !== '' && this.off(r)
   }
   projectName(n: Node): string {
     const r = this.rootOf(n)

@@ -121,9 +121,9 @@ export function log(env: HookEnv, msg: string, lvl: Level = 'info', ev = 'note')
   logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg })
 }
 
-/** Runs one query command in a child that is killed after QUERY_MS, so a slow store cannot hold a hook. */
-function query(env: HookEnv, args: string[]): string {
-  const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } })
+/** Runs one query command in a child that is killed after ms (QUERY_MS in a hook), so a slow store cannot hold a hook. */
+function query(env: HookEnv, args: string[], ms = QUERY_MS): string {
+  const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: ms, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } })
   if (r.status !== 0) {
     log(env, `${args[0]} did not answer: ${r.error?.message ?? (r.stderr.trim().split('\n')[0] || `exit ${r.status}`)}`, 'warn', 'query_failed')
 
@@ -473,7 +473,8 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
       if (!existsSync(graph)) return `No memory yet in ${env.dir}. ${prog ? `Thenwise ${prog}.` : `The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}`}\n${tail}`
       const s = statSync(graph)
 
-      const store = query(env, ['status']).trim()
+      // /thenwise:status runs through Bash, not as a hook, so it can wait for a large store.
+      const store = query(env, ['status'], 30_000).trim()
 
       return `${dashboard(env, store)}\n\nDetails:\n${store || `Memory in ${env.dir}: ${(s.size / 1e6).toFixed(1)} MB, updated ${s.mtime.toISOString()}.`}\nRecent log:\n${tail}`
     }

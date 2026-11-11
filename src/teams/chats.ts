@@ -37,8 +37,10 @@ export const sharesFile = (dir: string) => join(dir, 'team-shares.json')
 const keys = new Map<string, string>()
 /** The project's name: its GitHub slug, else the folder name. Read once per repo, so no git runs per chat. */
 export const projectKey = (repo: string) => keys.get(repo) ?? (keys.set(repo, githubSlug(repo) ?? basename(repo)), keys.get(repo)!)
-/** Whether a chat's repo is the shared project or another checkout or worktree of it (same key, not same path). */
-const sameProject = (found: string | undefined, repo: string) => !!found && projectKey(found) === projectKey(repo)
+/** Whether a chat's repo is the shared project: the same repo (a worktree resolves to it), or another clone with the same
+ * GitHub slug. A folder name alone never matches, so a stranger repo named like the project stays home. */
+const sameProject = (found: string | undefined, repo: string) =>
+  !!found && (real(repoRoot(found) ?? found) === real(repoRoot(repo) ?? repo) || (projectKey(repo).includes('/') && projectKey(found) === projectKey(repo)))
 
 export interface SharedProject {
   repo: string
@@ -255,10 +257,10 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
       passages,
       paths: [...(paths.get(n.id) ?? [])].sort().slice(0, 200).map((p) => scrub(p)).filter((p) => p.length <= 500),
       shas: [...(shas.get(n.id) ?? [])].filter((x) => /^[0-9a-f]{4,40}$/.test(x)).sort().slice(0, 20),
-      prs: [...(prs.get(n.id) ?? [])].filter((x) => x.length <= 300).sort().slice(0, 20),
+      prs: [...(prs.get(n.id) ?? [])].map((x) => scrub(x)).filter((x) => x.length <= 300).sort().slice(0, 20),
       dead_end: !!n.extra.deadEnd,
       dead_kind: n.extra.deadEnd ? String(n.extra.deadEndKind ?? 'phrase') : '',
-      dead_text: n.extra.deadEnd ? scrub(maskSecrets(String(n.extra.deadEnd)).text).slice(0, 160) : '',
+      dead_text: n.extra.deadEnd ? clean(String(n.extra.deadEnd)).slice(0, 160) : '',
     })
   }
   if (!turns.length) return { skip: 'empty' }

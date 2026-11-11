@@ -246,19 +246,15 @@ export class Graph {
       else if (n.kind === 'commit') this.roots.set(n.id, of(n.source))
     }
     this.known = [...new Set(this.roots.values())].filter(Boolean)
-    // A teammate's chat belongs to this machine's checkout of its project (by GitHub slug, else folder name), or to none.
-    // Slugs come from the store's meta (written at ingest); a root it does not list falls back to the folder name, never to git.
-    let slugs: Record<string, string> = {}
+    // Slugs come from the store's meta (written at ingest), so a second clone of a GitHub repo is found with no git.
     try {
       // Keys in the same form as project roots (real path, forward slashes): ingest wrote them as found, which on Windows
       // has backslashes and anywhere may pass through a symlink, so a clone would never match its project.
       const raw = JSON.parse((this.db.prepare("SELECT value FROM meta WHERE key = 'slugs'").get() as { value: string } | undefined)?.value ?? '{}') as Record<string, string>
-      this.slugs = slugs = Object.fromEntries(Object.entries(raw).map(([k, v]) => [normPath(real(k)), v]))
-    } catch { /* older store: folder names only */ }
-    for (const n of team) {
-      const p = String(n.extra.project ?? n.project)
-      this.roots.set(n.id, this.known.find((k) => slugs[k] === p) ?? this.known.find((k) => basename(k) === p) ?? '')
-    }
+      this.slugs = Object.fromEntries(Object.entries(raw).map(([k, v]) => [normPath(real(k)), v]))
+    } catch { /* older store: no slugs */ }
+    // A teammate's chat belongs to the checkout ingest chose for it (checkoutOf), or to none.
+    for (const n of team) this.roots.set(n.id, String(n.extra.root ?? ''))
   }
   inScope(n: Node | undefined): boolean {
     if (!n || n.kind === 'file' || (this.scope === undefined && !this.hide)) return true

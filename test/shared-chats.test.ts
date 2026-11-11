@@ -24,6 +24,7 @@ import { dropChat, openChatCache, putChat, readChats } from '../src/teams/chatca
 import type { WireChat } from '../src/teams/chatcache.ts'
 import { archived, buildChat, formatPreview, loadShares, previewShare, pushShared, scrubber, setServerStatus, sharesStatus, unshareChats, updateShares } from '../src/teams/chats.ts'
 import { fetchShared, joinTeam } from '../src/teams/client.ts'
+import { readExport } from '../src/teams/export.ts'
 import { openTeamDb } from '../src/teams/schema.ts'
 import { createTeamServer, invite } from '../src/teams/server.ts'
 import { chatText, diffStores, git, World } from './world.ts'
@@ -1146,6 +1147,149 @@ test('scope: a chat in a worktree of the project is shared under the project', (
       assert.deepEqual(b.unit.turns[0]!.paths, ['src/a.ts'])
       assert.equal(b.unit.project, 'me/proj')
     }
+  } finally {
+    w.destroy()
+  }
+})
+
+/** A second repo named `proj` in another folder, with no remote and one chat that must stay home. */
+function stranger(w: World) {
+  const dir = join(w.home, 'clients', 'other', 'proj')
+  mkdirSync(join(dir, 'src'), { recursive: true })
+  git(dir, 'init', '-q', '-b', 'main')
+  writeFileSync(join(dir, 'src/a.ts'), 'a\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'Add a')
+  w.cfg.roots.push(dir) // the member works in it too, so the store holds both repos
+  w.chat('client', { turns: [{ prompt: 'Draft the client plan', reply: 'The CLIENT CONFIDENTIAL plan lives in src/a.ts.', edits: [`${dir}/src/a.ts`] }], cwd: dir }, '-home-clients-other-proj')
+  w.archive()
+  return dir
+}
+
+test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub remote is never previewed or exported', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    // A worktree of the named repo is the same repo, whatever its folder is called.
+    const wt = join(w.home, 'wt')
+    git(w.proj, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    w.chat('inwt', { turns: [{ prompt: 'Work in the worktree', reply: 'Edited it.', edits: [`${wt}/src/a.ts`] }], cwd: wt }, '-home-wt')
+    w.archive()
+    const all = archived(w.cfg)
+    assert.deepEqual(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'client')!, (t) => t), { skip: 'other' })
+    assert.deepEqual(built(buildChat(w.cfg, w.proj, all.find((x) => x.session === 'inwt')!, (t) => t)).unit.turns[0]!.paths, ['src/a.ts'])
+    const sent: string[] = []
+    const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual([pv.chats, sent.sort()], [2, ['c1', 'inwt']])
+    // The stranger repo can be shared on its own, under the same name.
+    assert.equal(previewShare(w.cfg, dir).chats, 1)
+    const file = join(w.home, 'proj.thenwise')
+    const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+    const out = spawnSync(process.execPath, ['--no-warnings', cli, 'export', w.proj, '--out', file, '--name', 'ana', '--yes'], { encoding: 'utf8', env: { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir }, input: '' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.deepEqual(readExport(file).map((x) => x.session).sort(), ['c1', 'inwt'])
+    assert.ok(!readFileSync(file).toString('latin1').includes('CLIENT CONFIDENTIAL'))
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 1: a repo elsewhere with the same folder name and no GitHub remote is never pushed, now or at a later sync', needs, async () => {
+  const t = await team()
+  try {
+    stranger(t.a)
+    t.share(t.a)
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 1)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chat_passages WHERE text LIKE '%CLIENT CONFIDENTIAL%'"), 0)
+    assert.doesNotMatch(sharesStatus(t.a.cfg).lines.join(), /waiting/)
+  } finally {
+    await t.stop()
+  }
+})
+
+test('GHSA-5jmx item 1: a repo with a GitHub slug still shares its clones, and never a folder that is only named like it', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    git(w.proj, 'remote', 'add', 'origin', 'https://github.com/me/proj.git')
+    const clone = join(w.home, 'clone')
+    execFileSync('git', ['clone', '-q', w.proj, clone])
+    git(clone, 'remote', 'set-url', 'origin', 'git@github.com:me/proj.git')
+    w.chat('inclone', { turns: [{ prompt: 'Work in the clone', reply: 'Edited it.', edits: [`${clone}/src/a.ts`] }], cwd: clone }, '-home-clone')
+    w.archive()
+    const sent: string[] = []
+    const pv = previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual([pv.project, sent.sort()], ['me/proj', ['c1', 'inclone']])
+    assert.deepEqual(buildChat(w.cfg, w.proj, archived(w.cfg).find((x) => x.session === 'client')!, (t) => t), { skip: 'other' })
+    assert.equal(previewShare(w.cfg, dir).project, 'proj')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 2: a dead end with a home path leaves with the path stripped', () => {
+  const w = new World()
+  try {
+    w.chat('c1', { turns: [
+      { prompt: 'Run the build', reply: `Running ${w.home}/clients/acme-secret/build.sh did not work at all, so I stopped.` },
+      { prompt: `[dead-end] ${w.proj}/src/a.ts rewrite with ${w.home}/notes/acme.txt`, reply: 'Noted.' },
+    ] })
+    w.archive()
+    const dead = built(unit(w)).unit.turns.filter((t) => t.dead_end).map((t) => t.dead_text ?? '')
+    assert.equal(dead.length, 2)
+    assert.ok(dead.every((d) => !d.includes(w.home) && !d.includes(real(w.home))), dead.join(' | '))
+    assert.match(dead[0]!, /~\/clients\/acme-secret\/build\.sh did not work/)
+    assert.match(dead[1]!, /^src\/a\.ts rewrite with ~\/notes\/acme\.txt/)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 4: a redact word in a PR url never leaves', () => {
+  const w = new World()
+  try {
+    w.chat('c1', { turns: [{ prompt: 'Open the PR', reply: 'Opened it.', prUrl: 'https://github.com/acme-corp/proj/pull/7' }] })
+    w.archive()
+    const prs = built(unit(w, 'c1', ['acme'])).unit.turns[0]!.prs
+    assert.deepEqual(prs, ['https://github.com/[redacted]-corp/proj/pull/7'])
+  } finally {
+    w.destroy()
+  }
+})
+
+const teammateIn = (g: Graph, folder: string) => (g.scopeTo(folder), /tturn:alice/.test(c.search(g, 'quokka cache corrupted shards')))
+
+test('GHSA-5jmx item 3: a teammate chat named by a folder joins no repo when two local repos have that name', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    cache(w, wire())
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.deepEqual([teammateIn(g, w.proj), teammateIn(g, dir)], [false, false])
+    assert.ok(!(g.adj.get('tturn:alice/t1') ?? []).some((e) => e.to.startsWith('file:')), 'no file of either repo is linked')
+    g.scope = undefined
+    assert.match(c.search(g, 'quokka cache corrupted shards'), /tturn:alice/, 'the all-projects search still finds it')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 3: a teammate chat named by a folder joins the local repo of that name the member shares', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    cache(w, wire())
+    w.both()
+    updateShares(w.memDir, (s) => void (s.projects.proj = { repo: real(dir), status: 'active' }))
+    const r = w.both()
+    assert.equal(r.a, r.b, diffStores(w.path('inc.db'), w.path('full.db')))
+    const g = new Graph(w.path('inc.db'))
+    assert.deepEqual([teammateIn(g, w.proj), teammateIn(g, dir)], [false, true])
+    assert.deepEqual((g.adj.get('tturn:alice/t1') ?? []).filter((e) => e.to.startsWith('file:')).map((e) => e.to), [`file:${dir.replace(/\\/g, '/')}/src/a.ts`])
   } finally {
     w.destroy()
   }

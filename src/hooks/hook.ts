@@ -17,9 +17,10 @@ import { codexConverter } from '../ingest/codex.ts'
 import { copilotConverter, copilotDir } from '../ingest/copilot.ts'
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../ingest/plans.ts'
 import { dropLock, lockHeld, takeLock } from '../ingest/lock.ts'
-import { repoRoot } from '../ingest/repos.ts'
+import { real, repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
+import { activeProjects, loadShares } from '../teams/chats.ts'
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from './entry.ts'
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
 import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
@@ -484,9 +485,9 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
     }
     if (name === 'stop' || name === 'stop-failure') {
       // A team member's chat reaches the team while it is fresh: after a reply at most every 10 minutes, at once after a cut.
-      // Only in a project whose chats this person shares: elsewhere there is nothing to send.
+      // Only in a project whose chats this person shares (config or `team share-chats`, not paused): elsewhere there is nothing to send.
       const root = cwd ? repoRoot(cwd) : undefined
-      if (stopIdle(name) || !root || !cfg?.shareChats.some((r) => repoRoot(r) === root)) return ''
+      if (stopIdle(name) || !root || !cfg || !activeProjects(cfg, loadShares(env.dir)).some((p) => p.repo === real(root))) return ''
       mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
       writeFileSync(stopStamp(env.dir), new Date().toISOString(), { mode: 0o600 })
       log(env, name === 'stop' ? 'turn ended: team sync' : `turn cut off (${String(input.error_type ?? input.error?.name ?? 'error')}): team sync`, 'info', 'stop_sync')

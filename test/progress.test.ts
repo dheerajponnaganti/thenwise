@@ -147,6 +147,31 @@ test('stop hooks: a team member syncs a shared project after a reply at most eve
   }
 })
 
+test('#107: the stop hook syncs a project shared with team share-chats, and not one whose sharing is paused', () => {
+  const keep = process.env.THENWISE_HOME
+  const d = dir()
+  const repo = join(d, '..', 'shop')
+  mkdirSync(repo, { recursive: true })
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const shares = (status: string) => writeFileSync(join(d, 'team-shares.json'), JSON.stringify({ projects: { shop: { repo, status } }, chats: {}, removed: {}, deletes: [] }))
+  try {
+    process.env.THENWISE_HOME = d
+    writeFileSync(join(d, 'team.json'), '{}')
+    // Paused from the command line: a config entry for the same repo stays off.
+    writeFileSync(join(d, 'config.json'), JSON.stringify({ team: { share_chats: [repo] } }))
+    shares('paused')
+    runHook('stop', { session_id: 's', cwd: repo }, { dir: d, cli: 'none' })
+    assert.equal(existsSync(stopStamp(d)), false)
+    // Shared from the command line only: the config names nothing.
+    writeFileSync(join(d, 'config.json'), '{}')
+    shares('active')
+    runHook('stop', { session_id: 's', cwd: repo }, { dir: d, cli: 'none' })
+    assert.ok(existsSync(stopStamp(d)))
+  } finally {
+    keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
+  }
+})
+
 test('review F8: a killed sync that never finished keeps no prompt off the fast path', () => {
   const keep = { THENWISE_HOME: process.env.THENWISE_HOME, COPILOT_PLUGIN_ROOT: process.env.COPILOT_PLUGIN_ROOT }
   const d = dir()

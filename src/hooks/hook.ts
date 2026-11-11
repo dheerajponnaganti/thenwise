@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { listDir } from '../core/home.ts'
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
+import { dateMs } from '../core/time.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { isTestRun } from '../core/testrun.ts'
 import { testKey } from '../ingest/facts.ts'
@@ -171,16 +172,23 @@ function startSync(env: HookEnv) {
 }
 
 const distillStamp = (dir: string) => join(dir, 'distill-auto.json')
-/** When the last automatic distill ran (a day ago when it never did, so the first run reads one day of chats). */
+/** When the last automatic distill ran (a day ago when it never did, so the first run reads one day of chats).
+ * A stamp that is no real time is ignored with one log line; it never stops distill for good. */
 const lastDistill = (dir: string) => {
+  const day = new Date(Date.now() - 864e5).toISOString()
+  let last: unknown
   try {
-    return JSON.parse(readFileSync(distillStamp(dir), 'utf8')).last as string
+    last = JSON.parse(readFileSync(distillStamp(dir), 'utf8')).last
   } catch {
-    return new Date(Date.now() - 864e5).toISOString()
+    return day
   }
+  if (typeof last === 'string' && !Number.isNaN(dateMs(last))) return last
+  logger('sync', dir).warn('distill_stamp_unreadable', { msg: 'the last distill time is no real time; reading the last day of chats' })
+
+  return day
 }
 /** Once a day, and only with `claude` on the PATH: distill asks it to propose notes. */
-const distillDue = (dir: string) => Date.now() - Date.parse(lastDistill(dir)) >= 864e5 && (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').some((p) => p && ['claude', 'claude.cmd', 'claude.exe'].some((c) => existsSync(join(p, c))))
+const distillDue = (last: string) => Date.now() - Date.parse(last) >= 864e5 && (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').some((p) => p && ['claude', 'claude.cmd', 'claude.exe'].some((c) => existsSync(join(p, c))))
 
 /** The detached worker: archive, then ingest, one at a time across sessions. */
 export function syncRun(env: HookEnv) {
@@ -200,7 +208,8 @@ export function syncRun(env: HookEnv) {
     const vaultStamp = join(env.dir, 'vault.json')
     // The team's notes are fetched before the ingest, so this sync already makes them searchable.
     const cfgNow = loadConfigSafe().config
-    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
+    const last = cfgNow?.captureAuto ? lastDistill(env.dir) : ''
+    for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(last && distillDue(last) ? [`distill --since ${last}`] : [])]) {
       // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
       if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
@@ -242,7 +251,8 @@ function lateTeam(env: HookEnv, input: Record<string, any>, cwd: string, graph: 
   } catch {
     return (rmSync(mark, { force: true }), '')
   }
-  if (Date.now() - Date.parse(m.at) > 10 * 60_000 || !existsSync(graph)) return (rmSync(mark, { force: true }), '')
+  // A time that does not parse goes the way of an unreadable mark: new Date(NaN) below would throw.
+  if (!(Date.now() - dateMs(m.at) <= 10 * 60_000) || !existsSync(graph)) return (rmSync(mark, { force: true }), '')
   // Teammates' chats of the last day that the start's brief did not name: they arrived with the start's sync.
   const since = new Date(Date.parse(m.at) - 864e5).toISOString()
   const lines = query(env, ['resume', '--mates-since', since, ...(cwd ? ['--project', cwd] : [])]).split('\n').filter((l) => l.trim() && !m.shown.some((id) => l.includes(`(${id})`))).join('\n')

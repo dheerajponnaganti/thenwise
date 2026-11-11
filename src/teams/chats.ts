@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { logger } from '../core/log.ts'
 import { newerThenwise } from '../core/notices.ts'
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
+import { dateMs } from '../core/time.ts'
 import { normPath } from '../core/vault-index.ts'
 import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
 import type { SessionPart } from '../ingest/parts.ts'
@@ -318,7 +319,8 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   const found = sessionRepo(s.cwd, wd)
   // `repo` is set only when git proves the chat's repo is another one, never on a guess: only then may a share be taken back.
   if (!sameProject(found, repo)) return { skip: 'other', ...(found && cloneOf(rootOf(found), rootOf(repo)) === false ? { repo: found } : {}) }
-  if (opts.since && Date.parse(s.start) < Date.parse(opts.since)) return { skip: 'since' }
+  // A since that names no real day sends nothing: dropping it would send the older chats it keeps home.
+  if (opts.since && !(Date.parse(s.start) >= dateMs(opts.since))) return { skip: 'since' }
 
   const parts: SessionPart[] = [sessionPart(s, 'x')]
   if (cfg.shareSubagents) for (const rel of c.subagents) parts.push(sessionPart(read(join(cfg.memDir, 'archive', 'sessions', `${rel}.gz`), true), 'x'))
@@ -481,6 +483,8 @@ export function activeProjects(cfg: Config, sh: Shares): Active[] {
     const root = repoRoot(r)
     if (root && !stop.has(real(root))) out.set(real(root), { name: projectKey(root), repo: real(root) })
   }
+  const bad = Object.values(sh.projects).filter((p) => p.status === 'active' && p.since && Number.isNaN(dateMs(p.since))).length
+  if (bad) logger('teams', cfg.memDir).warn('share_since_unreadable', { n: bad, msg: 'a shared project has a --since that is no real day, so it sends no chats; run thenwise team share-chats <repo> --since <date> again' })
   for (const p of Object.values(sh.projects)) for (const r of p.status === 'active' ? clonesOf(p) : []) if (existsSync(r)) out.set(real(r), { name: projectKey(r), repo: real(r), ...(p.since ? { since: p.since } : {}) })
 
   return [...out.values()].sort((a, b) => (a.name < b.name ? -1 : 1))

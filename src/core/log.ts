@@ -10,6 +10,7 @@ import { join } from 'node:path'
 
 import { resolveDataDir } from './home.ts'
 import { maskSecrets } from './secrets.ts'
+import { dateMs } from './time.ts'
 
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 } as const
 export type Level = keyof typeof LEVELS
@@ -126,7 +127,7 @@ export function readLog(dir?: string): Event[] {
 export function since(s: string, now = Date.now()): number {
   const m = /^(\d+)\s*([mhd])$/.exec(s.trim())
   if (m) return now - Number(m[1]) * { m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as 'm' | 'h' | 'd']
-  const t = Date.parse(s)
+  const t = dateMs(s)
   if (Number.isNaN(t)) throw new Error(`--since takes 30m, 1h, 2d or a date, not ${s}`)
 
   return t
@@ -157,7 +158,7 @@ export function logsCommand(argv: string[], dir?: string): number {
   } catch (e) {
     console.error((e as Error).message)
 
-    return 1
+    return 2
   }
   const comp = flag('component')
   const evs = readLog(dir)

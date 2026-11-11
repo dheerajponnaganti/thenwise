@@ -267,6 +267,7 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
   for (let i = 0; i < rest.length; i++) rest[i]!.startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]!)
   if (cmd !== 'distill') notes.expireInbox(cfg.memDir, Date.now()) // the inbox shows what status counts; distill expires its own way
   if (cmd === 'distill') {
+    if (flag('since') && Number.isNaN((await import('./core/time.ts')).dateMs(flag('since')!))) (console.error(`--since needs a date such as 2026-11-01, found ${flag('since')}`), process.exit(2))
     const { distill } = await import('./capture/distill.ts')
     const r = distill(cfg, { since: flag('since'), session: flag('session'), dryRun: process.argv.includes('--dry-run'), last: flag('last') ? Number(flag('last')) : undefined })
     for (const l of r.lines) console.log(l)
@@ -315,6 +316,7 @@ if (cmd && QUERY.includes(cmd)) {
   process.env.THENWISE_CLI_VERBS = '1' // a person reads this: name the CLI commands, not the MCP tools
   const { loadConfig } = await import('./ingest/config.ts')
   const { Graph, endOf, sinceOf } = await import('./query/engine.ts')
+  const { dateMs } = await import('./core/time.ts')
   const c = await import('./query/commands.ts')
   // Positional words are everything after the command that is not a flag or a flag value.
   const args: string[] = []
@@ -357,7 +359,11 @@ if (cmd && QUERY.includes(cmd)) {
   else if (cmd === 'why') console.log(c.why(g, q))
   else if (cmd === 'tried') console.log(c.tried(g, q))
   else if (cmd === 'trace') console.log(c.trace(g, q))
-  else if (cmd === 'resume' && flag('mates-since')) console.log(c.mateLatest(g, Date.parse(flag('mates-since')!) || 0).join('\n'))
+  else if (cmd === 'resume' && flag('mates-since')) {
+    const t = dateMs(flag('mates-since')!)
+    if (Number.isNaN(t)) (console.error(`--mates-since needs a date such as 2026-11-01, found ${flag('mates-since')}`), process.exit(2))
+    console.log(c.mateLatest(g, t).join('\n'))
+  }
   else if (cmd === 'resume') console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'))
   else if (cmd === 'digest' || cmd === 'cost') {
     // A bare --since has already stopped at the flag check; a value that is no time is an input error too.

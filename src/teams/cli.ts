@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+import { dateMs } from '../core/time.ts'
 import { loadConfig } from '../ingest/config.ts'
 import { real } from '../ingest/repos.ts'
 import { clonesOf, formatPreview, previewShare, pushShared, setServerStatus, sharesStatus, unshareChats, updateShares, PUSH_PER_SYNC } from './chats.ts'
@@ -110,9 +111,9 @@ export async function teamMain(argv: string[], flag: (n: string) => string | und
       console.log(r.length ? `${r.join('\n')}\n(${LABEL})` : `no shared notes match (${LABEL})`)
     } else if (sub === 'share-chats') {
       if (!words[0]) return (console.error(TEAM_USAGE), 2)
-      loadTeam(dir)
       const since = flag('since')
-      if (since && Number.isNaN(Date.parse(since))) return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2)
+      if (since && Number.isNaN(dateMs(since))) return (console.error(`--since needs a date such as 2026-01-31, found ${since}`), 2)
+      loadTeam(dir)
       const pv = previewShare(cfg, words[0], since ? { since } : {})
       console.log(formatPreview(pv, cfg.redact))
       if (!pv.chats) return (console.log('no chats to share'), 1)

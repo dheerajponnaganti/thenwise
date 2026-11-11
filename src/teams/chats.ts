@@ -3,6 +3,7 @@
 // and PR urls. Never a transcript, a tool result, thinking, a file content, an absolute path or a working folder.
 // The unit is read from the masked archive, masked again, and cleaned of the member's redact list.
 
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -37,10 +38,54 @@ export const sharesFile = (dir: string) => join(dir, 'team-shares.json')
 const keys = new Map<string, string>()
 /** The project's name: its GitHub slug, else the folder name. Read once per repo, so no git runs per chat. */
 export const projectKey = (repo: string) => keys.get(repo) ?? (keys.set(repo, githubSlug(repo) ?? basename(repo)), keys.get(repo)!)
-/** Whether a chat's repo is the shared project: the same repo (a worktree resolves to it), or another clone with the same
- * GitHub slug. A folder name alone never matches, so a stranger repo named like the project stays home. */
+
+/** A remote url in one form: no scheme, user, port or `.git`, and `host:path` written as `host/path`. */
+export const normRemote = (u: string) =>
+  u.trim().replace(/^[a-z][\w+.-]*:\/\//i, '').replace(/^[^@/]+@/, '').replace(/^([^/:]+):(?:\d+\/)?/, '$1/').replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase()
+const ids = new Map<string, { remotes: string[]; roots: string }>()
+/** What a repo is, whatever its folder: its remote urls (read from its git config, no git run) and its root commits (one
+ * git run per repo per process). An empty field is something git could not answer. */
+function repoId(root: string): { remotes: string[]; roots: string } {
+  const key = real(root)
+  const have = ids.get(key)
+  if (have) return have
+  let remotes: string[] = []
+  try {
+    const dot = join(key, '.git')
+    const dir = existsSync(join(dot, 'config')) ? dot : resolve(key, /^gitdir:\s*(.+)$/m.exec(readFileSync(dot, 'utf8'))?.[1]?.trim() ?? '.git')
+    let inRemote = false
+    for (const l of readFileSync(join(dir, 'config'), 'utf8').split(/\r?\n/)) {
+      if (/^\s*\[/.test(l)) inRemote = /^\s*\[\s*remote\s+"/.test(l)
+      else if (inRemote && /^\s*url\s*=/.test(l)) remotes.push(normRemote(l.replace(/^\s*url\s*=\s*/, '')))
+    }
+  } catch {
+    remotes = [] // no readable config: no remotes known
+  }
+  let roots = ''
+  try {
+    roots = execFileSync('git', ['-C', key, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).split('\n').filter(Boolean).sort().join(' ')
+  } catch {
+    // no commits, not a repo, or no git
+  }
+  ids.set(key, { remotes, roots })
+
+  return ids.get(key)!
+}
+/** Whether two repos are clones of one repo: by a shared remote url when both have remotes, else by their root commits.
+ * Undefined when git cannot tell: that is neither a match nor proof of another repo. */
+function cloneOf(a: string, b: string): boolean | undefined {
+  const x = repoId(a)
+  const y = repoId(b)
+  if (x.remotes.length && y.remotes.length) return x.remotes.some((r) => y.remotes.includes(r))
+  if (x.roots && y.roots) return x.roots === y.roots
+
+  return undefined
+}
+const rootOf = (p: string) => real(repoRoot(p) ?? p)
+/** Whether a chat's repo is the shared project: the same repo (a worktree resolves to it), or another clone of it under the
+ * same name (the same GitHub slug, else what `cloneOf` proves). A folder name alone never matches. */
 const sameProject = (found: string | undefined, repo: string) =>
-  !!found && (real(repoRoot(found) ?? found) === real(repoRoot(repo) ?? repo) || (projectKey(repo).includes('/') && projectKey(found) === projectKey(repo)))
+  !!found && (rootOf(found) === rootOf(repo) || (projectKey(found) === projectKey(repo) && (projectKey(repo).includes('/') || cloneOf(rootOf(found), rootOf(repo)) === true)))
 
 export interface SharedProject {
   repo: string
@@ -202,7 +247,8 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
   if (!cfg.includeEntrypoints.includes(s.entrypoint)) return { skip: 'entry' }
   const wd = workDirs(cfg, editDirs(s))
   const found = sessionRepo(s.cwd, wd)
-  if (!sameProject(found, repo)) return { skip: 'other', ...(found ? { repo: found } : {}) } // `repo`: the chat's own repo, found on disk
+  // `repo` is set only when git proves the chat's repo is another one, never on a guess: only then may a share be taken back.
+  if (!sameProject(found, repo)) return { skip: 'other', ...(found && cloneOf(rootOf(found), rootOf(repo)) === false ? { repo: found } : {}) }
   if (opts.since && Date.parse(s.start) < Date.parse(opts.since)) return { skip: 'since' }
 
   const parts: SessionPart[] = [sessionPart(s, 'x')]

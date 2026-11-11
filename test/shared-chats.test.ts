@@ -1240,9 +1240,75 @@ test('GHSA-5jmx item 1: chats of another repo already on the server are unshared
   }
 })
 
+/** ~/proj on a GitLab-style remote, a clone of it with the same remote written another way, a copy with no remote but the
+ * same first commit, and a chat in each. */
+function clones(w: World) {
+  git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+  const backup = join(w.home, 'backup', 'proj')
+  const copy = join(w.home, 'copy', 'proj')
+  for (const d of [backup, copy]) execFileSync('git', ['clone', '-q', w.proj, d])
+  git(backup, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/proj')
+  git(copy, 'remote', 'remove', 'origin')
+  w.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')
+  w.chat('incopy', { turns: [{ prompt: 'Work in the copy', reply: 'The copy has the same importer.' }], cwd: copy }, '-home-copy-proj')
+  w.archive()
+  return { backup, copy }
+}
+
+test('GHSA-5jmx item 1: a second clone of the same repo is the same project, an unrelated repo with the folder name is not', () => {
+  const w = sender()
+  try {
+    const dir = stranger(w)
+    const { backup, copy } = clones(w)
+    // A repo git cannot tell apart (no commits) is never matched by its folder name.
+    const empty = join(w.home, 'empty', 'proj')
+    mkdirSync(empty, { recursive: true })
+    git(empty, 'init', '-q', '-b', 'main')
+    w.chat('inempty', { turns: [{ prompt: 'Start the empty repo', reply: 'Nothing here yet.' }], cwd: empty }, '-home-empty-proj')
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inbackup', 'incopy'])
+    const all = archived(w.cfg)
+    const other = (id: string) => buildChat(w.cfg, w.proj, all.find((x) => x.session === id)!, (t) => t)
+    assert.deepEqual(other('client'), { skip: 'other', repo: real(dir) }, 'another first commit proves another repo')
+    assert.deepEqual(other('inempty'), { skip: 'other' }, 'git cannot tell, so it is no proof')
+    // From either clone the project is the same.
+    for (const r of [backup, copy]) assert.equal(previewShare(w.cfg, r).chats, 3)
+  } finally {
+    w.destroy()
+  }
+})
+
+test('GHSA-5jmx item 1: the next sync keeps the chats of a second clone, and of a repo git cannot tell apart', needs, async () => {
+  const t = await team()
+  try {
+    clones(t.a)
+    const empty = join(t.a.home, 'empty', 'proj')
+    mkdirSync(empty, { recursive: true })
+    git(empty, 'init', '-q', '-b', 'main')
+    t.a.chat('inempty', { turns: [{ prompt: 'Start the empty repo', reply: 'Nothing here yet.' }], cwd: empty }, '-home-empty-proj')
+    t.a.archive()
+    // Sent before: from the backup clone, and from the repo with no commits.
+    for (const repo of [join(t.a.home, 'backup', 'proj'), empty]) {
+      updateShares(t.a.memDir, (s) => void (s.projects.proj = { repo, status: 'active' }))
+      await pushShared(t.a.cfg)
+    }
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 4)
+    t.share(t.a)
+    assert.doesNotMatch(await pushShared(t.a.cfg), /another repo/)
+    assert.equal(t.serverCount('SELECT count(*) AS n FROM chats'), 4)
+    assert.deepEqual(loadShares(t.a.memDir).removed, {})
+  } finally {
+    await t.stop()
+  }
+})
+
 test('GHSA-5jmx item 5: a second clone of a non-GitHub repo is added, not swapped', needs, async () => {
   const t = await team()
   try {
+    // The clone's remote is the first folder and the first has its own remote: git cannot prove one repo, so each is shared by path.
+    git(t.a.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
     const backup = join(t.a.home, 'backup', 'proj')
     execFileSync('git', ['clone', '-q', t.a.proj, backup])
     t.a.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')

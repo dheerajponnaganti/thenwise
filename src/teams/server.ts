@@ -257,6 +257,9 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     return r
   }
 
+  // One masked stderr line, so a foreground server and Docker logs both show it.
+  const log = (line: string) => console.error(maskSecrets(`${new Date(now()).toISOString()} thenwise team: ${line}`).text)
+
   // Failed sign-ins per client IP and minute. Behind a proxy every client shares the proxy's address (shortcut: no X-Forwarded-For).
   const fails = new Map<string, { minute: number; n: number; row: number | bigint }>()
   const failed = (req: IncomingMessage, e: HttpError): HttpError => {
@@ -270,7 +273,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
     }
     f.n++
     // One stderr line per client and window, when it first passes the limit. It never holds the credential.
-    if (f.n === 21) console.error(maskSecrets(`${new Date(now()).toISOString()} thenwise team: more than 20 failed sign-ins this minute from ${ip}; it gets 429 until the minute ends`).text)
+    if (f.n === 21) log(`more than 20 failed sign-ins this minute from ${ip}; it gets 429 until the minute ends`)
     const details = JSON.stringify({ ip, failures: f.n })
     if (!f.row) f.row = db.prepare('INSERT INTO audit (team_id, at, actor, action, target, details) VALUES (?, ?, NULL, ?, ?, ?)').run(teamId, now(), 'auth.failed', ip, details).lastInsertRowid
     else db.prepare('UPDATE audit SET details = ? WHERE rowid = ?').run(details, f.row)
@@ -796,8 +799,10 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
   const allow = opts.allowOrigins ?? []
   const send = (res: ServerResponse, code: number, body: unknown, headers: Record<string, string | string[]> = {}) => {
+    // Serialize before the head goes out, so a body that cannot be written still becomes a clean 500.
+    const out = Buffer.isBuffer(body) ? body : JSON.stringify(body)
     res.writeHead(code, { 'content-type': 'application/json', ...headers })
-    res.end(Buffer.isBuffer(body) ? body : JSON.stringify(body))
+    res.end(out)
   }
   const server: Server = createServer((req, res) => {
     // Security headers on every answer; a Hub on another host gets CORS only when its origin is listed.
@@ -831,11 +836,14 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
 
       return send(res, 404, { error: 'not found. Routes without /v1 are gone; update Thenwise.' })
     }
-    sweep()
-    v1(req, u, parts.slice(1))
+    // sweep runs inside the chain, so its error is a logged 500 and not a crash.
+    Promise.resolve()
+      .then(() => (sweep(), v1(req, u, parts.slice(1))))
       .then(([code, json, headers]) => send(res, code, json, headers))
       .catch((e) => {
         const h = e instanceof HttpError ? e : new HttpError(500, 'server_error', 'server error')
+        // The path only: a query string can hold a token, and the body is never logged.
+        if (!(e instanceof HttpError)) log(`${req.method} ${u.pathname} failed: ${(e instanceof Error ? `${e.name}: ${e.message}` : typeof e === 'object' && e ? 'a thrown object' : String(e)).replace(/\s+/g, ' ')}`)
         const retry = (e as { retryAfter?: number }).retryAfter
         // A dead session is cleared in the browser, so the app sees a clean sign-out.
         send(res, h.status, { error: { code: h.code, message: h.message } }, { ...(retry ? { 'retry-after': String(retry) } : {}), ...(h.status === 401 && cookie(req, 'tw_session') ? { 'set-cookie': noCookies } : {}) })

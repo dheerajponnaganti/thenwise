@@ -324,6 +324,33 @@ test('GHSA-qr4h item 4: past the sign-in limit a wrong token gets 429 with Retry
   }
 })
 
+test('#114: an unexpected error is a 500 with one masked stderr line naming the method and path, never the query or body', async (tt) => {
+  const err = tt.mock.method(console, 'error', () => undefined)
+  const lines = () => err.mock.calls.map((c) => String(c.arguments[0])).filter((l) => /failed:/.test(l))
+  const t = await team(['root'])
+  try {
+    const dbx = new DatabaseSync(join(t.dir, 'team.db'))
+    dbx.exec('DROP TABLE note_reads') // the daily sweep, on the first request, now fails
+    const first = await t.req(t.tokens.root!, '/v1/me')
+    assert.equal(first.status, 500)
+    assert.equal((await first.json()).error.code, 'server_error')
+    assert.equal(lines().length, 1, lines().join('\n'))
+    assert.match(lines()[0]!, /thenwise team: GET \/v1\/me failed: Error: no such table: note_reads$/)
+    dbx.exec('DROP TABLE notes')
+    dbx.close()
+    const secret = 'tw_0123456789abcdef0123456789abcdef'
+    const r = await t.req(t.tokens.root!, `/v1/notes/n1?token=${secret}`, 'PUT', { title: 't', text: secret, project: 'p' }, { 'if-match': '*' })
+    assert.equal(r.status, 500)
+    assert.equal(lines().length, 2, lines().join('\n'))
+    const line = lines()[1]!
+    assert.match(line, /thenwise team: PUT \/v1\/notes\/n1 failed: .*no such table: notes/)
+    assert.ok(!line.includes(secret) && !line.includes(t.tokens.root!) && !line.includes('?'), line)
+    assert.ok(!line.includes('\n'), 'one line')
+  } finally {
+    await t.app.close()
+  }
+})
+
 test('GHSA-qr4h item 5: a time past the largest date is a 400 naming the field', async () => {
   const t = await team(['root', 'bob'])
   try {

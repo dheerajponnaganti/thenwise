@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
-import { readTarget, runHook, shortPath } from '../src/hooks/hook.ts'
+import { readTarget, runHook, shortPath, syncRun } from '../src/hooks/hook.ts'
 import { dropLock, takeLock } from '../src/ingest/lock.ts'
 import { keyOf, plansPart } from '../src/ingest/plans.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
@@ -272,10 +272,11 @@ test('#101: a lock is taken only from a dead process or an earlier boot, never f
   assert.equal(takeLock(lock, process.pid + 1), true)
   assert.deepEqual(readdirSync(dirname(lock)), ['sync.lock'], 'nothing is left behind')
 
-  // A lock naming this very process is stale: a process takes a lock once, so a dead one had the same pid (a restarted container).
+  // A lock naming this very process that it never took is stale: a dead process had the same pid (a restarted container).
   writeFileSync(lock, String(process.pid))
   assert.equal(takeLock(lock), true)
   assert.equal(takeLock(lock, process.pid + 1), false, 'and the new lock holds')
+  assert.equal(takeLock(lock), false, 'a lock this process took is not taken again by it')
 
   // A step killed at its timeout: the sync removes the lock that names it, and no other.
   writeFileSync(lock, String(process.pid + 1))
@@ -283,6 +284,25 @@ test('#101: a lock is taken only from a dead process or an earlier boot, never f
   assert.ok(existsSync(lock))
   dropLock(lock, process.pid + 1)
   assert.ok(!existsSync(lock))
+})
+
+// Windows has no signals: a killed child there reports no signal, and its pid is dead, so its lock is stale anyway.
+test('#101: a sync step killed mid-run leaves no lock behind', { skip: process.platform === 'win32' }, () => {
+  const dir = tempDir()
+  const cli = join(dir, 'fake-cli.mjs')
+  const lock = join(dir, 'archive', 'archive.lock')
+  // The archive step takes its lock and dies the way a timeout kills it: no finally runs.
+  writeFileSync(cli, `import { mkdirSync, writeFileSync } from 'node:fs'\nif (process.argv[2] === 'archive') { mkdirSync(${JSON.stringify(join(dir, 'archive'))}, { recursive: true }); writeFileSync(${JSON.stringify(lock)}, String(process.pid)); process.kill(process.pid, 'SIGKILL') }\n`)
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    syncRun({ dir, cli })
+    assert.ok(!existsSync(lock), 'the lock of the killed step is removed')
+    assert.ok(!existsSync(join(dir, 'sync.lock')))
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
 })
 
 test('B2-33/34: hooks.json matches clear and compact, and ends a session with a sync', () => {

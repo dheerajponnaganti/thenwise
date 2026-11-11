@@ -12,6 +12,9 @@ const POLL_MS = 50
 const BOOT_SLACK_MS = 60_000 // two reads of the boot time differ by clock steps and rounding
 const TAKEOVER_MS = 10_000 // a takeover lasts microseconds; one this old was left by a crash
 
+// Locks this process took. A lock that names this process but is not in here was left by a dead process with the same pid.
+const taken = new Set<string>()
+
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const read = (f: string) => ({ text: readFileSync(f, 'utf8'), mtimeMs: statSync(f).mtimeMs })
 
@@ -37,6 +40,7 @@ export function takeLock(file: string, pid = process.pid): boolean {
   for (let i = 0; i < 2; i++) {
     try {
       writeFileSync(file, String(pid), { flag: 'wx', mode: 0o600 })
+      taken.add(`${pid}:${file}`)
 
       return true
     } catch (e) {
@@ -47,9 +51,10 @@ export function takeLock(file: string, pid = process.pid): boolean {
     let seen: ReturnType<typeof read>
     try {
       seen = read(file)
-      // A lock naming this very process is not one it holds (locks are not taken twice): a dead process had our pid, as in a
-      // container that restarts with the same pids.
-      if (holds(seen) && Number(seen.text.trim()) !== pid) return false
+      // A lock naming this very process that it did not take was left by a dead process with our pid, as in a container that
+      // restarts with the same pids. One it took is still held: a second take waits like any other.
+      const ours = Number(seen.text.trim()) === pid
+      if (ours ? taken.has(`${pid}:${file}`) : holds(seen)) return false
     } catch {
       continue // released between our create and our read: try again
     }

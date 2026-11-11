@@ -4,6 +4,7 @@
 // it down. Also: what was sent to the agent in each session, for /thenwise:shown.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { logger } from "./log.js";
 import { maskSecrets } from "./secrets.js";
 /** Claude Code and Copilot load Thenwise's /thenwise: commands; Codex and Antigravity load none, so there a command is
  * named as the CLI line that runs it. The MCP server names its client at initialize; a hook knows its tool from the
@@ -34,6 +35,13 @@ export function addNews(dir, kind, text, cls = 'important') {
         appendFileSync(newsFile(dir), `${JSON.stringify({ at: new Date().toISOString(), kind, cls, text: maskSecrets(text).text.slice(0, 200) })}\n`, { mode: 0o600 });
     }
     catch { } // news is a courtesy: it never fails the step that writes it
+}
+/** Data a newer Thenwise wrote was left as it is (#137): one log line, and one notice that names the tool to update. */
+export function newerThenwise(dir, what) {
+    const env = process.env;
+    const tool = env.ANTIGRAVITY_CONVERSATION_ID ? 'Antigravity' : env.COPILOT_PLUGIN_ROOT ? 'Copilot CLI' : env.PLUGIN_ROOT ? 'Codex' : env.CLAUDE_PLUGIN_ROOT ? 'Claude Code' : 'the terminal';
+    logger('version', dir).warn('newer_thenwise', { what });
+    addNews(dir, 'newer-thenwise', `another tool runs a newer Thenwise, so Thenwise in ${tool} left ${what} as it is. Update Thenwise in ${tool}`);
 }
 /** The unread news, newest line per kind, as one line of at most 300 characters; '' when none. Marks it read. */
 export function takeNews(dir, level, now = Date.now()) {

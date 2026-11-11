@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync
 import { dirname, join, resolve, sep } from 'node:path';
 import { parseFrontMatter, quote } from "../core/frontmatter.js";
 import { maskSecrets } from "../core/secrets.js";
+import { offCheck } from "../ingest/config.js";
 import { Graph, local } from "../query/engine.js";
 import { cut, repo, sessionProjects, sourceOf } from "../views/views.js";
 import { sessionFacts } from "../query/digest.js";
@@ -46,7 +47,8 @@ function drafts(g, projects, perProject, now) {
     const sets = new Map();
     const of = (p) => sets.get(p) ?? sets.set(p, { decisions: [], dead: [], time: [], digest: [] }).get(p);
     const gname = (p) => (perProject ? p : '');
-    for (const n of g.nodes.values()) {
+    const shown = [...g.nodes.values()].filter((n) => !g.paused(n));
+    for (const n of shown) {
         const p = gname(projOf(n));
         const t = n.extra.trailers;
         if (n.kind === 'pr')
@@ -65,7 +67,7 @@ function drafts(g, projects, perProject, now) {
             of(p).dead.push({ n, text: cut(n.title, 160) });
     }
     // The digest of the last 7 days, with each chat's turns gathered in one pass (bySource would scan the graph per chat).
-    const recent = [...g.nodes.values()].filter((n) => n.kind === 'session' && !n.extra.team && Date.parse(n.until || n.at) >= now - 7 * 864e5);
+    const recent = shown.filter((n) => n.kind === 'session' && !n.extra.team && Date.parse(n.until || n.at) >= now - 7 * 864e5);
     const turnsOf = new Map(recent.map((n) => [n.id, []]));
     for (const n of g.nodes.values())
         if (n.kind === 'turn')
@@ -77,7 +79,7 @@ function drafts(g, projects, perProject, now) {
     for (const [file, ids] of touchedBy)
         for (const id of ids)
             touch(file, g.nodes.get(id));
-    for (const n of g.nodes.values()) {
+    for (const n of shown) {
         if (!['pr', 'commit', 'note', 'summary'].includes(n.kind))
             continue;
         for (const e of g.adj.get(n.id) ?? [])
@@ -191,6 +193,7 @@ export function writeVault(cfg, opts = {}) {
     if (newer)
         return { ...res, stopped: `${dir} was written by a newer Thenwise (note format above ${VAULT_FORMAT}). Update Thenwise; nothing was written.` };
     const g = new Graph(dbPath);
+    g.off = offCheck(cfg); // notes written before for a folder paused since are rewritten or removed below
     const { notes, capped } = buildNotes(g, cfg, cfg.vault.layout, (opts.now ?? new Date()).getTime());
     g.db.close();
     const day = (opts.now ?? new Date()).toISOString().slice(0, 10);

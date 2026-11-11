@@ -57,7 +57,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
     const text = (words.length || process.stdin.isTTY ? words.join(' ') : readFileSync(0, 'utf8')).trim();
     if (!text)
         (console.error(`usage: thenwise ${cmd} "<what>" [--here] [--file <path>]... (or the text on stdin)`), process.exit(2));
-    const { loadConfig } = await import("./ingest/config.js");
+    const { loadConfig, offCheck } = await import("./ingest/config.js");
     const { makeId, readNotes, saveNote } = await import("./capture/notes.js");
     const { related } = await import("./capture/similar.js");
     const { Graph } = await import("./query/engine.js");
@@ -67,6 +67,7 @@ if (cmd === 'deadend' || cmd === 'decide') {
     let project = '';
     if (existsSync(db)) {
         const g = new Graph(db, { lazy: true });
+        g.off = offCheck(cfg); // a paused chat is never a note's source
         if (process.argv.includes('--here'))
             g.scopeTo(process.cwd());
         const ses = g.ofKind('session').filter((n) => g.inScope(n) && !n.extra?.team).sort((a, b) => Date.parse(b.until || b.at) - Date.parse(a.until || a.at))[0];
@@ -156,6 +157,8 @@ if (cmd === 'archive' || cmd === 'ingest') {
         }
         done({ seen: r.seen, archived: r.archived, excluded: r.excluded, unparsed: r.unparsed.length, failed: r.failed.length });
         console.log(`${r.seen} sessions seen: ${r.archived} archived, ${r.skipped} unchanged (${r.remasked} masked again), ${r.excluded} excluded; ${(r.bytes / 1e6).toFixed(1)} MB of archive; ${r.unparsed.length} lines did not parse`);
+        if (r.newer)
+            console.log(`${r.newer} archived chats or plan folders were written by a newer Thenwise and were left as they are. Update Thenwise.`);
         const bad = new Map();
         for (const u of r.unparsed)
             bad.set(u.rel, [...(bad.get(u.rel) ?? []), u.line]);
@@ -284,14 +287,18 @@ if (cmd === 'status') {
     process.exit(0);
 }
 if (cmd === 'mine') {
-    const { loadConfig } = await import("./ingest/config.js");
+    const { loadConfig, offCheck } = await import("./ingest/config.js");
     const cfg = loadConfig();
     const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db');
     if (!existsSync(db))
         (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2));
-    const n = (await import("./capture/mine.js")).mineRules(cfg.memDir, db);
+    // The sync mines without `capture.auto`, so unreviewed proposals expire here even when distill never runs.
+    const ex = (await import("./capture/notes.js")).expireInbox(cfg.memDir, Date.now());
+    if (ex.length)
+        console.log(`expired ${ex.length} unreviewed inbox note(s) older than 14 days`);
+    const n = (await import("./capture/mine.js")).mineRules(cfg.memDir, db, new Date(), offCheck(cfg));
     console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`);
-    const e = (await import("./capture/expire.js")).proposeExpiry(cfg.memDir, db);
+    const e = (await import("./capture/expire.js")).proposeExpiry(cfg.memDir, db, new Date(), offCheck(cfg));
     console.log(`${e} decision${e === 1 ? '' : 's'} to recheck added to the inbox${e ? '; `thenwise inbox` lists them' : ''}`);
     process.exit(0);
 }
@@ -303,7 +310,18 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
     const rest = process.argv.slice(3);
     for (let i = 0; i < rest.length; i++)
         rest[i].startsWith('--') ? (rest[i] === '--dry-run' || i++) : args.push(rest[i]);
+    if (cmd !== 'distill')
+        notes.expireInbox(cfg.memDir, Date.now()); // the inbox shows what status counts; distill expires its own way
+    // Notes from a folder paused with `thenwise off` are neither shown nor acted on until `thenwise on`.
+    const review = cmd === 'distill' ? [] : notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox' || n.status === 'expired');
+    const paused = notes.pausedNotes(review, cfg);
+    const held = args.filter((id) => paused.has(id));
+    for (const id of cmd === 'inbox' ? [] : held)
+        console.log(`${id}: from a paused folder; run \`thenwise on\` to review it`);
+    const ids = args.filter((id) => !paused.has(id));
     if (cmd === 'distill') {
+        if (flag('since') && Number.isNaN((await import("./core/time.js")).dateMs(flag('since'))))
+            (console.error(`--since needs a date such as 2026-11-01, found ${flag('since')}`), process.exit(2));
         const { distill } = await import("./capture/distill.js");
         const r = distill(cfg, { since: flag('since'), session: flag('session'), dryRun: process.argv.includes('--dry-run'), last: flag('last') ? Number(flag('last')) : undefined });
         for (const l of r.lines)
@@ -311,23 +329,24 @@ if (cmd === 'distill' || cmd === 'inbox' || cmd === 'accept' || cmd === 'reject'
         console.log(`${r.proposals} proposal(s) in the inbox, ${r.dropped} dropped, ${r.calls} model call(s)`);
     }
     else if (cmd === 'inbox') {
-        const inbox = notes.readNotes(cfg.memDir).filter((n) => n.status === 'inbox');
+        const inbox = review.filter((n) => n.status === 'inbox' && !paused.has(n.id));
         for (const n of inbox)
             console.log(`${n.id}  ${n.type}  ${n.title}\n   ${n.summary.split('\n').join('\n   ')}\n   source: ${n.sources.join(' ')}${n.supersedes ? `\n   would supersede: ${n.supersedes}` : ''}`);
         console.log(`${inbox.length} note(s) in the inbox`);
     }
     else if (cmd === 'accept') {
         const active = new Set(notes.readNotes(cfg.memDir).filter((n) => n.status === 'active').map((n) => n.id));
-        for (const m of notes.accept(cfg.memDir, flag('all-of') ? { type: flag('all-of') } : { ids: args }, new Date().toISOString()))
+        const all = flag('all-of') ? review.filter((n) => n.status === 'inbox' && n.type === flag('all-of') && !paused.has(n.id)).map((n) => n.id) : ids;
+        for (const m of notes.accept(cfg.memDir, { ids: all }, new Date().toISOString()))
             console.log(m);
         const { autoShare } = await import("./teams/client.js");
         for (const m of await autoShare(cfg, notes.readNotes(cfg.memDir).filter((n) => n.status === 'active' && !active.has(n.id))))
             console.log(m);
     }
     else if (cmd === 'reject')
-        for (const m of notes.reject(cfg.memDir, args))
+        for (const m of notes.reject(cfg.memDir, ids))
             console.log(m);
-    else
+    else if (!held.length)
         console.log(notes.readNotes(cfg.memDir).find((n) => n.id === args[0])?.path ?? `${args[0]}: no such note`);
     process.exit(0);
 }
@@ -359,8 +378,9 @@ if (cmd === 'team' || cmd === 'share' || cmd === 'unshare') {
 const QUERY = ['search', 'current', 'why', 'tried', 'asof', 'trace', 'resume', 'digest', 'path', 'get', 'tests', 'cost'];
 if (cmd && QUERY.includes(cmd)) {
     process.env.THENWISE_CLI_VERBS = '1'; // a person reads this: name the CLI commands, not the MCP tools
-    const { loadConfig } = await import("./ingest/config.js");
+    const { loadConfig, offCheck } = await import("./ingest/config.js");
     const { Graph, endOf, sinceOf } = await import("./query/engine.js");
+    const { dateMs } = await import("./core/time.js");
     const c = await import("./query/commands.js");
     // Positional words are everything after the command that is not a flag or a flag value.
     const args = [];
@@ -374,6 +394,7 @@ if (cmd && QUERY.includes(cmd)) {
             lead.push(rest[i], ...(['--project', '--db'].includes(rest[i]) ? [rest[++i]] : []));
         args.push(...rest.slice(i));
     }
+    // `--fast` is read by nothing; it stays one release so an older hook's `--fast --project x` keeps its `--project` (#120).
     else
         for (let i = 0; i < rest.length; i++)
             rest[i].startsWith('--') ? (['--expand', '--no-expand', '--all', '--here', '--fast', '--full', '--pointers', '--short', '--checkout', '--clean'].includes(rest[i]) ? 0 : i++) : args.push(rest[i]);
@@ -394,6 +415,7 @@ if (cmd && QUERY.includes(cmd)) {
     if (!existsSync(dbPath))
         (live ? (console.log(live), process.exit(0)) : (console.error(`no graph at ${dbPath}: run \`thenwise ingest\``), process.exit(2)));
     const g = new Graph(dbPath, { lazy: !process.argv.includes('--full') }); // lazy reads only what the command touches; --full loads the whole graph
+    g.off = offCheck(cfg); // with or without a scope, and for the hooks' queries too
     g.expand = process.argv.includes('--expand');
     // Without --project or --here every project is searched (the older behaviour); --all says so out loud.
     const opts = cmd === 'tests' ? lead : process.argv;
@@ -416,8 +438,12 @@ if (cmd && QUERY.includes(cmd)) {
         console.log(c.tried(g, q));
     else if (cmd === 'trace')
         console.log(c.trace(g, q));
-    else if (cmd === 'resume' && flag('mates-since'))
-        console.log(c.mateLatest(g, Date.parse(flag('mates-since')) || 0).join('\n'));
+    else if (cmd === 'resume' && flag('mates-since')) {
+        const t = dateMs(flag('mates-since'));
+        if (Number.isNaN(t))
+            (console.error(`--mates-since needs a date such as 2026-11-01, found ${flag('mates-since')}`), process.exit(2));
+        console.log(c.mateLatest(g, t).join('\n'));
+    }
     else if (cmd === 'resume')
         console.log(process.argv.includes('--short') ? c.resumeShort(g) : [live, c.resume(g, q)].filter(Boolean).join('\n\n'));
     else if (cmd === 'digest' || cmd === 'cost') {

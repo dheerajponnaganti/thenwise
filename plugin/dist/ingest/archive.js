@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { listDir } from "../core/home.js";
 import { errFields, logger } from "../core/log.js";
+import { newerThenwise } from "../core/notices.js";
 import { alive } from "../core/progress.js";
 import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { isForgotten, loadTombs } from "../privacy/tombstones.js";
@@ -215,18 +216,26 @@ function collect(dir, into, prefer) {
     };
     walk(dir, '');
 }
-/** Plan snapshots are masked too; a newer mask version rewrites them in place (marker file holds the version). */
+/** Plan snapshots are masked too; a newer mask version rewrites them in place (marker file holds the version). A marker
+ * from a newer Thenwise is left as it is; true then. Under its own marker, snapshots written after it (an older Thenwise
+ * in another tool wrote them) are masked again. */
 function remaskPlans(base) {
     const dir = join(base, 'plans');
     const mark = join(dir, '.mask');
-    if (!existsSync(dir) || (existsSync(mark) && readFileSync(mark, 'utf8').trim() === String(MASK_VERSION)))
-        return;
+    if (!existsSync(dir))
+        return false;
+    const at = existsSync(mark) ? Number(readFileSync(mark, 'utf8').trim()) || 0 : 0;
+    if (at > MASK_VERSION)
+        return true;
+    const since = at === MASK_VERSION ? statSync(mark).mtimeMs : -1;
+    let seen = since < 0;
     const walk = (d) => {
         for (const e of readdirSync(d, { withFileTypes: true })) {
             const p = join(d, e.name);
             if (e.isDirectory())
                 walk(p);
-            else if (e.name.endsWith('.md')) {
+            else if (e.name.endsWith('.md') && (since < 0 || statSync(p).mtimeMs >= since)) {
+                seen = true;
                 const t = readFileSync(p, 'utf8');
                 const m = maskSecrets(t).text;
                 if (m !== t)
@@ -235,7 +244,9 @@ function remaskPlans(base) {
         }
     };
     walk(dir);
-    writeFileSync(mark, String(MASK_VERSION), { mode: 0o600 });
+    if (seen)
+        writeFileSync(mark, String(MASK_VERSION), { mode: 0o600 });
+    return false;
 }
 /** Masks the archived copy again, for a source that is gone or holds fewer turns than the copy. Read and written a member at a
  * time, so a long chat never becomes one string. An archived copy ends each line, so nothing is pending. */
@@ -290,7 +301,7 @@ function archiveLocked(cfg, opts) {
     other('copilot', copilotSources(cfg.home), copilotConverter);
     other('codex', codexSources(cfg.home), codexConverter);
     other('antigravity', antigravitySources(cfg.home), antigravityConverter);
-    const res = { seen: 0, archived: 0, remasked: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 };
+    const res = { seen: 0, archived: 0, remasked: 0, newer: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 };
     if (cfg.off)
         return { ...res, off: sources.size };
     mkdirSync(out, { recursive: true, mode: 0o700 });
@@ -388,6 +399,17 @@ function archiveLocked(cfg, opts) {
                 continue;
             }
             res.seen++;
+            // An entry a newer Thenwise wrote is left as it is: masking or converting it here would undo that, and it would redo it (#137).
+            if (old && existsSync(dest) && ((old.mask ?? 0) > MASK_VERSION || (old.conv ?? 0) > CONVERT_VERSION)) {
+                if (st)
+                    rmSync(tmp, { force: true });
+                res.newer++;
+                res.skipped++;
+                res.bytes += statSync(dest).size;
+                for (const line of old.unparsed)
+                    res.unparsed.push({ rel, line });
+                continue;
+            }
             if (unchanged) {
                 const cur = (manifest[rel] = { ...old, cwd: info.cwd, checked: check });
                 const reconvert = !!src.convert && CONVERTED_AGAIN.has(src.tool ?? '') && (old.conv ?? 1) !== CONVERT_VERSION && existsSync(src.path) && statSync(src.path).size === old.size;
@@ -478,7 +500,10 @@ function archiveLocked(cfg, opts) {
             res.pruned.push(rel);
         }
     }
-    remaskPlans(base);
+    if (remaskPlans(base))
+        res.newer++;
+    if (res.newer)
+        newerThenwise(cfg.memDir, 'the archived chats and plans');
     save();
     return res;
 }

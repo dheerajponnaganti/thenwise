@@ -6,6 +6,7 @@ import { trigramSim } from "../capture/similar.js";
 import { isTestFile } from "../ingest/facts.js";
 import { checkoutTop } from "../ingest/repos.js";
 import { ago } from "../core/time.js";
+import { normPath } from "../core/vault-index.js";
 const WHY = [/\bbecause\b/i, /\bso that\b/i, /\bsince\b/i, /\bthe reason\b/i, /\bwhy:/i, /\bdecision:/i, /\bso we\b/i, /\bto avoid\b/i, /\botherwise\b/i];
 const TRIED = [/\btried\b/i, /didn'?t work/i, /\bfailed\b/i, /\bbroke\b/i, /\breverted?\b/i, /\bdead[- ]end\b/i, /\binstead\b/i, /\babandoned\b/i, /\bdropped\b/i, /\brolled back\b/i, /\bturned out\b/i, /\bwrong\b/i];
 const STRONG = /\b(why|decision|dead-end):/i;
@@ -187,7 +188,7 @@ function turnDid(g, n) {
  * the same file the same way. */
 export const inRoot = (g, turn, file) => {
     const cwd = String(g.nodes.get(turn.source)?.extra?.cwd ?? '').replace(/\\/g, '/'); // file ids use forward slashes
-    const root = [checkoutTop(cwd), g.rootOf(turn), cwd].find((r) => r && file.startsWith(`${r}/`));
+    const root = [checkoutTop(cwd), g.rootOf(turn), cwd].map((r) => r && normPath(r)).find((r) => r && file.startsWith(`${r}/`));
     return root ? file.slice(root.length + 1) : file;
 };
 /** The output budget of one memory answer, in characters: THENWISE_OUTPUT_CHARS, else 4,000 (the server sets the variable
@@ -835,8 +836,8 @@ export function get(g, id) {
     const p = /^(.*)#p(\d+)$/.exec(id);
     const nid = p && g.nodes.has(p[1]) ? p[1] : id;
     const n = g.nodes.get(nid);
-    if (!n) {
-        const near = g.idsContaining(id, 5);
+    if (!n || g.paused(n)) {
+        const near = g.idsContaining(id, 5).filter((x) => !g.paused(g.nodes.get(x)));
         return `not recorded: no node with id "${id}".${near.length ? `\nIds containing it: ${near.join(', ')}` : ''}`;
     }
     const full = g.fullText(nid);

@@ -2,10 +2,10 @@
 // there is anything to do, before the CLI loads SQLite and the store code. Imports nothing but node:fs, node:path and the
 // Copilot shape mapper and the progress file reader (which import only those two).
 import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { resolveDataDir } from "../core/home.js";
 import { isTestRun } from "../core/testrun.js";
-import { readProgress, running } from "../core/progress.js";
+import { readProgress, readTold, running } from "../core/progress.js";
 import { claudeHookInput } from "../ingest/copilot.js";
 /** The planning-with-files plan files. */
 export const STEMS = ['task_plan', 'findings', 'progress'];
@@ -67,7 +67,8 @@ const syncToTell = () => {
     if (process.env.COPILOT_PLUGIN_ROOT || process.env.ANTIGRAVITY_CONVERSATION_ID)
         return false;
     const p = readProgress(resolveDataDir());
-    return !!p && p.kind !== 'auto' && (p.finished ? !p.told || p.told < p.finished : running(p)); // a killed sync has nothing to tell
+    const told = p?.finished ? readTold(resolveDataDir()) : '';
+    return !!p && p.kind !== 'auto' && (p.finished ? !told || told < p.finished : running(p)); // a killed sync has nothing to tell
 };
 // After each reply, a team member's sync runs at most this often, so a teammate gets the chat while it is still fresh.
 export const STOP_SYNC_MS = 10 * 60_000;
@@ -94,8 +95,13 @@ export function nothingToDo(name, i) {
         return i.tool_name !== 'Read' || typeof i.tool_input?.file_path !== 'string';
     if (name === 'stop' || name === 'stop-failure')
         return stopIdle(name);
-    if (name !== 'post' || i.tool_name !== 'Bash')
+    if (name !== 'post')
         return false;
+    if (i.tool_name !== 'Bash') {
+        // An edit only matters when it touches a plan file, and that is a name check.
+        const f = i.tool_input?.file_path;
+        return typeof f !== 'string' || !f.endsWith('.md') || !STEMS.includes(basename(f, '.md'));
+    }
     const cmd = i.tool_input?.command;
     if (typeof cmd !== 'string' || !i.cwd)
         return true;

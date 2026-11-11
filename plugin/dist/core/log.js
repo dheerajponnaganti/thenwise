@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveDataDir } from "./home.js";
 import { maskSecrets } from "./secrets.js";
+import { dateMs } from "./time.js";
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
 export const MAX_BYTES = 1_000_000;
 export const KEEP = 3;
@@ -108,7 +109,7 @@ export function since(s, now = Date.now()) {
     const m = /^(\d+)\s*([mhd])$/.exec(s.trim());
     if (m)
         return now - Number(m[1]) * { m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2]];
-    const t = Date.parse(s);
+    const t = dateMs(s);
     if (Number.isNaN(t))
         throw new Error(`--since takes 30m, 1h, 2d or a date, not ${s}`);
     return t;
@@ -135,7 +136,7 @@ export function logsCommand(argv, dir) {
     }
     catch (e) {
         console.error(e.message);
-        return 1;
+        return 2;
     }
     const comp = flag('component');
     const evs = readLog(dir)

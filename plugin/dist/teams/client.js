@@ -4,10 +4,11 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, wri
 import { basename, join, resolve, sep } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
 import { logger } from "../core/log.js";
+import { newerThenwise } from "../core/notices.js";
 import { takeLock } from "../ingest/lock.js";
 import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { makeId, readNotes } from "../capture/notes.js";
-import { cursor, dropChat, openChatCache, putChat, setCursor } from "./chatcache.js";
+import { cursor, dropChat, newerCache, openChatCache, putChat, setCursor } from "./chatcache.js";
 export const LABEL = 'teams preview';
 // A read is small; a share can be 100 KB over a slow link, and a timeout that is too short would retry it forever.
 const TIMEOUT_MS = { GET: 5000, PUT: 20000, DELETE: 20000 };
@@ -238,7 +239,7 @@ export function readCache(dir) {
     try {
         const c = JSON.parse(readFileSync(cacheFile(dir), 'utf8'));
         // Notes fetched under an older MASK_VERSION are masked again; the next fetch writes them back with the version.
-        if (c.mask !== MASK_VERSION)
+        if ((c.mask ?? 0) < MASK_VERSION)
             c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION);
         return c;
     }
@@ -252,8 +253,11 @@ export async function fetchShared(dir) {
     const s = load(dir);
     if (s.refused)
         return `the server refused your token; ask for a new invite (${LABEL})`;
-    const me = s.me ?? (await call(s, 'GET', '/me')).json?.name;
     const cache = readCache(dir);
+    // Notes this one adds would sit under a newer Thenwise's mask mark, never masked again: that one fetches them (#137).
+    if ((cache.mask ?? 0) > MASK_VERSION)
+        return (newerThenwise(dir, 'the team caches'), `team notes not fetched: a newer Thenwise wrote them. Update Thenwise (${LABEL})`);
+    const me = s.me ?? (await call(s, 'GET', '/me')).json?.name;
     const changes = [];
     for (const kind of ['notes', 'tombs']) {
         for (let since = cache.since;;) {
@@ -301,6 +305,8 @@ export async function fetchChats(dir, s = load(dir)) {
     const { checkedChat } = await import("./export.js"); // export.ts imports this file
     const db = openChatCache(dir);
     try {
+        if (newerCache(db))
+            return (newerThenwise(dir, 'the team caches'), '; team chats not fetched: a newer Thenwise wrote them');
         let tombs = 0;
         let got = 0;
         for (let since = cursor(db, 'tombs');;) {

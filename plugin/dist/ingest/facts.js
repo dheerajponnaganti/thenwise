@@ -42,7 +42,7 @@ export const isTestFile = (w) => new RegExp(`^(?:${TEST_FILE.source})$`).test(w)
  * are one test. A file outside the checkout, or with no folder to go by, stays as written. */
 export function testKey(cmd, cwd = '') {
     const dir = cwd.replace(/\\/g, '/');
-    const top = dir && checkoutTop(dir);
+    const top = dir && normPath(checkoutTop(dir));
     const name = (w) => {
         if (!top)
             return w.replace(/^\.\//, '');

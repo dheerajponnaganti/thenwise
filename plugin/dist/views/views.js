@@ -1,6 +1,7 @@
 // Helpers for the vault writer: the project of each chat, source lines and cuts. The `views` command that also used
 // them is gone; the vault writer replaced it.
 import { basename } from 'node:path';
+import { under } from "../ingest/parts.js";
 const flat = (s) => s.replace(/\[\[|\]\]/g, '').replace(/\s+/g, ' ').trim();
 export const cut = (s, n) => (flat(s).length > n ? `${flat(s).slice(0, n).trimEnd()}...` : flat(s));
 const short = (id) => id.replace(/^(ses|turn|sum):(.{8}).*$/, '$1:$2');
@@ -30,7 +31,7 @@ export function folderOf(fileId) {
 export function sessionProjects(g, projects = []) {
     // A session belongs to the repo whose commits and PRs its turns made or opened; failing that, to the top folder its
     // turns worked in most (a chat run from the home folder about ~/my-project is that project's); failing that, its cwd.
-    const sessions = [...g.nodes.values()].filter((n) => n.kind === 'session');
+    const sessions = [...g.nodes.values()].filter((n) => n.kind === 'session' && !g.paused(n));
     const projectOf = new Map();
     const touchedBy = new Map(); // file id -> sessions/PRs/commits/notes that touched it
     for (const s of sessions) {
@@ -46,8 +47,8 @@ export function sessionProjects(g, projects = []) {
                     votes.set(repo(x.project), (votes.get(repo(x.project)) ?? 0) + 1);
                 if (t.out && x?.kind === 'file' && (t.kind === 'edited' || t.kind === 'ran_in'))
                     for (const p of projects ?? [])
-                        if (p.paths.some((r) => x.id.slice(5) === r || x.id.slice(5).startsWith(`${r}/`)))
-                            named.add(p.name);
+                        if (p.paths.some((r) => under(x.id.slice(5), r)))
+                            named.add(p.name); // under normalizes: a Windows view path matches
                 if (t.out && x?.kind === 'file' && t.kind !== 'mentions') {
                     ;
                     (touchedBy.get(x.id) ?? touchedBy.set(x.id, new Set()).get(x.id)).add(s.id);

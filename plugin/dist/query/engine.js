@@ -5,6 +5,7 @@ import { basename, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { githubSlug, projectRoot, real, repoRoot } from "../ingest/repos.js";
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from "./language.js";
+import { realDay } from "../core/time.js";
 import { normPath } from "../core/vault-index.js";
 const STOP = new Set(`a about above after again all also am an and any are as at be because been before being below between both but by can could did do does doing down during each few for from further had has have having he her here hers him his how i if in into is it its me more most my no nor not of off on once only or other our ours out over own same she should so some such than that the their theirs them then there these they this those through to too under until up us very was we were what when where which while who whom why will with would you your yours tell show find remember mean means made make get got use used using`.split(/\s+/));
 export const GOOD = 0.5; // idf-weighted query coverage a passage needs to count as a match
@@ -49,13 +50,18 @@ export const startOf = (d) => {
 /** `24h`, `7d` or an ISO date or time, to milliseconds; NaN when it is none of these. A plain date is the start of
  * that local day, as asof reads a plain date as its end. */
 export function sinceOf(s, now = Date.now()) {
+    if (!realDay(s))
+        return NaN;
     const m = /^(\d+)([hd])$/.exec(s);
     if (m)
         return now - Number(m[1]) * (m[2] === 'h' ? 36e5 : 864e5);
     return /^\d{4}-\d{2}-\d{2}$/.test(s) ? startOf(s) : Date.parse(s);
 }
-/** The end of a local day, as a UTC instant; a full timestamp is used as given. */
+/** The end of a local day, as a UTC instant; a full timestamp is used as given. A day that does not exist gives
+ * "Invalid Date", which every caller parses to NaN and reports as an input error. */
 export const endOf = (d) => {
+    if (!realDay(d))
+        return 'Invalid Date';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d))
         return d;
     const guess = Date.parse(`${d}T23:59:59.999Z`);
@@ -84,8 +90,8 @@ export class Graph {
     feedback = true;
     /** The project folder results are limited to (plus global notes); undefined searches everything. */
     scope;
-    /** Roots to leave out even when the scope is everything (paused projects in the all-projects fallback). */
-    hide;
+    /** Folders paused with `thenwise off`: their chats and records stay out of every answer, whatever the scope. */
+    off;
     roots;
     known = [];
     slugs = {}; // project root -> GitHub owner/name, from the store's meta
@@ -204,6 +210,8 @@ export class Graph {
         this.roots = new Map();
         const cache = new Map();
         const of = (f) => (f ? (cache.get(f) ?? (cache.set(f, projectRoot(f)), cache.get(f))) : '');
+        const repos = new Map();
+        const inRepo = (cwd) => repos.get(cwd) ?? (repos.set(cwd, !!repoRoot(cwd)), repos.get(cwd));
         const team = [];
         for (const n of this.ofKind('session', 'commit')) {
             if (n.extra?.team) {
@@ -214,7 +222,7 @@ export class Graph {
             // A cwd that no longer exists (repo moved or deleted) keeps its own path as the project instead of turning global.
             if (n.kind === 'session') {
                 const cwd = String(n.extra?.cwd ?? '');
-                this.roots.set(n.id, repoRoot(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '');
+                this.roots.set(n.id, inRepo(cwd) ? of(cwd) : cwd && !existsSync(cwd) ? normPath(resolve(cwd)) : '');
                 this.keyRoots.set(n.project, this.roots.get(n.id));
             }
             else if (n.kind === 'commit')
@@ -234,11 +242,26 @@ export class Graph {
             this.roots.set(n.id, String(n.extra.root ?? ''));
     }
     inScope(n) {
-        if (!n || n.kind === 'file' || (this.scope === undefined && !this.hide))
+        if (!n || n.kind === 'file')
+            return true;
+        if (this.paused(n))
+            return false;
+        if (this.scope === undefined)
             return true;
         const r = this.rootOf(n);
         // Teammates' chats of a project this machine does not hold show only when everything is searched.
-        return !(r && this.hide?.(r)) && (this.scope === undefined || this.ours(r) || (r === '' && !n.extra?.team));
+        return this.ours(r) || (r === '' && !n.extra?.team);
+    }
+    /** Whether `thenwise off` hides this node. A chat goes by the folder it ran in, so a chat outside any repository
+     * (whose project is global) is paused by its own folder, and `off` for everything takes every chat. */
+    paused(n) {
+        if (!this.off)
+            return false;
+        const ses = n.kind === 'session' ? n : n.kind === 'turn' || n.kind === 'summary' ? this.nodes.get(n.source) : undefined;
+        if (ses?.kind === 'session')
+            return this.off(ses.extra?.team ? this.rootOf(ses) : String(ses.extra?.cwd ?? ''));
+        const r = this.rootOf(n);
+        return r !== '' && this.off(r);
     }
     projectName(n) {
         const r = this.rootOf(n);

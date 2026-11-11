@@ -54,6 +54,39 @@ test('codex: the TOML stays as written around our block, comments included', () 
   assert.equal(readFileSync(file, 'utf8').trimEnd(), before.trimEnd())
 })
 
+test('#115: connect codex and --remove keep the next table\'s comments, indented tables and CRLF line endings', () => {
+  const ours = '[mcp_servers.thenwise]\ncommand = "/old/node"\nargs = ["/old/cli.js", "mcp"]\n'
+  const cases = [
+    // [what is in the file, what remove leaves]
+    [`model = "x"\n\n${ours}\n# keep: my other server below\n[mcp_servers.other]\ncommand = "y"\n`, 'model = "x"\n\n# keep: my other server below\n[mcp_servers.other]\ncommand = "y"\n'],
+    [`${ours}\n  [mcp_servers.other]\n  command = "y"\n  args = ["z"]\n`, '  [mcp_servers.other]\n  command = "y"\n  args = ["z"]\n'],
+    [`model = "x"\n\n${ours}[mcp_servers.thenwise.env]\nA = "1"\n\n# trailing note\n`, 'model = "x"\n\n# trailing note\n'],
+    // An older Thenwise appended a second table to CRLF files.
+    [`model = "x"\n\n${ours}\n${ours}`, 'model = "x"\n'],
+  ]
+  for (const crlf of [false, true]) {
+    for (const [input, removed] of cases) {
+      const eol = (t: string) => (crlf ? t.replace(/\n/g, '\r\n') : t)
+      const h = home()
+      const file = join(h, '.codex', 'config.toml')
+      mkdirSync(join(h, '.codex'))
+      writeFileSync(file, eol(input!))
+      const label = JSON.stringify({ crlf, input })
+      apply(plan('codex', opts(h)))
+      const on = readFileSync(file, 'utf8')
+      assert.equal(on.match(/\[mcp_servers\.thenwise\]/g)?.length, 1, label)
+      assert.ok(on.includes(eol('[mcp_servers.thenwise]\ncommand = "/n/node"\n')), label)
+      assert.equal(on.includes('/old/'), false, label)
+      assert.equal(/(^|[^\r])\n/.test(on), !crlf, `line endings kept: ${label}`)
+      for (const keep of ['# keep', '[mcp_servers.other]', 'args = ["z"]', '# trailing note']) assert.equal(on.includes(keep), input!.includes(keep), `${keep}: ${label}`)
+      assert.equal(plan('codex', opts(h)).next, null, `a second connect changes nothing: ${label}`)
+      apply(plan('codex', { ...opts(h), remove: true }))
+      assert.equal(readFileSync(file, 'utf8'), eol(removed!), `remove: ${label}`)
+      assert.equal(plan('codex', { ...opts(h), remove: true }).next, null, label)
+    }
+  }
+})
+
 test('a config with comments is left alone, and the entry is shown to add by hand', () => {
   const h = home()
   const file = join(h, '.gemini', 'settings.json')

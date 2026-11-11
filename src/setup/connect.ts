@@ -39,7 +39,42 @@ function jsonEntry(tool: Tool, [command, args]: [string, string[]], extra: Recor
 }
 
 const tomlString = (s: string) => JSON.stringify(s)
-const TOML_BLOCK = /^\[mcp_servers\.thenwise(\.[^\]]*)?\]\n(?:(?!\[)[^\n]*\n?)*/gm
+// Our table or one of its sub-tables, on a trimmed line. TOML allows spaces and quotes in a header.
+const OURS = /^\[\s*mcp_servers\s*\.\s*(?:thenwise|"thenwise"|'thenwise')\s*(\.[^\]]*)?\]\s*(?:#.*)?$/
+// Any table header, indented or not.
+// shortcut: a nested array in our table whose line starts with [ reads as a header; Thenwise writes args on one line, upgrade to a TOML parser if users hand-edit it.
+const isHead = (line: string) => line.trimStart().startsWith('[')
+const loose = (line: string) => /^(#|$)/.test(line.trim())
+
+/** The file without our table and its sub-tables, line by line, so each line keeps its own ending. Comments and blank
+ * lines at the end of our table belong to what follows, so they stay. `tables` counts our main tables. */
+function withoutBlock(text: string): { text: string; tables: number } {
+  const lines = text.split('\n')
+  const out: string[] = []
+  let tables = 0
+  for (let i = 0; i < lines.length; ) {
+    const m = OURS.exec(lines[i]!.trim())
+    if (!m) {
+      out.push(lines[i++]!)
+      continue
+    }
+    if (!m[1]) tables++
+    let j = i + 1
+    while (j < lines.length && !isHead(lines[j]!)) j++
+    let k = j
+    while (k > i + 1 && loose(lines[k - 1]!)) k--
+    const kept = lines.slice(k, j)
+    // One gap where the table was, not two. The blank lines before it go, so the file's last line ending stays.
+    if (kept.length && !kept[0]!.trim()) {
+      while (out.length && !out.at(-1)!.trim()) out.pop()
+      if (!out.length) while (kept.length && !kept[0]!.trim()) kept.shift()
+    }
+    out.push(...kept)
+    i = j
+  }
+
+  return { text: out.join('\n'), tables }
+}
 
 function tomlBlock([command, args]: [string, string[]], extra: Record<string, string>): string {
   const env = Object.entries(extra).map(([k, v]) => `${k} = ${tomlString(v)}`).join(', ')
@@ -56,14 +91,17 @@ export function plan(tool: Tool, opts: { home?: string; env?: NodeJS.ProcessEnv;
   const before = existsSync(file) ? readFileSync(file, 'utf8') : ''
 
   if (tool === 'codex') {
-    const block = tomlBlock(command, extra)
-    const without = before.replace(TOML_BLOCK, '')
+    const snippet = tomlBlock(command, extra)
+    const eol = before.includes('\r\n') ? '\r\n' : '\n'
+    const block = snippet.replaceAll('\n', eol)
+    const { text: without, tables } = withoutBlock(before)
     const had = without !== before
-    if (opts.remove) return { file, snippet: block, next: had ? without.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '') : null, note: had ? 'removed' : 'not connected' }
-    if (before.includes(block)) return { file, snippet: block, next: null, note: 'already connected' }
+    if (opts.remove) return { file, snippet, next: had ? without : null, note: had ? 'removed' : 'not connected' }
+    // A second table (an older Thenwise appended one to CRLF files) is invalid TOML, so it is rewritten as one.
+    if (tables === 1 && before.includes(block)) return { file, snippet, next: null, note: 'already connected' }
     const base = without.replace(/\s*$/, '')
 
-    return { file, snippet: block, next: `${base ? `${base}\n\n` : ''}${block}`, note: 'connected' }
+    return { file, snippet, next: `${base ? `${base}${eol}${eol}` : ''}${block}`, note: 'connected' }
   }
 
   const [key, entry] = jsonEntry(tool, command, extra)

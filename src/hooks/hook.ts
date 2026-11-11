@@ -308,12 +308,12 @@ function fileHint(env: HookEnv, input: Record<string, any>, file: string, event 
   return block === '' ? '' : reply(event, block)
 }
 /** A test's history when it runs: the files in this project whose edits it failed right after, most often first. The key is
- * made as the parser made it (spaces folded, cut to 200, masked), so the run matches its past runs. '' when there is none. */
+ * made as the parser made it (masked, spaces folded, cut to 200), so the run matches its past runs. '' when there is none. */
 function testHint(env: HookEnv, input: Record<string, any>, cmd: string, cwd: string, event = 'PostToolUse'): string {
   const session = input.session_id
   const db = join(env.dir, 'graph.db')
   if (typeof session !== 'string' || process.env.ANTIGRAVITY_CONVERSATION_ID || !existsSync(db)) return ''
-  const run = maskSecrets(cmd.replace(/\s+/g, ' ').trim().slice(0, 200)).text
+  const run = maskSecrets(cmd).text.replace(/\s+/g, ' ').trim().slice(0, 200)
   const key = testKey(run, cwd)
   if (seen(env, session, input.agent_id, `test:${key}`)) return ''
   // Thenwise's option goes before the test command; the CLI names its files from that folder, as here.
@@ -364,7 +364,8 @@ function currentTail(file: unknown, cwd: string, convert?: (line: string) => str
   const s = parseSession(convert ? lines.flatMap(convert) : lines, 'current', homedir())
   const turns = s.turns.slice(-3)
   if (!turns.length) return ''
-  const cut1 = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}...` : t)
+  // Masked before the cut: a token cut short no longer matches its pattern.
+  const cut1 = (t: string, n: number) => ((t = maskSecrets(t).text), t.length > n ? `${t.slice(0, n)}...` : t)
 
   // The compaction summary keeps the gist; the facts it tends to lose (files, the last test, open questions) come from the chat itself.
   const facts = cwd ? factLines(s, cwd, 'this session').map((l) => `- ${l}`).join('\n') : ''

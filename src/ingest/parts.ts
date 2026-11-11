@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { basename, dirname, join, posix, relative } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
-import { maskSecrets } from '../core/secrets.ts'
+import { maskDeep, maskSecrets } from '../core/secrets.ts'
 import { normPath } from '../core/vault-index.ts'
 import { parseTrailers, readNotes } from '../capture/notes.ts'
 import type { TrailerItem } from '../capture/notes.ts'
@@ -55,12 +55,12 @@ export const sortKeys = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortKeys(x)])) : v
 export const edgeKey = (e: { src: string; dst: string; kind: string }) => `${e.src}\0${e.dst}\0${e.kind}`
 
-// The one choke point: every record's title and text are masked before it is stored (chat text is masked already, a no-op).
+// The one choke point: every record's title, text and extra are masked before it is stored (chat text is masked already, a no-op).
 export const fullNode = (n: Partial<GNode> & { id: string; kind: string }): GNode => {
   const o: GNode = { title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n }
   o.title = maskSecrets(o.title).text
   o.text = maskSecrets(o.text).text
-  if (Array.isArray(o.extra.passages)) o.extra = { ...o.extra, passages: o.extra.passages.map((p) => maskSecrets(String(p)).text) }
+  o.extra = maskDeep(o.extra) as Record<string, unknown>
 
   return o
 }

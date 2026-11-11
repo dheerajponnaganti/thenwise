@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { MASK_VERSION, maskDeep } from '../core/secrets.ts'
+import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import type { Config } from './config.ts'
 import type { PrInput } from './parts.ts'
 import { githubSlug } from './repos.ts'
@@ -76,7 +76,7 @@ export function fetchPrs(cfg: Config, repos: string[], opts: PrOptions = {}): Pr
         if (err?.code === 'ENOENT') noGh = true
         else {
           const slow = err?.signal === 'SIGKILL'
-          const why = slow ? `gh took longer than ${Math.round(timeout / 1000)} s (set ingest.gh_timeout_s to wait longer)` : String(err?.stderr || err?.message || err).trim().split('\n')[0]!.slice(0, 200)
+          const why = slow ? `gh took longer than ${Math.round(timeout / 1000)} s (set ingest.gh_timeout_s to wait longer)` : maskSecrets(String(err?.stderr || err?.message || err)).text.trim().split('\n')[0]!.slice(0, 200)
           cache[slug] = { fetchedAt: e?.fetchedAt ?? 0, tried: now, error: why, ...(slow ? { slow: (e?.slow ?? 0) + 1 } : {}), prs: e?.prs ?? [], mask: MASK_VERSION }
           dirty = true
         }

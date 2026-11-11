@@ -31,6 +31,19 @@ export function writeExport(file: string, name: string, built: Built[]): void {
   chmodSync(file, 0o600)
 }
 
+/** One chat from an export file or the team server, checked as the team server checks a shared chat and masked again.
+ * Throws on a bad one. */
+export function checkedChat(c: WireChat): WireChat {
+  if (!NAME_RE.test(String(c.owner)) || !ID_RE.test(String(c.session))) throw new Error('bad name or id')
+  const { owner, session, rev, ...unit } = c
+  const u = chatUnit(unit as unknown as Record<string, unknown>)
+  // Masked again here: the chat may come from an older Thenwise, a hand-made file or another server, and nothing is stored unmasked.
+  const m = (t: string) => maskSecrets(t).text
+  const turns = u.turns.map((t) => ({ ...t, line: m(t.line), passages: t.passages.map(m), paths: t.paths.map(m), dead_text: m(t.dead_text) }))
+
+  return { ...u, head: m(u.head), turns, owner, session, rev }
+}
+
 /** The chats in an export file, each checked as the team server checks a shared chat. Throws on anything else. */
 export function readExport(file: string): WireChat[] {
   if (!existsSync(file)) throw new Error(`${file} does not exist`)
@@ -44,18 +57,11 @@ export function readExport(file: string): WireChat[] {
   }
   try {
     return chatsIn(db).map((c) => {
-      if (!NAME_RE.test(String(c.owner)) || !ID_RE.test(String(c.session))) throw new Error(`${file} has a chat with a bad name or id`)
-      const { owner, session, rev: _rev, ...unit } = c
-      let u
       try {
-        u = chatUnit(unit as unknown as Record<string, unknown>)
+        return { ...checkedChat(c), rev: 1 }
       } catch (e) {
         throw new Error(`${file}: chat ${c.session}: ${(e as Error).message}`)
       }
-      // Masked again here: the file may come from an older Thenwise or be made by hand, and nothing is stored unmasked.
-      const m = (t: string) => maskSecrets(t).text
-      const turns = u.turns.map((t) => ({ ...t, line: m(t.line), passages: t.passages.map(m), paths: t.paths.map(m), dead_text: m(t.dead_text) }))
-      return { ...u, head: m(u.head), turns, owner, session, rev: 1 }
     })
   } finally {
     db.close()

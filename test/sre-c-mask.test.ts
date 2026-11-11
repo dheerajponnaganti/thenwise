@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { MASK_VERSION, maskSecrets } from '../src/core/secrets.ts'
+import { MASK, MASK_VERSION, maskDeep, maskSecrets } from '../src/core/secrets.ts'
 
 test('SRE-07 mask shapes the report found missing', () => {
   assert.ok(MASK_VERSION >= 6)
@@ -44,4 +44,24 @@ test('masking stays linear on long hyphenated text, and long secret names still 
   assert.ok(Date.now() - t < 500, `took ${Date.now() - t} ms for 100 KB`)
   assert.match(maskSecrets('my-very-long-service-name-for-billing-api_key = abcd1234efgh5678ijkl').text, /\[secret masked\]/)
   assert.match(maskSecrets('postgres://user:supersecretpass@db:5432').text, /\[secret masked\]/)
+})
+
+test('GHSA-84q4 item 1: a URL password holding @ is masked whole; ports, npm scopes and git remotes stay readable', () => {
+  const cases: [string, string][] = [
+    ['postgres://admin:p@ss!word@db.local/x', 'postgres://admin:[secret masked]@db.local/x'],
+    ['postgres://admin:hun@ter2xyz@db.local', 'postgres://admin:[secret masked]@db.local'],
+    ['DATABASE_URL="mysql://root:Pa@ss@w0rd2024@db.example.com:3306/app"', 'DATABASE_URL="mysql://root:[secret masked]@db.example.com:3306/app"'],
+    ['postgres://admin:p%40ss%2Fw0rd@db.local/x', 'postgres://admin:[secret masked]@db.local/x'],
+  ]
+  for (const [s, want] of cases) assert.equal(maskSecrets(s).text, want)
+  for (const s of ['http://localhost:4873/@scope/pkg', 'https://example.com:8443/users/@alice', 'https://h:8080/a?mail=x@y.z', 'git+ssh://git@github.com:org/repo.git', 'git@github.com:org/repo.git', 'npm i @scope/pkg@1.2.3', 'https://registry.npmjs.org/@types%2fnode']) assert.equal(maskSecrets(s).text, s)
+})
+
+test('GHSA-84q4 item 2: maskDeep masks a value by its key; common keys stay readable unless the value is a secret', () => {
+  const input = { host: 'db.local', password: 'hunter2hunter2', api_key: 'abcd1234efgh5678', env: { DB_PASSWORD: 'correcthorse', PATH: '/usr/bin' }, headers: { Authorization: 'Bearer abcdef1234567890xyz' } }
+  assert.deepEqual(maskDeep({ type: 'tool_use', name: 'mcp__db__connect', input }), { type: 'tool_use', name: 'mcp__db__connect', input: { host: 'db.local', password: MASK, api_key: MASK, env: { DB_PASSWORD: MASK, PATH: '/usr/bin' }, headers: { Authorization: `Bearer ${MASK}` } } })
+  const keep = { name: 'deploy', path: '/srv/app/config.yml', id: 'toolu_01ABCdef', file_path: '/a/b/token.ts', command: 'npm test -- --grep token', description: 'Rotate the token weekly', token_count: '1234', max_tokens: '4096', password_hint: 'the dog', secret: 'process.env.SECRET_KEY', tokenizer: 'cl100k_base', cache_key: 'user_42_profile' }
+  assert.deepEqual(maskDeep(keep), keep)
+  const ghp = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+  assert.deepEqual(maskDeep({ command: `GITHUB_TOKEN=${ghp} gh pr list`, name: ghp }), { command: `GITHUB_TOKEN=${MASK} gh pr list`, name: MASK })
 })

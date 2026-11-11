@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { parseFrontMatter } from '../core/frontmatter.ts'
 import { logger } from '../core/log.ts'
 import { takeLock } from '../ingest/lock.ts'
-import { maskSecrets } from '../core/secrets.ts'
+import { maskDeep, maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'
 import type { Config } from '../ingest/config.ts'
@@ -324,7 +324,7 @@ export async function fetchShared(dir: string): Promise<string> {
     cache.since = Math.max(cache.since, ch.rev)
     // Retired notes leave; pending ones never come (the feed holds them back).
     if (ch.tomb || ch.note!.status === 'retired' || ch.note!.owner === me) delete cache.notes[key]
-    else (cache.notes[key] = ch.note!), got++
+    else (cache.notes[key] = maskDeep(ch.note) as TeamNote), got++ // masked here too: the server may be older or another one
   }
   const tmp = `${cacheFile(dir)}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 })
@@ -348,6 +348,7 @@ const CHAT_TIMEOUT_MS = 60000
  * revision order, page by page, each page saved with its cursor so an interrupted fetch resumes. A server without
  * shared chats (404) is not an error. */
 export async function fetchChats(dir: string, s: State = load(dir)): Promise<string> {
+  const { checkedChat } = await import('./export.ts') // export.ts imports this file
   const db = openChatCache(dir)
   try {
     let tombs = 0
@@ -371,12 +372,21 @@ export async function fetchChats(dir: string, s: State = load(dir)): Promise<str
       const r = await call(s, 'GET', `/chats?since=${since}&limit=${CHAT_PAGE}&full=1`, undefined, {}, CHAT_TIMEOUT_MS)
       if (r.status !== 200) throw new Error(`the server answered ${r.status}${errText(r.json) ? `: ${errText(r.json)}` : ''}`)
       const rows = r.json.chats as WireChat[]
+      const top = Math.max(since, ...rows.map((c) => c?.rev).filter(Number.isSafeInteger))
       db.exec('BEGIN')
-      for (const c of rows) (putChat(db, c), got++)
-      if (rows.length) setCursor(db, 'chats', rows.at(-1)!.rev)
+      for (const c of rows) {
+        // Checked and masked as an import is: one bad chat is skipped and logged, and never stops the rest.
+        try {
+          putChat(db, checkedChat(c))
+          got++
+        } catch (e) {
+          logger('teams', dir).warn('chat_skipped', { session: String(c?.session), error: (e as Error).message })
+        }
+      }
+      if (top > since) setCursor(db, 'chats', top)
       db.exec('COMMIT')
-      if (rows.length < CHAT_PAGE) break
-      since = rows.at(-1)!.rev
+      if (rows.length < CHAT_PAGE || top <= since) break
+      since = top
     }
     const held = Number((db.prepare('SELECT count(*) AS n FROM chats').get() as { n: number }).n)
 

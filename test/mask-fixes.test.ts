@@ -8,7 +8,8 @@ import { gunzipSync } from 'node:zlib'
 import { MASK } from '../src/core/secrets.ts'
 import { archive } from '../src/ingest/archive.ts'
 import { loadConfig } from '../src/ingest/config.ts'
-import { fullNode, isMarked } from '../src/ingest/parts.ts'
+import { loadPrInputs } from '../src/ingest/ingest.ts'
+import { fullNode, isMarked, parseLog, prPart } from '../src/ingest/parts.ts'
 import { fetchPrs } from '../src/ingest/prs.ts'
 
 const KEY = `ghp_${'a1B2c3D4e5'.repeat(4)}`
@@ -74,4 +75,20 @@ test('gap 30: markers match the start or end of the first prompt, or a whole lin
   assert.ok(isMarked(m, ['what is x [memory-eval]']))
   assert.ok(isMarked(m, ['hi', 'text\n[memory-eval]\nmore']))
   assert.ok(!isMarked(m, ['hi', 'the flag [memory-eval] is documented in the readme']))
+})
+
+test('GHSA-84q4 item 4: commit trailers, dead ends and a --prs file are stored masked', () => {
+  // Two commits as `git log` gives them to parseLog: a Decision: and Why: body, and a revert whose subject holds the key.
+  const raw = `\x1e${'a1'.repeat(20)}\x1f2026-10-02T10:00:00Z\x1fSwitch the deploy key\x1fDecision: deploy with ${KEY}\nWhy: DB_PASSWORD=correcthorse9 was shared\x1d\nsrc/a.ts\n`
+    + `\x1e${'b2'.repeat(20)}\x1f2026-10-03T10:00:00Z\x1fRevert "use ${KEY}"\x1f\x1d\nsrc/a.ts\n`
+  const recs = parseLog(raw, '/r/proj')
+  assert.ok(recs[0]!.node.extra.trailers && recs[1]!.node.extra.deadEnd)
+  for (const r of recs) assert.ok(!/a1B2c3D4e5|correcthorse9/.test(JSON.stringify(r.node)), JSON.stringify(r.node.extra))
+  const { cfg } = world()
+  const file = join(cfg.home, 'prs.json')
+  writeFileSync(file, JSON.stringify([{ number: 9, title: `use ${KEY}`, body: 'b', state: 'CLOSED', mergedAt: null, headRefName: `fix/${KEY}`, createdAt: '2026-10-04T00:00:00Z', files: [], comments: [] }]))
+  const inputs = loadPrInputs(cfg, { prs: file }, [], [])
+  assert.ok(!JSON.stringify(inputs).includes('a1B2c3D4e5'), JSON.stringify(inputs))
+  const pr = prPart([{ full: 'me/proj', list: [{ number: 9, title: `use ${KEY}`, state: 'CLOSED', headRefName: `fix/${KEY}`, createdAt: '2026-10-04T00:00:00Z' }] }], [], { id: () => undefined, repo: () => undefined })
+  assert.ok(!JSON.stringify(pr.nodes).includes('a1B2c3D4e5'), JSON.stringify(pr.nodes[0]!.extra))
 })

@@ -5,6 +5,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -42,44 +43,85 @@ export const projectKey = (repo: string) => keys.get(repo) ?? (keys.set(repo, gi
 /** A remote url in one form: no scheme, user, port or `.git`, and `host:path` written as `host/path`. */
 export const normRemote = (u: string) =>
   u.trim().replace(/^[a-z][\w+.-]*:\/\//i, '').replace(/^[^@/]+@/, '').replace(/^([^/:]+):(?:\d+\/)?/, '$1/').replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase()
-const ids = new Map<string, { remotes: string[]; roots: string }>()
-/** What a repo is, whatever its folder: its remote urls (read from its git config, no git run) and its root commits (one
- * git run per repo per process). An empty field is something git could not answer. */
-function repoId(root: string): { remotes: string[]; roots: string } {
+/** The repo a local remote points at (a working copy or a bare repo), as a real path; undefined when it is missing or none. */
+function localRepo(path: string): string | undefined {
+  const d = basename(path) === '.git' ? dirname(path) : path
+  if (existsSync(join(d, '.git'))) return real(repoRoot(d) ?? d)
+  if (existsSync(join(d, 'HEAD')) && existsSync(join(d, 'config'))) return real(d)
+
+  return undefined
+}
+interface Remotes {
+  /** Network urls, normalized. */
+  urls: string[]
+  /** Repos on this machine that local remotes point at. */
+  locals: string[]
+  /** A local remote that is missing or no repo: a non-match proves nothing. */
+  unknown: boolean
+}
+const remoteCache = new Map<string, Remotes>()
+/** A repo's remotes, read from its git config (no git run). A path, a `file://` url or a relative path is a local remote. */
+function remotesOf(root: string): Remotes {
   const key = real(root)
-  const have = ids.get(key)
+  const have = remoteCache.get(key)
   if (have) return have
-  let remotes: string[] = []
+  const out: Remotes = { urls: [], locals: [], unknown: false }
   try {
     const dot = join(key, '.git')
-    const dir = existsSync(join(dot, 'config')) ? dot : resolve(key, /^gitdir:\s*(.+)$/m.exec(readFileSync(dot, 'utf8'))?.[1]?.trim() ?? '.git')
+    const dir = existsSync(join(dot, 'config')) ? dot : existsSync(dot) ? resolve(key, /^gitdir:\s*(.+)$/m.exec(readFileSync(dot, 'utf8'))?.[1]?.trim() ?? '.git') : key // key itself: a bare repo
     let inRemote = false
     for (const l of readFileSync(join(dir, 'config'), 'utf8').split(/\r?\n/)) {
       if (/^\s*\[/.test(l)) inRemote = /^\s*\[\s*remote\s+"/.test(l)
-      else if (inRemote && /^\s*url\s*=/.test(l)) remotes.push(normRemote(l.replace(/^\s*url\s*=\s*/, '')))
+      else if (inRemote && /^\s*url\s*=/.test(l)) {
+        const u = l.replace(/^\s*url\s*=\s*/, '').trim()
+        // git reads a url with no scheme and no colon before the first slash as a path; `C:\\` is a Windows path.
+        const path = /^file:\/\//i.test(u) ? decodeURIComponent(u.replace(/^file:\/\//i, '')) : /^[a-z][\w+.-]*:\/\//i.test(u) || (/^[^/\\]*:/.test(u) && !/^[A-Za-z]:[/\\]/.test(u)) ? undefined : u
+        if (path === undefined) out.urls.push(normRemote(u))
+        else {
+          const r = localRepo(resolve(key, path.replace(/^~(?=[/\\]|$)/, homedir())))
+          if (r) out.locals.push(r)
+          else out.unknown = true
+        }
+      }
     }
   } catch {
-    remotes = [] // no readable config: no remotes known
+    // no readable config: no remotes known
   }
-  let roots = ''
-  try {
-    roots = execFileSync('git', ['-C', key, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).split('\n').filter(Boolean).sort().join(' ')
-  } catch {
-    // no commits, not a repo, or no git
-  }
-  ids.set(key, { remotes, roots })
+  remoteCache.set(key, out)
 
-  return ids.get(key)!
+  return out
 }
-/** Whether two repos are clones of one repo: by a shared remote url when both have remotes, else by their root commits.
- * Undefined when git cannot tell: that is neither a match nor proof of another repo. */
-function cloneOf(a: string, b: string): boolean | undefined {
-  const x = repoId(a)
-  const y = repoId(b)
-  if (x.remotes.length && y.remotes.length) return x.remotes.some((r) => y.remotes.includes(r))
-  if (x.roots && y.roots) return x.roots === y.roots
+const rootsCache = new Map<string, string>()
+/** A repo's root commits, sorted: one git run per repo per process. '' when git cannot answer. */
+function rootsOf(root: string): string {
+  const key = real(root)
+  if (!rootsCache.has(key)) {
+    let roots = ''
+    try {
+      roots = execFileSync('git', ['-C', key, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).split('\n').filter(Boolean).sort().join(' ')
+    } catch {
+      // no commits, not a repo, or no git
+    }
+    rootsCache.set(key, roots)
+  }
 
-  return undefined
+  return rootsCache.get(key)!
+}
+/** Whether two repos are clones of one repo. A local remote that points at the other, or both at one repo, is a match. Then
+ * remote urls, each side with those of the repos its local remotes point at (one hop): a shared url is a match, and with
+ * every remote known, none shared proves another repo. Else their root commits. Undefined when git cannot tell: that is
+ * neither a match nor proof of another repo. */
+function cloneOf(a: string, b: string): boolean | undefined {
+  const x = remotesOf(a)
+  const y = remotesOf(b)
+  if (x.locals.includes(real(b)) || y.locals.includes(real(a)) || x.locals.some((l) => y.locals.includes(l))) return true
+  const hop = (r: Remotes) => new Set([...r.urls, ...r.locals.flatMap((l) => remotesOf(l).urls)])
+  const [xs, ys] = [hop(x), hop(y)]
+  if ([...xs].some((u) => ys.has(u))) return true
+  if (xs.size && ys.size && !x.unknown && !y.unknown) return false
+  const [xr, yr] = [rootsOf(a), rootsOf(b)]
+
+  return xr && yr ? xr === yr : undefined
 }
 const rootOf = (p: string) => real(repoRoot(p) ?? p)
 /** Whether a chat's repo is the shared project: the same repo (a worktree resolves to it), or another clone of it under the

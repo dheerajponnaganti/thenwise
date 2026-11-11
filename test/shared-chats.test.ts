@@ -1304,13 +1304,43 @@ test('GHSA-5jmx item 1: the next sync keeps the chats of a second clone, and of 
   }
 })
 
+test('GHSA-5jmx item 1: a clone of a local repo is the same project', needs, async () => {
+  const t = await team()
+  try {
+    const w = t.a
+    git(w.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
+    const at = (d: string) => join(w.home, d, 'proj')
+    for (const d of ['backup', 'byfile', 'byrel', 'gone', 'fork', 'forkcopy']) execFileSync('git', ['clone', '-q', d === 'forkcopy' ? at('fork') : w.proj, at(d)])
+    git(at('byfile'), 'remote', 'set-url', 'origin', `file://${w.proj.replace(/\\/g, '/')}`)
+    git(at('byrel'), 'remote', 'set-url', 'origin', '../../proj')
+    git(at('gone'), 'remote', 'set-url', 'origin', join(w.home, 'nowhere', 'proj')) // unknown: the first commit decides
+    git(at('fork'), 'remote', 'set-url', 'origin', 'git@gitlab.com:client-b/proj.git') // another fork, never joined
+    for (const d of ['backup', 'byfile', 'byrel', 'gone', 'fork', 'forkcopy']) w.chat(`in${d}`, { turns: [{ prompt: `Work in ${d}`, reply: `The ${d} clone is done.` }], cwd: at(d) }, `-home-${d}-proj`)
+    w.archive()
+    const sent: string[] = []
+    previewShare(w.cfg, w.proj, { each: (b) => sent.push(b.session) })
+    assert.deepEqual(sent.sort(), ['c1', 'inbackup', 'inbyfile', 'inbyrel', 'ingone'])
+    // Shared before from the backup clone alone; sharing ~/proj keeps every chat of the backup at the next sync.
+    updateShares(w.memDir, (s) => void (s.projects.proj = { repo: at('backup'), status: 'active' }))
+    await pushShared(w.cfg)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'inbackup'"), 1)
+    t.share(w)
+    assert.doesNotMatch(await pushShared(w.cfg), /another repo/)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session = 'inbackup'"), 1)
+    assert.equal(t.serverCount("SELECT count(*) AS n FROM chats WHERE session IN ('infork', 'inforkcopy')"), 0)
+  } finally {
+    await t.stop()
+  }
+})
+
 test('GHSA-5jmx item 5: a second clone of a non-GitHub repo is added, not swapped', needs, async () => {
   const t = await team()
   try {
-    // The clone's remote is the first folder and the first has its own remote: git cannot prove one repo, so each is shared by path.
+    // Each clone on its own host: git proves no shared repo, so each is shared by its path.
     git(t.a.proj, 'remote', 'add', 'origin', 'git@gitlab.com:acme/proj.git')
     const backup = join(t.a.home, 'backup', 'proj')
     execFileSync('git', ['clone', '-q', t.a.proj, backup])
+    git(backup, 'remote', 'set-url', 'origin', 'git@bitbucket.org:acme/proj.git')
     t.a.chat('inbackup', { turns: [{ prompt: 'Work in the backup clone', reply: 'The wombat importer retries once.' }], cwd: backup }, '-home-backup-proj')
     t.a.archive()
     const run = (...args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {

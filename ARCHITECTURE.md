@@ -121,6 +121,7 @@ Each tool has its own thin entry and all share one code base and one data folder
 ## The rules that hold it together
 
 - **Update equals rebuild.** `src/ingest/parts.ts` builds both paths, and `test/incremental-random.test.ts` runs random changes to prove the results match.
+  The rule holds for the same disk. Test-run keys, repo detection and alias roots read the disk at ingest time. If a checkout moves or is deleted, the values an update kept can differ from what a rebuild would give, until the next full rebuild.
 - **Deterministic.** Inputs are sorted, the graph uses no wall-clock time, and no model sits between a question and the records.
 - **`STATE_VERSION`** forces one store rebuild when what ingest produces changes.
 - **`MASK_VERSION`** forces one re-mask of existing archives when masking gets stronger.

@@ -3,7 +3,7 @@ import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { gunzipSync, gzipSync } from 'node:zlib'
 
 import { readLog } from '../src/core/log.ts'
@@ -55,7 +55,9 @@ test('a second archive while one runs exits with "archive already running"', () 
   const w = world()
   writeFileSync(join(w.dir, 's.jsonl'), `${row(1, 'hi')}\n`)
   mkdirSync(join(w.home, '.memory/archive'), { recursive: true })
-  writeFileSync(join(w.home, '.memory/archive/archive.lock'), String(process.pid))
+  // A live holder other than this process: a lock naming this process itself is stale (#101).
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+  writeFileSync(join(w.home, '.memory/archive/archive.lock'), String(holder.pid))
   process.env.THENWISE_ARCHIVE_WAIT_MS = '200'
   try {
     assert.throws(() => archive(w.cfg), /archive already running/)
@@ -64,6 +66,7 @@ test('a second archive while one runs exits with "archive already running"', () 
     assert.match(r.stdout, /archive already running/)
   } finally {
     delete process.env.THENWISE_ARCHIVE_WAIT_MS
+    holder.kill()
   }
   rmSync(join(w.home, '.memory/archive/archive.lock'))
   assert.equal(archive(w.cfg).archived, 1)

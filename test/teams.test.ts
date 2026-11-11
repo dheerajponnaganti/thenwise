@@ -216,10 +216,16 @@ describe('teams preview', () => {
     writeFileSync(join(d, 'team.lock'), '999999999')
     assert.equal(locked(d, () => 7), 7)
     assert.ok(!existsSync(join(d, 'team.lock')))
-    writeFileSync(join(d, 'team.lock'), String(process.pid))
-    const t0 = Date.now()
-    assert.throws(() => locked(d, () => 0), /busy/)
-    assert.ok(Date.now() - t0 >= 1900)
+    // A live holder other than this process: a lock naming this process itself is stale (#101).
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      writeFileSync(join(d, 'team.lock'), String(holder.pid))
+      const t0 = Date.now()
+      assert.throws(() => locked(d, () => 0), /busy/)
+      assert.ok(Date.now() - t0 >= 1900)
+    } finally {
+      holder.kill()
+    }
   })
 
   test('T-B8: plain http to a host that is not localhost is refused', async () => {

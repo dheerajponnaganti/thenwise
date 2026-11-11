@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A mask update no longer drops the turns a Copilot, Codex or Antigravity chat file lost. The archive keeps its copy and masks that copy again.
+- A long ingest, or a laptop asleep for over 30 minutes, no longer lets a second ingest or sync take the lock from a live process. A lock is taken only when its process is dead, the machine restarted since, or its process number now belongs to a program that started later. That last case kept syncing stopped until the next restart.
 
 ## 0.3.1
 

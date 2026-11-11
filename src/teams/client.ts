@@ -6,7 +6,7 @@ import { basename, join, resolve, sep } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
 import { logger } from '../core/log.ts'
-import { takeLock } from '../hooks/hook.ts'
+import { takeLock } from '../ingest/lock.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'

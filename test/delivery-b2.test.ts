@@ -187,7 +187,7 @@ test('B2-27/28: the file hint is spent only on an answer, per agent; a plain Bas
   const read = (file: string, agent?: string) => runHook('read', { tool_name: 'Read', tool_input: { file_path: file }, cwd: '/x/p', session_id: 's1', ...(agent ? { agent_id: agent } : {}) }, env)
   assert.equal(read('/x/p/nothing.ts'), '')
   assert.equal(read('/x/p/nothing.ts'), '', 'still empty, and no crash')
-  assert.ok(!readdirSync(join(dir, 'hook-state')).some((f) => readFileSync(join(dir, 'hook-state', f), 'utf8').includes('nothing.ts')), 'a failure does not spend the hint')
+  assert.ok(readdirSync(join(dir, 'hook-state')).some((f) => readFileSync(join(dir, 'hook-state', f), 'utf8').includes('nothing.ts')), 'an answer with no history spends the hint (#119)')
   assert.match(read('/x/p/src/cache.ts', 'sub1'), /memory-history/)
   assert.match(read('/x/p/src/cache.ts'), /memory-history/, 'a subagent read did not spend the main thread hint')
   assert.equal(read('/x/p/src/cache.ts'), '')

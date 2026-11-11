@@ -495,6 +495,21 @@ async function team() {
   return { dir, app, base, tokens, a, b, share, serverCount, stop }
 }
 
+test('#137: an older Thenwise leaves a chat a newer one shared, even after the chat grew', needs, async () => {
+  const t = await team()
+  try {
+    t.share(t.a)
+    assert.match(await pushShared(t.a.cfg), /^1 chat pushed/)
+    const [id] = Object.keys(loadShares(t.a.memDir).chats)
+    updateShares(t.a.memDir, (s) => void (s.chats[id!]!.mask = MASK_VERSION + 1)) // a newer Thenwise sent it
+    t.a.grow('c1', [{ prompt: 'More about the quokka exporter', reply: 'ok' }])
+    t.a.archive()
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed/)
+  } finally {
+    await t.stop()
+  }
+})
+
 test('T18-H3 T19-H1: A shares, a sync pushes the chat, B fetches it into team-chats.db and its memory finds it', needs, async () => {
   const t = await team()
   try {

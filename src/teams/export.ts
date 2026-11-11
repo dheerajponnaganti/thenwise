@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { maskSecrets } from '../core/secrets.ts'
 import type { Config } from '../ingest/config.ts'
-import { chatsIn, dropChat, importsFile, loadImports, openChatCache, openChatFile, putChat } from './chatcache.ts'
+import { chatsIn, dropChat, importsFile, loadImports, newerCache, openChatCache, openChatFile, putChat } from './chatcache.ts'
 import type { WireChat } from './chatcache.ts'
 import { formatPreview, previewShare } from './chats.ts'
 import type { Built } from './chats.ts'
@@ -75,6 +75,7 @@ export function importChats(dir: string, chats: WireChat[]): { added: number; sy
   const seen = loadImports(dir)
   let added = 0
   try {
+    if (newerCache(db)) throw new Error('the team chat cache was written by a newer Thenwise. Update Thenwise.')
     db.exec('BEGIN')
     for (const c of chats) {
       const had = db.prepare('SELECT 1 FROM chats WHERE owner = ? AND session = ?').get(c.owner, c.session)

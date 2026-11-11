@@ -6,12 +6,13 @@ import { basename, join, resolve, sep } from 'node:path'
 
 import { parseFrontMatter } from '../core/frontmatter.ts'
 import { logger } from '../core/log.ts'
+import { newerThenwise } from '../core/notices.ts'
 import { takeLock } from '../ingest/lock.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { makeId, readNotes } from '../capture/notes.ts'
 import type { CNote } from '../capture/notes.ts'
 import type { Config } from '../ingest/config.ts'
-import { cursor, dropChat, openChatCache, putChat, setCursor } from './chatcache.ts'
+import { cursor, dropChat, newerCache, openChatCache, putChat, setCursor } from './chatcache.ts'
 import type { WireChat } from './chatcache.ts'
 
 export const LABEL = 'teams preview'
@@ -296,7 +297,7 @@ export function readCache(dir: string): { since: number; notes: Record<string, T
   try {
     const c = JSON.parse(readFileSync(cacheFile(dir), 'utf8'))
     // Notes fetched under an older MASK_VERSION are masked again; the next fetch writes them back with the version.
-    if (c.mask !== MASK_VERSION) c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION)
+    if ((c.mask ?? 0) < MASK_VERSION) c.notes = Object.fromEntries(Object.entries(c.notes ?? {}).map(([k, n]) => [k, maskDeep(n)])), (c.mask = MASK_VERSION)
 
     return c
   } catch {
@@ -309,8 +310,10 @@ export function readCache(dir: string): { since: number; notes: Record<string, T
 export async function fetchShared(dir: string): Promise<string> {
   const s = load(dir)
   if (s.refused) return `the server refused your token; ask for a new invite (${LABEL})`
-  const me = s.me ?? (await call(s, 'GET', '/me')).json?.name
   const cache = readCache(dir)
+  // Notes this one adds would sit under a newer Thenwise's mask mark, never masked again: that one fetches them (#137).
+  if ((cache.mask ?? 0) > MASK_VERSION) return (newerThenwise(dir, 'the team caches'), `team notes not fetched: a newer Thenwise wrote them. Update Thenwise (${LABEL})`)
+  const me = s.me ?? (await call(s, 'GET', '/me')).json?.name
   const changes: { rev: number; note?: TeamNote; tomb?: { owner: string; id: string } }[] = []
   for (const kind of ['notes', 'tombs'] as const) {
     for (let since = cache.since; ; ) {
@@ -355,6 +358,7 @@ export async function fetchChats(dir: string, s: State = load(dir)): Promise<str
   const { checkedChat } = await import('./export.ts') // export.ts imports this file
   const db = openChatCache(dir)
   try {
+    if (newerCache(db)) return (newerThenwise(dir, 'the team caches'), '; team chats not fetched: a newer Thenwise wrote them')
     let tombs = 0
     let got = 0
     for (let since = cursor(db, 'tombs'); ; ) {

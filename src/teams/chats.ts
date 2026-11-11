@@ -10,6 +10,7 @@ import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, writeFil
 import { basename, dirname, join, resolve } from 'node:path'
 
 import { logger } from '../core/log.ts'
+import { newerThenwise } from '../core/notices.ts'
 import { MASK_VERSION, maskSecrets } from '../core/secrets.ts'
 import { editDirs, isMarked, workDirs, sessionPart, under } from '../ingest/parts.ts'
 import type { SessionPart } from '../ingest/parts.ts'
@@ -168,6 +169,8 @@ export interface SharedChat {
   project: string
   /** The archive entry, mask version and redact list this was built from: unchanged means nothing to rebuild. */
   src: string
+  /** The MASK_VERSION it was built with. One from a newer Thenwise is left to that one (#137). */
+  mask?: number
   /** The unit as sent: unchanged means nothing to send. */
   sha: string
   rev: number
@@ -521,6 +524,7 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
   let sent = 0
   let waiting = 0
   let fail = ''
+  let newer = false
   for (const p of projects) {
     const sh = loadShares(dir)
     const todo: Candidate[] = []
@@ -529,7 +533,8 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
       if (c.cwd && !quick.has(c.cwd)) quick.set(c.cwd, sessionRepo(c.cwd))
       if (c.cwd && quick.get(c.cwd) !== undefined && !sameProject(quick.get(c.cwd), p.repo)) continue
       const have = sh.chats[c.session]
-      if (have && have.src === srcOf(cfg, c) && have.project === p.name) continue
+      if (have && (have.mask ?? 0) > MASK_VERSION) newer = true
+      if (have && ((have.src === srcOf(cfg, c) && have.project === p.name) || (have.mask ?? 0) > MASK_VERSION)) continue
       todo.push(c)
     }
     todo.sort((a, b) => b.at - a.at || (a.rel < b.rel ? 1 : -1))
@@ -542,7 +547,7 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
       }
       const have = loadShares(dir).chats[c.session]
       if (have && have.sha === b.sha && have.project === p.name) {
-        updateShares(dir, (s) => void (s.chats[c.session] = { ...have, src: srcOf(cfg, c) }))
+        updateShares(dir, (s) => void (s.chats[c.session] = { ...have, src: srcOf(cfg, c), mask: MASK_VERSION }))
         continue
       }
       if (have?.refused && have.sha === b.sha) continue
@@ -554,17 +559,18 @@ export async function pushShared(cfg: Config, opts: { limit?: number } = {}): Pr
       if (r.status === 'sent') {
         sent++
         updateShares(dir, (s) => {
-          s.chats[c.session] = { project: p.name, src: srcOf(cfg, c), sha: b.sha, rev: r.rev, bytes: b.bytes, passages: b.passages, at: Date.now() }
+          s.chats[c.session] = { project: p.name, src: srcOf(cfg, c), mask: MASK_VERSION, sha: b.sha, rev: r.rev, bytes: b.bytes, passages: b.passages, at: Date.now() }
           if (s.projects[p.name]) s.projects[p.name]!.lastPush = Date.now()
         })
       } else if (r.status === 'refused') {
         out.push(`${c.session} refused (${r.code}${r.text ? ` ${r.text}` : ''})`)
-        updateShares(dir, (s) => void (s.chats[c.session] = { project: p.name, src: srcOf(cfg, c), sha: b.sha, rev: have?.rev ?? 0, bytes: b.bytes, passages: b.passages, at: Date.now(), refused: r.code }))
+        updateShares(dir, (s) => void (s.chats[c.session] = { project: p.name, src: srcOf(cfg, c), mask: MASK_VERSION, sha: b.sha, rev: have?.rev ?? 0, bytes: b.bytes, passages: b.passages, at: Date.now(), refused: r.code }))
       } else if (r.status === 'gone') {
         updateShares(dir, (s) => void ((s.removed[c.session] = p.name), delete s.chats[c.session]))
       } else fail = r.text
     }
   }
+  if (newer) newerThenwise(dir, 'the shared chats')
   if (!waiting && !fail) updateShares(dir, (s) => void projects.forEach((p) => s.projects[p.name]?.reshare && delete s.projects[p.name]!.reshare))
   out.unshift(`${sent} chat${sent === 1 ? '' : 's'} pushed${waiting ? `, ${waiting} more at the next sync` : ''}${fail ? `; stopped: ${fail}` : ''}`)
 
@@ -805,7 +811,7 @@ export function sharesStatus(cfg: Config): { lines: string[]; summary: string } 
     const as = active.filter((x) => x.name === k)
     const a = as[0]
     const wait = mine.filter((c) => {
-      if (c.session in sh.removed || sh.chats[c.session]?.src === srcOf(cfg, c)) return false
+      if (c.session in sh.removed || sh.chats[c.session]?.src === srcOf(cfg, c) || (sh.chats[c.session]?.mask ?? 0) > MASK_VERSION) return false
       const q = c.cwd ? sessionRepo(c.cwd) : undefined
 
       return as.some((a) => (q === undefined || sameProject(q, a.repo)) && !('skip' in buildChat(cfg, a.repo, c, sc.scrub, { ...(a.since ? { since: a.since } : {}), tombs })))

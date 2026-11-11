@@ -90,6 +90,10 @@ const BASH_ABS = /(?:^|[\s"'=(])(\/[^\s"'`;|&)<>]+)/g
 const BASH_REL = /(?:^|[\s"'=(])((?:\.\.?\/)?[\w.@-]+(?:\/[\w.@+-]+)*\/[\w.@+-]+\.[A-Za-z]\w{0,7})(?=$|[\s"'`;|&)<>:,])/g
 const LEADING_CD = /^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|;)/
 const GIT_COMMIT = /\bgit(?:\s+(?:-[cC]\s+\S+|--\S+))*\s+commit\b/
+// What git prints for a commit it made: `[main 1a2b3c4] Subject`, `[main (root-commit) ...]`, `[detached HEAD ...]`.
+const COMMIT_LINE = /\[(?:detached HEAD|[\w./-]+)(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g
+// What git prints when it commits nothing. Seen even when `|| true` or a later command hides the failed exit code.
+const GIT_FAILED = /^(?:fatal|error): |^nothing (?:added )?to commit|^no changes added to commit|^Aborting commit/m
 const TAGS = 'local-command-stdout|local-command-stderr|local-command-caveat|system-reminder|task-notification|command-message|bash-input|bash-stdout|bash-stderr|user-prompt-submit-hook|ide_opened_file|ide_selection|ide_diagnostics'
 const WRAPPER = new RegExp(`^<(${TAGS})>[\\s\\S]*?</\\1>\\s*`)
 const WRAPPER_OPEN = new RegExp(`^<(${TAGS})>`)
@@ -236,7 +240,8 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
   let lastAt = ''
   let pastCut = false
   const run: CostRun = { base: { input: 0, cached: 0, output: 0 }, last: undefined, start: undefined }
-  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; file?: string; changes?: Turn['changes'] }>()
+  // `cmd` is a test run the call makes, whatever else it does: `npm test && git commit` is a commit and a test run.
+  const pending = new Map<string, { turn: Turn; kind: 'commit' | 'pr' | 'agent' | 'test' | 'edit'; at?: string; cmd?: string; msg?: Turn['commitMsgs'][number]; pr?: boolean; file?: string; changes?: Turn['changes'] }>()
   // Edit calls per turn and file still standing: a failed call (denied, or its text not found) changed nothing.
   const editCalls = new Map<Turn, Map<string, number>>()
   const open = new Map<string, { turn: Turn; name: string; detail: string; at: string }>() // tool calls with no result yet
@@ -296,18 +301,23 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             continue
           }
           const out = textOf(b.content)
+          if (hit.cmd) hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, cmd: hit.cmd })
           if (hit.kind === 'agent') {
             const report = agentReport(out).slice(0, 8000) // a subagent's report to the turn that asked
             if (report) (hit.turn.reply.push(report), hit.turn.agentReports.push(report))
           }
-          else if (hit.kind === 'test') hit.turn.tests.push({ at: hit.at ?? hit.turn.at, failed: b.is_error === true, ...(hit.cmd ? { cmd: hit.cmd } : {}) })
           else if (hit.kind === 'commit') {
-            for (const m of out.matchAll(/\[[\w./-]+(?: \(root-commit\))? ([0-9a-f]{7,40})\](?: (.+))?/g)) {
+            const made = [...out.matchAll(COMMIT_LINE)]
+            // The typed -m subject stands for the first commit git prints; any later commit in the call keeps git's subject.
+            for (const [i, m] of made.entries()) {
               hit.turn.commitShas.add(m[1]!)
-              if (hit.at && m[2]?.trim()) hit.turn.commitMsgs.push({ subject: m[2].trim(), at: hit.at })
+              if (m[2]?.trim() && !(i === 0 && hit.msg)) hit.turn.commitMsgs.push({ subject: m[2].trim(), at: hit.at! })
             }
+            // No commit printed and git or the call failed: nothing was committed, so the typed subject goes. A quiet
+            // commit prints no line and keeps it.
+            if (hit.msg && !made.length && (b.is_error === true || GIT_FAILED.test(out))) hit.turn.commitMsgs = hit.turn.commitMsgs.filter((c) => c !== hit.msg)
           }
-          else for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)) hit.turn.prUrls.add(m[0])
+          if (hit.pr) for (const m of out.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)) hit.turn.prUrls.add(m[0])
         }
       }
       const p = d.isMeta ? null : promptText(content)
@@ -351,17 +361,24 @@ export function parseSession(text: string | Iterable<string>, id: string, home: 
             s.paths.add(p)
             turn?.ran.add(p)
           }
-          if (turn && isTestRun(inp.command)) pending.set(b.id, { turn, kind: 'test', at: d.timestamp ?? turn.at, cmd: inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) })
-          if (turn && GIT_COMMIT.test(inp.command)) {
-            const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(inp.command)
-            const msg = (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').split('\n')
+          // One entry per call, whatever it combines: `npm test && git commit && gh pr create` is a test run, a commit and a PR.
+          const cmd = isTestRun(inp.command) ? inp.command.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined
+          const pr = /\bgh\s+pr\s+create\b/.test(inp.command)
+          const commit = GIT_COMMIT.exec(inp.command)
+          let typed: Turn['commitMsgs'][number] | undefined
+          if (turn && commit) {
+            const tail = inp.command.slice(commit.index)
+            const m = /\s-[a-zA-Z]*m\s+(?:"([^"]*)"|'([^']*)'|([^\s"']+))/.exec(tail)
+            // An -m past the end of this git command is another command's: `git commit -F f && python -m pytest`.
+            const own = m && !/[;&|\n]/.test(tail.slice(0, m.index).replace(/"[^"]*"|'[^']*'/g, ''))
+            const msg = own ? (m[1] ?? m[2] ?? m[3] ?? '').split('\n') : ['']
             // -m "$(cat <<'EOF' ... EOF)": the subject is the first line after the heredoc opener.
             const subject = (/^\$\(cat\s*<</.test(msg[0]!) ? (msg.slice(1).find((l) => l.trim()) ?? '') : msg[0]!).trim()
-            // -F file, --amend or an editor: the subject comes from what git prints.
-            pending.set(b.id, { turn, kind: 'commit', at: subject ? undefined : (d.timestamp ?? turn.at) })
-            if (subject) turn.commitMsgs.push({ subject, at: d.timestamp ?? turn.at })
+            // -F file, --amend or an editor: the subject comes from what git prints. A typed subject is kept now, so a
+            // commit whose result never came still counts; a result that shows the commit failed takes it back.
+            if (subject) turn.commitMsgs.push((typed = { subject, at: d.timestamp ?? turn.at }))
           }
-          if (turn && !GIT_COMMIT.test(inp.command) && /\bgh\s+pr\s+create\b/.test(inp.command)) pending.set(b.id, { turn, kind: 'pr' })
+          if (turn && (cmd || pr || commit)) pending.set(b.id, { turn, kind: commit ? 'commit' : pr ? 'pr' : 'test', at: d.timestamp ?? turn.at, cmd, msg: typed, pr })
         }
       }
     }

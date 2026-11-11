@@ -15,7 +15,7 @@ import { alive } from '../core/progress.ts' // EPERM counts as alive: a server u
 import { maskSecrets } from '../core/secrets.ts'
 import { VAULT_FORMAT } from '../vault/vault.ts'
 import { CSP, serveConsole } from './console.ts'
-import { CHAT_LIMITS, chatUnit, clampInt, HttpError, ifMatch, intField, oneOf, readBody, seqOf, str, tagList } from './http.ts'
+import { CHAT_LIMITS, chatUnit, clampInt, HttpError, ifMatch, intField, MAX_MS, oneOf, readBody, seqOf, str, tagList } from './http.ts'
 import type { ChatUnit } from './http.ts'
 import { openTeamDb, SCHEMA_VERSION } from './schema.ts'
 import { zip } from './zip.ts'
@@ -80,6 +80,8 @@ function dropProject(db: DatabaseSync, m: { id: string; name: string; team_id: s
  * refused; a disabled member (removed with notes kept) comes back with the same id only with `again`. The first member
  * of a team is its owner. */
 export function invite(db: DatabaseSync, name: string, expiresAt: number = Date.now() + 365 * DAY, opts: { again?: boolean; role?: string } = {}): string {
+  // NaN reaches SQLite as NULL, and NULL means the token never expires.
+  if (!Number.isFinite(expiresAt) || expiresAt > MAX_MS) throw new Error(`the expiry must be a time in ms, found ${expiresAt}`)
   if (!NAME_RE.test(name)) throw new Error('a name is lower-case letters, digits, - and _, up to 32 characters')
   const m = db.prepare('SELECT id, role, disabled FROM members WHERE name = ?').get(name) as { id: string; role: string; disabled: number } | undefined
   if (m && !m.disabled) throw new Error(`${name} is already a member; \`team rotate ${name}\` gives them a new token`)
@@ -88,20 +90,30 @@ export function invite(db: DatabaseSync, name: string, expiresAt: number = Date.
   const id = m?.id ?? randomBytes(16).toString('hex')
   const team = teamOf(db)
   const role = m?.role ?? opts.role ?? (db.prepare("SELECT 1 FROM members WHERE role = 'owner'").get() ? 'member' : 'owner')
-  if (m) db.prepare('UPDATE members SET token_hash = ?, expires_at = ?, disabled = 0 WHERE id = ?').run(hash(token), expiresAt, id)
-  else db.prepare('INSERT INTO members (id, team_id, name, token_hash, role, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, team, name, hash(token), role, expiresAt, Date.now())
-  // The command line is an invite too: a row used on the spot, so the audit trail and the Hub see who came in how.
-  db.prepare('INSERT INTO invites (code_hash, team_id, role, expires_at, used_by, used_at) VALUES (?, ?, ?, ?, ?, ?)').run(hash(token), team, role, expiresAt, id, Date.now())
+  // One transaction: a failed invite row never leaves a live member row behind.
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    if (m) db.prepare('UPDATE members SET token_hash = ?, expires_at = ?, disabled = 0 WHERE id = ?').run(hash(token), expiresAt, id)
+    else db.prepare('INSERT INTO members (id, team_id, name, token_hash, role, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, team, name, hash(token), role, expiresAt, Date.now())
+    // The command line is an invite too: a row used on the spot, so the audit trail and the Hub see who came in how.
+    db.prepare('INSERT INTO invites (code_hash, team_id, role, expires_at, used_by, used_at) VALUES (?, ?, ?, ?, ?, ?)').run(hash(token), team, role, expiresAt, id, Date.now())
+    db.exec('COMMIT')
+  } catch (e) {
+    db.exec('ROLLBACK')
+    throw e
+  }
 
   return token
 }
 
-/** A new token for a live member; the old one and any browser session stop working at once. */
-export function rotate(db: DatabaseSync, name: string): string {
+/** A new token for a live member; the old one and any browser session stop working at once. The expiry stays. A row
+ * with no expiry (an old `--days` bug left some) gets one year from `at`, as an invite does, so no rotate hands out a
+ * token that never expires. */
+export function rotate(db: DatabaseSync, name: string, at = Date.now()): string {
   const token = newToken()
   const m = db.prepare('SELECT id FROM members WHERE name = ? AND disabled = 0').get(name) as { id: string } | undefined
   if (!m) throw new Error(`${name} is not a member`)
-  db.prepare('UPDATE members SET token_hash = ? WHERE id = ?').run(hash(token), m.id)
+  db.prepare('UPDATE members SET token_hash = ?, expires_at = coalesce(expires_at, ?) WHERE id = ?').run(hash(token), at + 365 * DAY, m.id)
   db.prepare('DELETE FROM sessions WHERE member_id = ?').run(m.id)
 
   return token
@@ -257,6 +269,8 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       fails.set(ip, f)
     }
     f.n++
+    // One stderr line per client and window, when it first passes the limit. It never holds the credential.
+    if (f.n === 21) console.error(maskSecrets(`${new Date(now()).toISOString()} thenwise team: more than 20 failed sign-ins this minute from ${ip}; it gets 429 until the minute ends`).text)
     const details = JSON.stringify({ ip, failures: f.n })
     if (!f.row) f.row = db.prepare('INSERT INTO audit (team_id, at, actor, action, target, details) VALUES (?, ?, NULL, ?, ?, ?)').run(teamId, now(), 'auth.failed', ip, details).lastInsertRowid
     else db.prepare('UPDATE audit SET details = ? WHERE rowid = ?').run(details, f.row)
@@ -500,12 +514,21 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       if (!(m === 'POST' && c === 'rotate' && b === me.id)) need('admin')
       if (m === 'GET' && !b) return [200, { members: (db.prepare('SELECT * FROM members WHERE team_id = ? ORDER BY name').all(me.team_id) as Row[]).map(member) }]
       const t = memberById(b)
+      // Rank decides, for PATCH, DELETE and rotate: the owner acts on anyone, an admin only on roles below admin.
+      const rank = () => {
+        if (me.role === 'owner' || ROLES.indexOf(t.role) < ROLES.indexOf('admin')) return
+        audit(me, 'denied', `${m} ${u.pathname}`, { needs: 'owner' })
+        const owner = t.role === 'owner'
+        throw new HttpError(403, owner ? 'owner_protected' : 'forbidden', owner ? 'only the owner can change the owner' : 'only the owner can change an admin')
+      }
       if (m === 'PATCH' && !c) {
+        rank()
         const body = await readBody(req, 4096)
         if (t.role === 'owner') throw new HttpError(409, 'owner_protected', 'the owner keeps the role and the access; hand the team over with make-owner')
         const set: Record<string, string | number | null> = {}
         if (body.role !== undefined) set.role = oneOf(body.role, ROLES.filter((r) => r !== 'owner'), 'role')
-        if (body.expires_at !== undefined) set.expires_at = body.expires_at === null ? null : intField(body.expires_at, 0, Number.MAX_SAFE_INTEGER, 'expires_at')
+        if (set.role === 'admin') need('owner')
+        if (body.expires_at !== undefined) set.expires_at = body.expires_at === null ? null : intField(body.expires_at, 0, MAX_MS, 'expires_at')
         if (body.disabled !== undefined) {
           if (typeof body.disabled !== 'boolean') throw new HttpError(400, 'bad_request', 'disabled must be true or false')
           set.disabled = body.disabled ? 1 : 0
@@ -520,6 +543,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       }
       if (m === 'DELETE' && !c) {
         const keep = oneOf(u.searchParams.get('notes'), ['keep', 'delete'], 'notes')
+        rank()
         try {
           removeMember(db, t.name, keep === 'keep')
         } catch (e) {
@@ -531,17 +555,11 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       }
       if (m === 'POST' && c === 'rotate' && !d) {
         if (t.disabled) throw new HttpError(409, 'disabled', 'the member is disabled; enable them first or invite them again')
-        // Rank decides: the owner rotates anyone, an admin only roles below admin, everyone their own.
-        if (t.id !== me.id && me.role !== 'owner') {
-          const owner = t.role === 'owner'
-          if (owner || ROLES.indexOf(t.role) >= ROLES.indexOf('admin')) {
-            audit(me, 'denied', `${m} ${u.pathname}`, { needs: 'owner' })
-            throw new HttpError(403, owner ? 'owner_protected' : 'forbidden', owner ? 'only the owner can rotate the owner token' : 'an admin can rotate only roles below admin')
-          }
-        }
+        // Everyone rotates their own token.
+        if (t.id !== me.id) rank()
         audit(me, 'member.rotate', `member:${t.id}`)
 
-        return [200, { token: rotate(db, t.name) }]
+        return [200, { token: rotate(db, t.name, now()) }]
       }
       if (m === 'POST' && c === 'make-owner' && !d) {
         need('owner')
@@ -557,7 +575,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       throw new HttpError(404, 'not_found', 'no such route')
     }
     if (a === 'settings' && !b) {
-      need('admin')
+      need(m === 'PATCH' ? 'owner' : 'admin')
       if (m === 'PATCH') {
         const body = await readBody(req, 4096)
         if (body.name !== undefined) {
@@ -579,6 +597,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       need('admin')
       const body = await readBody(req, 4096)
       const role = oneOf(body.role ?? 'member', ROLES.filter((r) => r !== 'owner'), 'role')
+      if (role === 'admin') need('owner')
       const days = body.days === undefined ? 7 : intField(body.days, 1, 365, 'days')
       const code = `twi_${randomBytes(24).toString('hex')}`
       db.prepare('INSERT INTO invites (code_hash, team_id, role, created_by, expires_at) VALUES (?, ?, ?, ?, ?)').run(hash(code), me.team_id, role, me.id, now() + days * DAY)
@@ -609,7 +628,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
       return [200, z, { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="thenwise-export.zip"' }]
     }
     if (a === 'chat-settings' && !b) {
-      need('admin')
+      need(m === 'PATCH' ? 'owner' : 'admin')
       if (m === 'PATCH') {
         const body = await readBody(req, 4096)
         const days = body.chat_retention_days
@@ -667,7 +686,7 @@ export function createTeamServer(opts: ServerOptions): TeamApp {
         need('share')
         if (m === 'DELETE') return delChat(me, me, b, ifMatch(req.headers['if-match']), seqOf(u.searchParams.get('seq')))
         const body = await readBody(req, CHAT_LIMITS.body)
-        const [code, json] = putChat(me, b, chatUnit(body), ifMatch(req.headers['if-match']), seqOf(body.seq), body.reshare === true)
+        const [code, json] = putChat(me, b, chatUnit(body, b), ifMatch(req.headers['if-match']), seqOf(body.seq), body.reshare === true)
 
         return [code, json, code === 200 ? { etag: `"${(json as { rev: number }).rev}"` } : {}]
       }

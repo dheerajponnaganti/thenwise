@@ -51,6 +51,8 @@ export const GENERATED = 'Memory v2/Generated/'
 export const under = (p: string, root: string) => ((p, root) => p === root || p.startsWith(`${root}/`))(normPath(p), normPath(root))
 export const cut = (at: string, until?: string) => !!until && !!at && Date.parse(at) > Date.parse(until)
 export const iso = (ms: number) => new Date(ms).toISOString()
+/** A time `iso` can write. A teammate's or a server's value past the largest Date would make it throw. */
+export const isTime = (ms: unknown) => !Number.isNaN(new Date(ms as number).getTime())
 export const sortKeys = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortKeys(x)])) : v
 export const edgeKey = (e: { src: string; dst: string; kind: string }) => `${e.src}\0${e.dst}\0${e.kind}`
@@ -563,7 +565,9 @@ export function teamPart(cfg: Config): Part {
   } catch {} // not on a team, or nothing fetched yet
   for (const key of Object.keys(notes).sort()) {
     const n = notes[key]
-    const at = iso(Number(n.updated_at) || 0)
+    const ms = Number(n.updated_at) || 0
+    if (!isTime(ms)) continue
+    const at = iso(ms)
     out.nodes.push(fullNode({ id: `team:${key}`, kind: 'team', title: String(n.title ?? ''), text: String(n.text ?? ''), at, until: n.status === 'superseded' ? at : '', project: String(n.project ?? ''), source: `team:${n.owner}`, extra: { kind: n.kind, sharedBy: n.owner, status: n.status, ...(n.superseded_by ? { supersededBy: n.superseded_by } : {}) } }))
   }
 
@@ -586,7 +590,8 @@ function ownSessions(cfg: Config): Set<string> {
 export const teamChats = (cfg: Config): WireChat[] => {
   const own = ownSessions(cfg)
 
-  return readChats(cfg.memDir).filter((c) => !own.has(c.session))
+  // A chat with a time no Date holds is dropped here, so a cache from an older server heals in both build paths.
+  return readChats(cfg.memDir).filter((c) => !own.has(c.session) && isTime(c.started_at) && isTime(c.ended_at) && c.turns.every((t) => isTime(t.at)))
 }
 
 /** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,

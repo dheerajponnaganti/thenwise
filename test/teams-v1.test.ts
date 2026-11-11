@@ -39,7 +39,7 @@ test('T9-H1: a 0.1.5 team.db migrates to the current schema, and a newer one is 
     INSERT INTO members VALUES ('alice', 'h-alice', NULL);
     INSERT INTO notes VALUES ('alice', 'n1', 1700000000000, 'One', 'first note', 'alpha'), ('gone', 'g1', 1700000000001, 'Kept', 'a removed member kept this', '');
     INSERT INTO tombs VALUES ('alice', 'n0', 1700000000002);`)
-  assert.deepEqual(migrateTeamDb(db), [1, 2, 3, 4, 5])
+  assert.deepEqual(migrateTeamDb(db), [1, 2, 3, 4, 5, 6])
   assert.equal((db.prepare('PRAGMA user_version').get() as any).user_version, SCHEMA_VERSION)
   const members = db.prepare('SELECT id, name, token_hash, disabled FROM members ORDER BY name').all() as any[]
   assert.deepEqual(members.map((m) => [m.name, m.token_hash, m.disabled]), [['alice', 'h-alice', 0], ['gone', null, 1]])

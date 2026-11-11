@@ -47,7 +47,7 @@ export function checkouts(cwd) {
 }
 const under = (p, roots) => roots.some((r) => normPath(p) === normPath(r) || normPath(p).startsWith(`${normPath(r)}/`));
 /** The folder a Claude Code chat ran in, from the `cwd` of its first lines; '' when none shows there. */
-function headCwd(path) {
+export function headCwd(path) {
     const b = Buffer.alloc(16 << 10);
     let fd;
     try {
@@ -167,13 +167,14 @@ export const localTime = (iso) => {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? iso : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+// Both mask before they cut: a token cut short no longer matches its pattern.
 const flat = (t, n) => {
-    const s = t.replace(/\s+/g, ' ').trim();
+    const s = maskSecrets(t).text.replace(/\s+/g, ' ').trim();
     // Cut at a word, so the next agent never reads half a word.
     return s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, '')}...` : s;
 };
 const tailOf = (t, n) => {
-    const s = t.replace(/\s+/g, ' ').trim();
+    const s = maskSecrets(t).text.replace(/\s+/g, ' ').trim();
     return s.length > n ? `...${s.slice(-n).replace(/^\S*\s+/, '')}` : s;
 };
 /** Files and lines `git status --short` lists now, or null when git did not answer (missing, not a repo, slow, huge):

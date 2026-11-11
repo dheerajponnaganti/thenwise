@@ -1,10 +1,11 @@
 // Google Antigravity: its chats (brain/<id>/.system_generated/logs/transcript_full.jsonl) in Claude Code's transcript shape,
 // so one pipeline (masking, [no-memory], forget, search) serves them too. Antigravity's own files are only ever read.
-import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readdirSync, readSync, rmSync, statSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { listDir } from "../core/home.js";
 import { asClaudeTool, projectKey } from "./copilot.js";
 export const ANTIGRAVITY_ENTRYPOINT = 'antigravity';
 /** The app, the CLI and the IDE each keep their chats in their own folder, under one parent. */
@@ -94,30 +95,44 @@ function repoOf(path) {
 /** A chat opened with no workspace still names its files: the first one outside Antigravity's own folders gives the project.
  * shortcut: if that repo is deleted later the chat's folder can change at the next rebuild; store the folder once if that matters. */
 function folderFromPaths(file, home) {
-    const fd = openSync(file, 'r');
+    let text;
     try {
-        const buf = Buffer.alloc(1 << 20);
-        const text = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8');
-        for (const line of text.split('\n')) {
-            let d;
-            try {
-                d = JSON.parse(line);
-            }
-            catch {
-                continue; // the last line may be cut, or being written
-            }
-            for (const c of Array.isArray(d?.tool_calls) ? d.tool_calls : []) {
-                const p = c?.args?.Path ?? c?.args?.AbsolutePath ?? c?.args?.TargetFile;
-                if (typeof p === 'string' && isAbsolute(p) && !p.startsWith(join(home, '.gemini') + sep))
-                    return repoOf(p);
-            }
+        const fd = openSync(file, 'r');
+        try {
+            const buf = Buffer.alloc(1 << 20);
+            text = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8');
+        }
+        finally {
+            closeSync(fd);
         }
     }
-    finally {
-        closeSync(fd);
+    catch {
+        return null; // unreadable: the next sync tries again
+    }
+    for (const line of text.split('\n')) {
+        let d;
+        try {
+            d = JSON.parse(line);
+        }
+        catch {
+            continue; // the last line may be cut, or being written
+        }
+        for (const c of Array.isArray(d?.tool_calls) ? d.tool_calls : []) {
+            const p = c?.args?.Path ?? c?.args?.AbsolutePath ?? c?.args?.TargetFile;
+            if (typeof p === 'string' && isAbsolute(p) && !p.startsWith(join(home, '.gemini') + sep))
+                return repoOf(p);
+        }
     }
     return home;
 }
+const sizeOf = (path) => {
+    try {
+        return statSync(path).size;
+    }
+    catch {
+        return 0; // gone, or in a folder this user cannot read
+    }
+};
 /** Antigravity chats as archive sources: rel is `<project key>/<conversation id>.jsonl`, in the same project as other tools' chats. */
 export function antigravitySources(home = homedir()) {
     return antigravityDirs(home).flatMap((dir) => {
@@ -125,12 +140,12 @@ export function antigravitySources(home = homedir()) {
         if (!existsSync(brain))
             return [];
         const opened = workspaces(dir);
-        return readdirSync(brain, { withFileTypes: true }).flatMap((e) => {
+        return listDir(brain).flatMap((e) => {
             const path = join(brain, e.name, '.system_generated', 'logs', 'transcript_full.jsonl');
-            if (!e.isDirectory() || !existsSync(path) || !statSync(path).size)
+            if (!e.isDirectory() || !sizeOf(path))
                 return [];
             const cwd = opened.get(e.name) ?? folderFromPaths(path, home);
-            return [{ rel: `${projectKey(cwd)}/${e.name}.jsonl`, path, id: e.name, cwd }];
+            return !cwd ? [] : [{ rel: `${projectKey(cwd)}/${e.name}.jsonl`, path, id: e.name, cwd }];
         });
     });
 }

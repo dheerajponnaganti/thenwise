@@ -1,7 +1,16 @@
 // Where Thenwise keeps its data, and `~` expansion. One place, so every path derives from the same folder.
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, sep } from 'node:path';
+/** A folder's entries, or none when it is gone or unreadable: another tool's folder must never stop a scan. */
+export function listDir(dir) {
+    try {
+        return readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return [];
+    }
+}
 /** Order: THENWISE_HOME, MEMORY_HOME, ~/.thenwise if present, ~/.memory if present (older installs), else ~/.thenwise. */
 export function resolveDataDir(home = homedir(), env = process.env) {
     const set = env.THENWISE_HOME || env.MEMORY_HOME;

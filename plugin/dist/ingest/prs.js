@@ -3,7 +3,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MASK_VERSION, maskDeep } from "../core/secrets.js";
+import { MASK_VERSION, maskDeep, maskSecrets } from "../core/secrets.js";
 import { githubSlug } from "./repos.js";
 const DAY = 86400000;
 const RETRY = 3600000; // after a failure, ask again no sooner than this
@@ -58,7 +58,7 @@ export function fetchPrs(cfg, repos, opts = {}) {
                     noGh = true;
                 else {
                     const slow = err?.signal === 'SIGKILL';
-                    const why = slow ? `gh took longer than ${Math.round(timeout / 1000)} s (set ingest.gh_timeout_s to wait longer)` : String(err?.stderr || err?.message || err).trim().split('\n')[0].slice(0, 200);
+                    const why = slow ? `gh took longer than ${Math.round(timeout / 1000)} s (set ingest.gh_timeout_s to wait longer)` : maskSecrets(String(err?.stderr || err?.message || err)).text.trim().split('\n')[0].slice(0, 200);
                     cache[slug] = { fetchedAt: e?.fetchedAt ?? 0, tried: now, error: why, ...(slow ? { slow: (e?.slow ?? 0) + 1 } : {}), prs: e?.prs ?? [], mask: MASK_VERSION };
                     dirty = true;
                 }

@@ -1,27 +1,31 @@
 // Finds the projects in Claude Code's history, and in Copilot CLI's. A folder name under ~/.claude/projects is a lossy mangling
 // of the real path (dots, underscores, spaces and slashes all become "-"), so the real folder comes from the `cwd` field.
-import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs';
+import { closeSync, openSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { listDir } from "../core/home.js";
+import { errFields, logger } from "../core/log.js";
 import { normPath } from "../core/vault-index.js";
 import { antigravitySources } from "../ingest/antigravity.js";
 import { codexSources } from "../ingest/codex.js";
 import { copilotSources } from "../ingest/copilot.js";
 function headCwd(file) {
-    const fd = openSync(file, 'r');
     try {
-        const buf = Buffer.alloc(32768);
-        const text = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8');
-        for (const line of text.split('\n')) {
-            const m = /"cwd":\s*("(?:[^"\\]|\\.)*")/.exec(line);
-            if (m)
-                return JSON.parse(m[1]);
+        const fd = openSync(file, 'r');
+        try {
+            const buf = Buffer.alloc(32768);
+            const text = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8');
+            for (const line of text.split('\n')) {
+                const m = /"cwd":\s*("(?:[^"\\]|\\.)*")/.exec(line);
+                if (m)
+                    return JSON.parse(m[1]);
+            }
+        }
+        finally {
+            closeSync(fd);
         }
     }
     catch {
-        // unreadable: the next file may name a folder
-    }
-    finally {
-        closeSync(fd);
+        // unreadable, or a dangling link: the next file may name a folder
     }
     return null;
 }
@@ -48,10 +52,10 @@ export function discoverProjects(claudeDir, sample = 20) {
 function scanProjects(claudeDir, sample) {
     const root = join(claudeDir, 'projects');
     const out = [];
-    for (const e of (existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    for (const e of listDir(root).sort((a, b) => (a.name < b.name ? -1 : 1))) {
         if (!e.isDirectory())
             continue;
-        const files = readdirSync(join(root, e.name)).filter((f) => f.endsWith('.jsonl')).sort();
+        const files = listDir(join(root, e.name)).map((f) => f.name).filter((f) => f.endsWith('.jsonl')).sort();
         if (!files.length)
             continue;
         const seen = new Map();
@@ -65,7 +69,17 @@ function scanProjects(claudeDir, sample) {
         out.push({ key: e.name, chats: files.length, folder: ranked[0] ?? null, clash: ranked.slice(1) });
     }
     // Copilot CLI chats name their folder in workspace.yaml; a folder only Copilot has worked in is a project too.
-    for (const c of [...copilotSources(dirname(claudeDir)), ...codexSources(dirname(claudeDir)), ...antigravitySources(dirname(claudeDir))]) {
+    // One tool's broken folder must not hide the others, or stop the config from loading.
+    const sources = (f) => {
+        try {
+            return f(dirname(claudeDir));
+        }
+        catch (e) {
+            logger('config').warn('chat_scan_failed', { tool: f.name, ...errFields(e) });
+            return [];
+        }
+    };
+    for (const c of [copilotSources, codexSources, antigravitySources].flatMap(sources)) {
         if (/^([a-zA-Z]:)?[\\/]?$/.test(c.cwd))
             continue;
         const name = c.rel.split('/')[0];

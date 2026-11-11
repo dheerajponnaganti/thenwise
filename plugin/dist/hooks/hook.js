@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { listDir } from "../core/home.js";
 import { formatEvent, logger, readLog, recentErrors } from "../core/log.js";
 import { maskSecrets } from "../core/secrets.js";
 import { isTestRun } from "../core/testrun.js";
@@ -13,12 +14,13 @@ import { updateNotice } from "../setup/update.js";
 import { codexConverter } from "../ingest/codex.js";
 import { copilotConverter, copilotDir } from "../ingest/copilot.js";
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from "../ingest/plans.js";
+import { dropLock, lockHeld, takeLock } from "../ingest/lock.js";
 import { repoRoot } from "../ingest/repos.js";
 import { parseSession } from "../ingest/transcript.js";
 import { tighten } from "../privacy/perms.js";
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from "./entry.js";
 import { factLines, handoffBlock, liveLines, recordAgent } from "./handoff.js";
-import { alive, progressLine, readProgress, running, writeProgress } from "../core/progress.js";
+import { progressLine, readProgress, running, writeProgress } from "../core/progress.js";
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from "../core/notices.js";
 import { EXPIRY_DAYS, readNotes } from "../capture/notes.js";
 import { codexHooksTrusted } from "../ingest/codex.js";
@@ -30,7 +32,6 @@ export const RESUME_TOKENS = 1500;
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.';
 const QUERY_MS = 900;
 const STATE_DAYS = 7;
-const LOCK_STALE_MS = 3_600_000; // a live pid on an hour-old lock is a reused pid
 const SLOW = new Set(['archive', 'ingest']); // these get 10 minutes, every other sync step 2
 /** True while a shared project has sent nothing yet: its first push is long, so `team sync` gets the 10-minute class. */
 function newShare(dir) {
@@ -48,6 +49,7 @@ const tokens = (s) => Math.ceil(s.length / 4);
 export const cap = (s, n) => (tokens(s) <= n ? s : `${s.slice(0, n * 4).replace(/\n[^\n]*$/, '')}\n(cut)`);
 const DEAD = /^\s*dead end \(automatic(?:, ([\w-]+))?\): (.+)$/m;
 // Dead ends from what happened. A phrase match is about half right, so it only fills what these leave.
+// A teammate's dead end is what they said happened, so it ranks with the phrase matches.
 const STRUCTURAL = new Set(['undone', 'failed-test', 'marked', 'revert', 'closed-pr']);
 const idOf = (e) => /^- \[[^\]]*\] (\S+)/.exec(e[0] ?? '')?.[1] ?? '?';
 const dateOf = (e) => /^\s*date: (\S+)/m.exec(e.join('\n'))?.[1] ?? '';
@@ -72,7 +74,7 @@ export function trimTrace(out, path) {
         const tag = /^- \[([^\]]*)\]/.exec(lines[0] ?? '')?.[1]?.toLowerCase() ?? '';
         const dead = DEAD.exec(entry);
         if (dead)
-            (STRUCTURAL.has(dead[1] ?? 'phrase') ? done : said).push(oneLine(lines, `dead end (${dead[1] ?? 'phrase'}): ${dead[2]}`));
+            (STRUCTURAL.has(dead[1] ?? 'phrase') && !mate(lines) ? done : said).push(oneLine(lines, `dead end (${dead[1] ?? 'phrase'}): ${dead[2]}`));
         else if (/^(decision|dead_end|rule|finding)$/.test(tag))
             kept.push(lines.filter((l) => l.trim() !== '').join('\n'));
         if (tag === 'commit') {
@@ -104,31 +106,6 @@ export const shortPath = (path, cwd) => {
 };
 export function log(env, msg, lvl = 'info', ev = 'note') {
     logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg });
-}
-/** True when this process now holds the lock. A lock whose pid is dead is taken over. */
-export function takeLock(file, pid = process.pid) {
-    for (let i = 0; i < 2; i++) {
-        try {
-            writeFileSync(file, String(pid), { flag: 'wx' });
-            return true;
-        }
-        catch {
-            let held;
-            try {
-                held = Number(readFileSync(file, 'utf8').trim());
-                // Empty means the holder made the file but has not written its pid yet; only an old empty file is stale.
-                if (!held && Date.now() - statSync(file).mtimeMs < 10_000)
-                    return false;
-            }
-            catch {
-                continue; // released between our create and our read: try again
-            }
-            if (held && alive(held) && Date.now() - (statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) < LOCK_STALE_MS)
-                return false;
-            rmSync(file, { force: true });
-        }
-    }
-    return false;
 }
 /** Runs one query command in a child that is killed after QUERY_MS, so a slow store cannot hold a hook. */
 function query(env, args) {
@@ -176,12 +153,8 @@ function startSync(env) {
     if (process.env.THENWISE_SYNC === 'off')
         return log(env, 'sync off (THENWISE_SYNC=off)');
     const lock = join(env.dir, 'sync.lock');
-    try {
-        const held = Number(readFileSync(lock, 'utf8').trim());
-        if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS)
-            return log(env, 'sync already running');
-    }
-    catch { } // no lock, or it was released just now: start one
+    if (lockHeld(lock))
+        return log(env, 'sync already running');
     mkdirSync(env.dir, { recursive: true });
     // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
     spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } }).unref();
@@ -232,6 +205,10 @@ export function syncRun(env) {
             if (verb === 'team sync')
                 writeProgress(env.dir, { phase: 'team sync', done: 0, total: 0 });
             const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir, THENWISE_PROGRESS: '1' } });
+            // A step killed at its timeout ran no `finally`: its locks would block every later sync while its pid lives again.
+            if (r.signal)
+                for (const l of [join(env.dir, 'archive', 'archive.lock'), join(env.dir, 'graph.db.lock'), join(env.dir, 'team.lock')])
+                    dropLock(l, r.pid);
             if (verb === 'ingest')
                 changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout);
             if (verb === 'ingest')
@@ -336,13 +313,13 @@ function fileHint(env, input, file, event = 'PostToolUse') {
     return block === '' ? '' : reply(event, block);
 }
 /** A test's history when it runs: the files in this project whose edits it failed right after, most often first. The key is
- * made as the parser made it (spaces folded, cut to 200, masked), so the run matches its past runs. '' when there is none. */
+ * made as the parser made it (masked, spaces folded, cut to 200), so the run matches its past runs. '' when there is none. */
 function testHint(env, input, cmd, cwd, event = 'PostToolUse') {
     const session = input.session_id;
     const db = join(env.dir, 'graph.db');
     if (typeof session !== 'string' || process.env.ANTIGRAVITY_CONVERSATION_ID || !existsSync(db))
         return '';
-    const run = maskSecrets(cmd.replace(/\s+/g, ' ').trim().slice(0, 200)).text;
+    const run = maskSecrets(cmd).text.replace(/\s+/g, ' ').trim().slice(0, 200);
     const key = testKey(run, cwd);
     if (seen(env, session, input.agent_id, `test:${key}`))
         return '';
@@ -402,7 +379,8 @@ function currentTail(file, cwd, convert) {
     const turns = s.turns.slice(-3);
     if (!turns.length)
         return '';
-    const cut1 = (t, n) => (t.length > n ? `${t.slice(0, n)}...` : t);
+    // Masked before the cut: a token cut short no longer matches its pattern.
+    const cut1 = (t, n) => ((t = maskSecrets(t).text), t.length > n ? `${t.slice(0, n)}...` : t);
     // The compaction summary keeps the gist; the facts it tends to lose (files, the last test, open questions) come from the chat itself.
     const facts = cwd ? factLines(s, cwd, 'this session').map((l) => `- ${l}`).join('\n') : '';
     return maskSecrets(`## This session, last ${turns.length} turns (read from the live chat)\n${turns.map((t) => `- ${t.at}\n   prompt: ${cut1(t.prompt.replace(/\s+/g, ' '), 300)}\n   reply: ${cut1((t.reply.at(-1) ?? '').replace(/\s+/g, ' '), 500)}`).join('\n')}${facts ? `\n## What this session did\n${facts}` : ''}`).text;
@@ -474,7 +452,7 @@ function chatCounts(home) {
         }
     };
     const projects = join(home, '.claude', 'projects');
-    const claude = n(() => (existsSync(projects) ? readdirSync(projects).flatMap((k) => (statSync(join(projects, k)).isDirectory() ? readdirSync(join(projects, k)).filter((f) => f.endsWith('.jsonl')) : [])) : []));
+    const claude = listDir(projects).flatMap((k) => (k.isDirectory() ? listDir(join(projects, k.name)).filter((f) => f.isFile() && f.name.endsWith('.jsonl')) : [])).length;
     const parts = [[claude, 'Claude Code'], [n(() => copilotSources(home)), 'Copilot'], [n(() => codexSources(home)), 'Codex'], [n(() => antigravitySources(home)), 'Antigravity']].filter(([c]) => c > 0).map(([c, t]) => `${c.toLocaleString('en-US')} from ${t}`);
     return parts.length ? parts.join(', ') : 'none yet';
 }
@@ -485,7 +463,7 @@ function hookReply(name, input, env) {
         const graph = join(env.dir, 'graph.db');
         if (name === 'status') {
             const prog = progressLine(readProgress(env.dir));
-            const syncing = existsSync(join(env.dir, 'sync.lock'));
+            const syncing = lockHeld(join(env.dir, 'sync.lock'));
             const tail = readLog(env.dir).slice(-5).map(formatEvent).join('\n') || 'no log yet';
             if (!existsSync(graph))
                 return `No memory yet in ${env.dir}. ${prog ? `Thenwise ${prog}.` : `The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}`}\n${tail}`;

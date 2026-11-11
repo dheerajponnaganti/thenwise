@@ -1,7 +1,8 @@
 // GitHub Copilot CLI: its chats (session-state/<id>/events.jsonl) and its hook payloads, in Claude Code's shapes, so one
 // pipeline (masking, [no-memory], forget, search) serves both. Copilot's own files are only ever read.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { listDir } from "../core/home.js";
 export const COPILOT_ENTRYPOINT = 'copilot-cli';
 export const copilotDir = (home) => process.env.COPILOT_HOME || join(home, '.copilot');
 // Claude Code names a project folder by its path with every other character turned into "-"; Copilot chats join the same key.
@@ -160,9 +161,7 @@ function workspaceCwd(file) {
 /** Copilot CLI chats as archive sources: rel is `<project key>/<session id>.jsonl`, the key made from the chat's folder. */
 export function copilotSources(home) {
     const root = join(copilotDir(home), 'session-state');
-    if (!existsSync(root))
-        return [];
-    return readdirSync(root, { withFileTypes: true }).flatMap((e) => {
+    return listDir(root).flatMap((e) => {
         const path = join(root, e.name, 'events.jsonl');
         const cwd = e.isDirectory() && existsSync(path) ? workspaceCwd(join(root, e.name, 'workspace.yaml')) : '';
         return cwd ? [{ rel: `${projectKey(cwd)}/${e.name}.jsonl`, path, id: e.name, cwd }] : [];

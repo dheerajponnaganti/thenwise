@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join, posix, relative } from 'node:path';
 import { parseFrontMatter } from "../core/frontmatter.js";
-import { maskSecrets } from "../core/secrets.js";
+import { maskDeep, maskSecrets } from "../core/secrets.js";
 import { normPath } from "../core/vault-index.js";
 import { parseTrailers, readNotes } from "../capture/notes.js";
 import { globMatch } from "./config.js";
@@ -14,22 +14,23 @@ import { COPILOT_ENTRYPOINT } from "./copilot.js";
 import { skipReason } from "../vault/user.js";
 import { commitDeadEnd, deadEnd, markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from "./deadend.js";
 import { sessionFacts } from "./facts.js";
-import { githubSlug, repoRoot } from "./repos.js";
+import { githubSlug, projectRoot, real, repoRoot } from "./repos.js";
 import { loadImports, readChats } from "../teams/chatcache.js";
 import { normalizePath } from "./transcript.js";
 export const GENERATED = 'Memory v2/Generated/';
 export const under = (p, root) => ((p, root) => p === root || p.startsWith(`${root}/`))(normPath(p), normPath(root));
 export const cut = (at, until) => !!until && !!at && Date.parse(at) > Date.parse(until);
 export const iso = (ms) => new Date(ms).toISOString();
+/** A time `iso` can write. A teammate's or a server's value past the largest Date would make it throw. */
+export const isTime = (ms) => !Number.isNaN(new Date(ms).getTime());
 export const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortKeys(x)])) : v;
 export const edgeKey = (e) => `${e.src}\0${e.dst}\0${e.kind}`;
-// The one choke point: every record's title and text are masked before it is stored (chat text is masked already, a no-op).
+// The one choke point: every record's title, text and extra are masked before it is stored (chat text is masked already, a no-op).
 export const fullNode = (n) => {
     const o = { title: '', text: '', at: '', until: '', project: '', source: '', extra: {}, ...n };
     o.title = maskSecrets(o.title).text;
     o.text = maskSecrets(o.text).text;
-    if (Array.isArray(o.extra.passages))
-        o.extra = { ...o.extra, passages: o.extra.passages.map((p) => maskSecrets(String(p)).text) };
+    o.extra = maskDeep(o.extra);
     return o;
 };
 /** A chat is a test chat when its first prompt starts or ends with a marker, or any prompt holds one alone on a line. */
@@ -160,7 +161,7 @@ export function prPart(inputs, repos, commit, until) {
             const mc = p.mergeCommit?.oid;
             // Masked like the stored text, so a full build and an update derive the same trailer notes.
             out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name));
-            out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160), deadEndKind: 'closed-pr' } : {}) } }));
+            out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `#${p.number} closed without merging`, deadEndKind: 'closed-pr' } : {}) } }));
             if (out.numbers.has(p.number))
                 out.ambiguous.add(p.number);
             out.numbers.set(p.number, id);
@@ -494,14 +495,31 @@ export function teamPart(cfg) {
     catch { } // not on a team, or nothing fetched yet
     for (const key of Object.keys(notes).sort()) {
         const n = notes[key];
-        const at = iso(Number(n.updated_at) || 0);
+        const ms = Number(n.updated_at) || 0;
+        if (!isTime(ms))
+            continue;
+        const at = iso(ms);
         out.nodes.push(fullNode({ id: `team:${key}`, kind: 'team', title: String(n.title ?? ''), text: String(n.text ?? ''), at, until: n.status === 'superseded' ? at : '', project: String(n.project ?? ''), source: `team:${n.owner}`, extra: { kind: n.kind, sharedBy: n.owner, status: n.status, ...(n.superseded_by ? { supersededBy: n.superseded_by } : {}) } }));
     }
     return out;
 }
-/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one whose folder is. */
-export function checkoutOf(project, repos) {
-    return repos.find((r) => githubSlug(r) === project) ?? repos.find((r) => basename(r) === project);
+/** The member's checkout of a shared project: the repo whose GitHub slug is the name, else the one repo with no slug whose
+ * folder is the name. Several such folders: the one this member shares chats of, else none (a folder name says too little). */
+export function checkoutOf(project, repos, shared = () => new Set()) {
+    const slugs = new Map(repos.map((r) => [r, githubSlug(r)]));
+    const named = repos.filter((r) => !slugs.get(r) && basename(r) === project);
+    const mine = named.length > 1 ? named.filter((r) => shared().has(real(r))) : named;
+    return repos.find((r) => slugs.get(r) === project) ?? (mine.length === 1 ? mine[0] : undefined);
+}
+/** The repos this member shares chats of (config, or `team share-chats` and not unshared since), as real paths. */
+function sharedRepos(cfg) {
+    let projects = [];
+    try {
+        projects = Object.values(JSON.parse(readFileSync(join(cfg.memDir, 'team-shares.json'), 'utf8')).projects ?? {});
+    }
+    catch { } // not sharing chats
+    const gone = new Set(projects.filter((p) => p.status === 'removed').map((p) => real(p.repo)));
+    return new Set([...cfg.shareChats.map((r) => real(repoRoot(r) ?? r)), ...projects.map((p) => real(p.repo))].filter((r) => !gone.has(r)));
 }
 /** Session ids this machine holds itself (archived): a teammate's copy of the same chat is dropped, our own records win. */
 function ownSessions(cfg) {
@@ -514,26 +532,32 @@ function ownSessions(cfg) {
 }
 export const teamChats = (cfg) => {
     const own = ownSessions(cfg);
-    return readChats(cfg.memDir).filter((c) => !own.has(c.session));
+    // A chat with a time no Date holds is dropped here, so a cache from an older server heals in both build paths.
+    return readChats(cfg.memDir).filter((c) => !own.has(c.session) && isTime(c.started_at) && isTime(c.ended_at) && c.turns.every((t) => isTime(t.at)));
 };
+// A teammate's kind and tool name rank and lead hint lines, so only values this code itself writes are kept.
+const TURN_DEAD_KINDS = new Set(['undone', 'failed-test', 'marked', 'phrase']);
+const TOOLS = new Set(['Claude Code', 'Copilot', 'Codex', 'Antigravity']);
 /** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,
  * with `part_of` edges and links to this machine's checkout of the project's files. Commit and PR links come from teamClaims. */
 export function teamChatsPart(cfg, repos = cfg.repos, chats = teamChats(cfg)) {
     const out = { nodes: [], edges: [] };
     const checkouts = new Map();
     const imports = loadImports(cfg.memDir);
+    let shared;
     for (const c of chats) {
         const imported = (imports[c.owner] ?? []).includes(c.session) ? { imported: true } : {};
         if (!checkouts.has(c.project))
-            checkouts.set(c.project, checkoutOf(c.project, repos));
+            checkouts.set(c.project, checkoutOf(c.project, repos, () => (shared ??= sharedRepos(cfg))));
         const repo = checkouts.get(c.project);
         const sid = `tses:${c.owner}/${c.session}`;
-        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }));
+        // `root` is the checkout search scopes the chat to, so search never guesses one from a folder name.
+        out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}), ...(repo ? { root: projectRoot(repo) } : {}) } }));
         for (const t of c.turns) {
             const at = iso(t.at);
             const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`;
-            const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {};
-            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }));
+            const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: TURN_DEAD_KINDS.has(t.dead_kind) ? t.dead_kind : 'phrase' } : {};
+            out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }));
             out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} });
             if (repo)
                 for (const p of t.paths)

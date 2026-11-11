@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 // The 0.1.5 tables. A new file starts from them too, so there is one path to the current schema.
 const V0 = `CREATE TABLE IF NOT EXISTS members (name TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER);
 CREATE TABLE IF NOT EXISTS notes (owner TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY (owner, id));
@@ -85,6 +85,18 @@ const MIGRATIONS = [
     // 5 (0.2.0): the coding tool a shared chat came from, so a mixed team sees it.
     (db) => {
         db.exec("ALTER TABLE chats ADD COLUMN tool TEXT NOT NULL DEFAULT ''");
+    },
+    // 6 (0.3.2): stricter checks reach rows stored before them. A chat's size counts every stored field (the sum chatUnit
+    // makes), so the quota sees all of it. Times past the largest Date are capped at it. An unused admin invite that an
+    // admin made goes: only the owner gives the admin role now.
+    (db) => {
+        const b = (c) => `length(CAST(${c} AS BLOB))`;
+        const max = 8_640_000_000_000_000;
+        db.exec(`UPDATE chats SET bytes = ${b('project')} + ${b('tool')} + ${b('head')} + coalesce((SELECT sum(${['text', 'session', 'turn', 'kind', 'dead_kind', 'dead_text', 'line', 'paths', 'shas', 'prs'].map(b).join(' + ')}) FROM chat_passages p WHERE p.owner_id = chats.owner_id AND p.session = chats.session), 0);
+      UPDATE chats SET started_at = min(started_at, ${max}), ended_at = min(ended_at, ${max}) WHERE max(started_at, ended_at) > ${max};
+      UPDATE chat_passages SET at = ${max} WHERE at > ${max};
+      UPDATE members SET expires_at = ${max} WHERE expires_at > ${max};
+      DELETE FROM invites WHERE role = 'admin' AND used_by IS NULL AND created_by IS NOT NULL AND created_by NOT IN (SELECT id FROM members WHERE role = 'owner');`);
     },
 ];
 /** Brings a team database to SCHEMA_VERSION. Refuses one from a newer Thenwise; returns the versions applied. */

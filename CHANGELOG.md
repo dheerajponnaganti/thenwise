@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.3
+
+- `thenwise off` now holds back everything from a paused folder, at once: search, the memory tools, hooks, the session brief, vault notes, rule proposals, decision rechecks, distill and the inbox. It covers folders outside a repository and any spelling of a path, such as a symlink, and a running memory server sees `off` and `on` at once. `thenwise on` brings everything back unchanged.
+- Two tools on different Thenwise versions no longer undo each other's work on every sync. A newer Thenwise upgrades the store, archive and caches once; an older one leaves them as they are and says which tool to update. Thenwise 0.3.2 and older stop rebuilding a 0.3.3 store and ask to be updated.
+- A Bash call that runs tests and commits now records both the test run and the commit. A commit that failed no longer records its subject.
+- A configured folder that ends in a slash no longer cuts the first letter off file names inside it.
+- A date that names no real day, such as 2026-13-45 or 2026-02-30, is now an input error in asof, memory_asof and every --since option (digest, cost, distill, export, logs, team share-chats, resume --mates-since). Before, it crashed or rolled over into the next month. A shared project saved with such a date sends no chats until you share it again with a real date, and the log says so.
+- Long output piped from a thenwise command, such as a big digest, search or get read by an agent, now arrives whole. It was cut at 64 KB.
+- A first sync or rebuild whose store could not be built now says it failed and points to /thenwise:logs. It said "done" before.
+- A project shared with `thenwise team share-chats` now syncs after each reply, like one in the config. A project whose sharing is paused no longer does.
+- Unreviewed inbox proposals now expire after 14 days, as /thenwise:status says, even with capture.auto off. Rejected notes stay rejected, and an expired note can still be accepted.
+- /thenwise:status waits up to 30 seconds for a large store, so it shows the chat count instead of "store ready".
+- When two tools run different Thenwise versions, the update line appears once instead of in every session of the newer tool.
+- `thenwise connect codex` and `--remove` change only the thenwise entry in `config.toml`. They keep the comments and tables that follow it, multi-line values and CRLF line endings, replace an inline entry with the standard table once, and leave a file that is not valid TOML alone. A file with two thenwise tables is repaired to one.
+- The team server writes one masked line to stderr for each unexpected error, with the method, path and error. A failing daily cleanup no longer stops the server.
+- A file or test with no history is looked up once per session, not on every Read or run, which saves about 170 ms per repeat.
+- Windows: distill reads chats in subfolders of a configured folder, and a project view path written with backslashes matches its files.
+- Edits of ordinary files, the memory server, team chat sync, distill --since and the synonym build do less work.
+- Every store is rebuilt once after this update, so these fixes reach chats saved before.
+
 ## 0.3.2
 
 - Windows: team sharing knows a second checkout of the shared repo even when the two paths spell a folder differently, such as a short name like `RUNNER~1`.

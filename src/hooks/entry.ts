@@ -7,7 +7,7 @@ import { join } from 'node:path'
 
 import { resolveDataDir } from '../core/home.ts'
 import { isTestRun } from '../core/testrun.ts'
-import { readProgress, running } from '../core/progress.ts'
+import { readProgress, readTold, running } from '../core/progress.ts'
 import { claudeHookInput } from '../ingest/copilot.ts'
 
 /** The planning-with-files plan files. */
@@ -76,8 +76,9 @@ const latePending = (i: Record<string, any>) => {
 const syncToTell = () => {
   if (process.env.COPILOT_PLUGIN_ROOT || process.env.ANTIGRAVITY_CONVERSATION_ID) return false
   const p = readProgress(resolveDataDir())
+  const told = p?.finished ? readTold(resolveDataDir()) : ''
 
-  return !!p && p.kind !== 'auto' && (p.finished ? !p.told || p.told < p.finished : running(p)) // a killed sync has nothing to tell
+  return !!p && p.kind !== 'auto' && (p.finished ? !told || told < p.finished : running(p)) // a killed sync has nothing to tell
 }
 
 // After each reply, a team member's sync runs at most this often, so a teammate gets the chat while it is still fresh.

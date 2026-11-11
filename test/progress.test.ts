@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { incompleteNote, percent, progressLine, readProgress, writeProgress } from '../src/core/progress.ts'
+import { incompleteNote, percent, progressLine, readProgress, writeProgress, writeTold } from '../src/core/progress.ts'
 import { nothingToDo } from '../src/hooks/entry.ts'
 import { runHook, syncNotice, syncRun } from '../src/hooks/hook.ts'
 import { createServer } from '../src/server/stdio.ts'
@@ -56,7 +56,8 @@ test('the prompt hook shows the progress line in Claude Code and lets the prompt
     const out = JSON.parse(runHook('prompt', { prompt: 'add a button', cwd: '/x' }, { dir: d, cli: 'none' }))
     assert.match(out.systemMessage, /^Thenwise: first sync 25%/)
     assert.equal(nothingToDo('prompt', { prompt: 'add a button' }), false) // still running: the next minute may bring news
-    writeProgress(d, { finished: at(0), chats: 3, told: new Date(Date.now() + 1000).toISOString() })
+    writeProgress(d, { finished: at(0), chats: 3 })
+    writeTold(d, new Date(Date.now() + 1000).toISOString())
     assert.equal(nothingToDo('prompt', { prompt: 'add a button' }), true)
     // Copilot shows no hook text to the person: nothing is spent there.
     first(d)
@@ -116,7 +117,7 @@ test('a sync writes its progress: first, then done with the time it took', () =>
 })
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { stopIdle, stopStamp } from '../src/hooks/entry.ts'
 
@@ -142,6 +143,31 @@ test('stop hooks: a team member syncs a shared project after a reply at most eve
     assert.equal(stopIdle('stop', Date.now() + 11 * 60_000), false)
     assert.equal(stopIdle('stop-failure'), true) // a burst of errors: one sync a minute
     assert.equal(stopIdle('stop-failure', Date.now() + 61_000), false)
+  } finally {
+    keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
+  }
+})
+
+test('#107: the stop hook syncs a project shared with team share-chats, and not one whose sharing is paused', () => {
+  const keep = process.env.THENWISE_HOME
+  const d = dir()
+  const repo = join(d, '..', 'shop')
+  mkdirSync(repo, { recursive: true })
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const shares = (status: string) => writeFileSync(join(d, 'team-shares.json'), JSON.stringify({ projects: { shop: { repo, status } }, chats: {}, removed: {}, deletes: [] }))
+  try {
+    process.env.THENWISE_HOME = d
+    writeFileSync(join(d, 'team.json'), '{}')
+    // Paused from the command line: a config entry for the same repo stays off.
+    writeFileSync(join(d, 'config.json'), JSON.stringify({ team: { share_chats: [repo] } }))
+    shares('paused')
+    runHook('stop', { session_id: 's', cwd: repo }, { dir: d, cli: 'none' })
+    assert.equal(existsSync(stopStamp(d)), false)
+    // Shared from the command line only: the config names nothing.
+    writeFileSync(join(d, 'config.json'), '{}')
+    shares('active')
+    runHook('stop', { session_id: 's', cwd: repo }, { dir: d, cli: 'none' })
+    assert.ok(existsSync(stopStamp(d)))
   } finally {
     keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
   }
@@ -180,4 +206,26 @@ test('review F7: outside a repo a team member gets no late teammate check, so no
   } finally {
     keep === undefined ? delete process.env.THENWISE_HOME : (process.env.THENWISE_HOME = keep)
   }
+})
+
+test('#103: a failed first-sync ingest is reported as failed, not done', () => {
+  const d = dir()
+  // A stand-in cli: every step answers, the ingest fails.
+  const cli = join(d, '..', 'cli.mjs')
+  writeFileSync(cli, "process.exit(process.argv[2] === 'ingest' ? 1 : 0)\n")
+  syncRun({ dir: d, cli })
+  const p = readProgress(d)!
+  assert.ok(p.finished && p.failed)
+  const line = syncNotice(d)
+  assert.match(line, /^Thenwise: first sync failed; \/thenwise:logs shows why\.$/)
+  assert.doesNotMatch(line, /done/)
+})
+
+test('#103: only the sync writes sync-progress.json, so a notice cannot erase finished', () => {
+  const d = dir()
+  first(d)
+  const before = readFileSync(join(d, 'sync-progress.json'), 'utf8')
+  assert.match(syncNotice(d), /first sync 25%/)
+  assert.equal(readFileSync(join(d, 'sync-progress.json'), 'utf8'), before)
+  assert.equal(syncNotice(d), '') // the told mark lives in its own file
 })

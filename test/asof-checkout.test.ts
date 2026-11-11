@@ -4,7 +4,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
-import { Graph } from '../src/query/engine.ts'
+import { asof } from '../src/query/commands.ts'
+import { endOf, Graph, sinceOf } from '../src/query/engine.ts'
 import { checkout, checkoutDir, cleanCheckouts } from '../src/query/checkout.ts'
 import { git, World } from './world.ts'
 
@@ -71,6 +72,34 @@ test('#74: asof with a date that does not parse is an input error: exit 2, the m
     }
     assert.ok(!existsSync(checkoutDir(w.memDir)), 'no checkout is made')
     assert.equal(cli('asof', '2026-10-12', '--checkout').status, 0, 'a good date still works')
+  } finally {
+    w.destroy()
+  }
+})
+
+test('#105: a date with the right shape that names no real day is an input error, never a crash or the next month', () => {
+  const w = new World()
+  try {
+    w.commit(w.proj, 'src/b.ts', 'B one', '', '2026-10-10T08:00:00Z')
+    w.archive()
+    const g = new Graph(w.ingest('x.db', { db: join(w.memDir, 'graph.db') }).db)
+    const cli = (...a: string[]) => spawnSync(process.execPath, ['--no-warnings', resolve('src/cli.ts'), ...a], { cwd: w.proj, encoding: 'utf8', env: { ...process.env, HOME: w.home, USERPROFILE: w.home, THENWISE_HOME: w.memDir } })
+    // 2026-13-45 does not parse; 2026-02-30 parses as March 2, with or without a time.
+    for (const date of ['2026-13-45', '2026-02-30', '2026-02-30T10:00:00Z']) {
+      assert.match(asof(g, date, 'b one'), /^asof needs an ISO date .*got "/, date)
+      assert.match(checkout(g, date, w.memDir), /^asof needs an ISO date .*got "/, date)
+      assert.ok(Number.isNaN(sinceOf(date)), date)
+      const since = [['digest', '--since', date], ['cost', '--since', date], ['resume', '--mates-since', date], ['distill', '--since', date], ['team', 'share-chats', w.proj, '--since', date], ['export', '--out', join(w.home, 'x.json'), '--since', date], ['logs', '--since', date]]
+      for (const args of [['asof', date, 'quokka'], ['asof', date, '--checkout'], ...since]) {
+        const r = cli(...args)
+        assert.equal(r.status, 2, args.join(' '))
+        assert.ok(r.stderr.includes(date) && /needs|takes/.test(r.stderr), `${args.join(' ')}: ${r.stderr}`)
+        assert.equal(r.stdout, '')
+      }
+    }
+    assert.ok(!existsSync(checkoutDir(w.memDir)), 'no checkout is made')
+    assert.equal(endOf('2026-10-12T08:00:00Z'), '2026-10-12T08:00:00Z', 'a real timestamp is used as given')
+    assert.ok(!Number.isNaN(sinceOf('2028-02-29')) && !Number.isNaN(Date.parse(endOf('2028-02-29'))), 'a leap day is a real day')
   } finally {
     w.destroy()
   }

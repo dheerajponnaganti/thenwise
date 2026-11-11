@@ -1,5 +1,5 @@
 // What the background sync is doing, for the person: first sync, a rebuild or an automatic one, which phase, and how far it
-// got. The sync writes <data folder>/sync-progress.json as it goes; status, the hooks and the memory tools read it.
+// got. Only the sync writes <data folder>/sync-progress.json; status, the hooks and the memory tools read it.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,7 +16,7 @@ export interface Progress {
   finished?: string
   chats?: number // chats in the memory when it finished
   ms?: number
-  told?: string // when the person was last shown a line about this sync (hooks show one at most once a minute)
+  failed?: boolean // the ingest step failed or never ran: the store may be missing chats
 }
 
 export const progressFile = (dir: string) => join(dir, 'sync-progress.json')
@@ -29,7 +29,8 @@ export function readProgress(dir: string): Progress | null {
   }
 }
 
-/** Merges fields into the file, through a temp file and a rename, so a reader never sees half of it. */
+/** Merges fields into the file, through a temp file and a rename, so a reader never sees half of it. Only the sync
+ * process and its steps call it, one at a time, so no merge loses another's fields. */
 export function writeProgress(dir: string, p: Partial<Progress>, replace = false) {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -38,6 +39,21 @@ export function writeProgress(dir: string, p: Partial<Progress>, replace = false
     writeFileSync(tmp, JSON.stringify(next), { mode: 0o600 })
     renameSync(tmp, progressFile(dir))
   } catch {} // progress is a courtesy: it never fails a sync
+}
+
+// When the person was last shown a line about a sync. Hooks write it from any session, so it has its own file.
+const toldFile = (dir: string) => join(dir, 'sync-told')
+export function readTold(dir: string): string {
+  try {
+    return readFileSync(toldFile(dir), 'utf8').trim()
+  } catch {
+    return (readProgress(dir) as { told?: string } | null)?.told ?? '' // older versions kept it in the progress file
+  }
+}
+export function writeTold(dir: string, iso: string) {
+  try {
+    writeFileSync(toldFile(dir), iso, { mode: 0o600 })
+  } catch {} // the worst case is one repeated line
 }
 
 /** A callback for a phase's loop that writes at most every half second, and always the last step. Null when no sync asked. */
@@ -84,6 +100,7 @@ const NAME: Record<SyncKind, string> = { first: 'first sync', rebuild: 'rebuild 
 /** One line for the person, or '' when there is nothing worth saying. */
 export function progressLine(p: Progress | null, now = Date.now()): string {
   if (!p) return ''
+  if (p.finished && p.failed) return `${NAME[p.kind]} failed; /thenwise:logs shows why`
   if (p.finished) return `${NAME[p.kind]} done${p.chats ? `: ${n(p.chats)} chats remembered` : ''}${p.ms ? ` in ${secs(p.ms)}` : ''}`
   if (!running(p)) return ''
   const what = p.total ? `${p.phase}, ${n(p.done)} of ${n(p.total)} chats` : p.phase

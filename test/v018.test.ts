@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 
 import { nothingToDo } from '../src/hooks/entry.ts'
+import { readLog } from '../src/core/log.ts'
 import { syncRun } from '../src/hooks/hook.ts'
 import { archive } from '../src/ingest/archive.ts'
 import { loadConfig } from '../src/ingest/config.ts'
@@ -37,6 +38,32 @@ test('R8-H2 R8-H3: a sync writes the vault only after an ingest that changed som
     delete process.env.FAKE_INGEST
     if (home === undefined) delete process.env.THENWISE_HOME
     else process.env.THENWISE_HOME = home
+  }
+})
+
+test('#105: a distill stamp that is no real time is ignored with one log line, and distill still runs', () => {
+  const dir = tempDir()
+  writeFileSync(join(dir, 'config.json'), JSON.stringify({ capture: { auto: true } }))
+  writeFileSync(join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude'), '') // distill runs only with claude on the PATH
+  const cli = join(dir, 'fake-cli.mjs')
+  writeFileSync(cli, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(dir, 'calls'))}, process.argv.slice(2).join(' ') + '\\n')\n`)
+  const env = { home: process.env.THENWISE_HOME, path: process.env.PATH }
+  process.env.THENWISE_HOME = dir
+  process.env.PATH = dir
+  process.env.THENWISE_LOG = 'info' // the test runner turns logging off
+  try {
+    // 'soon' stopped distill for good; 2026-02-30 was read as March 2.
+    for (const last of ['soon', '2026-02-30T10:00:00Z']) {
+      writeFileSync(join(dir, 'distill-auto.json'), JSON.stringify({ last }))
+      writeFileSync(join(dir, 'calls'), '')
+      syncRun({ dir, cli })
+      const run = readFileSync(join(dir, 'calls'), 'utf8').split('\n').find((l) => l.startsWith('distill'))
+      assert.ok(run && !run.includes(last) && Date.now() - Date.parse(run.split(' ')[2]!) < 2 * 864e5, `${last}: ${run}`)
+    }
+    assert.equal(readLog(dir).filter((e) => e.ev === 'distill_stamp_unreadable').length, 2, 'one line per sync')
+  } finally {
+    process.env.THENWISE_LOG = 'off'
+    for (const [k, v] of [['THENWISE_HOME', env.home], ['PATH', env.path]] as const) v === undefined ? delete process.env[k] : (process.env[k] = v)
   }
 })
 

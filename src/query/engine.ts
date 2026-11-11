@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { githubSlug, projectRoot, real, repoRoot } from '../ingest/repos.ts'
 
 import { MAX_SYN, SYN_WEIGHT, similarity, trigrams, TYPO_MIN } from './language.ts'
+import { realDay } from '../core/time.ts'
 import { normPath } from '../core/vault-index.ts'
 
 export interface Node {
@@ -94,12 +95,15 @@ export const startOf = (d: string) => {
 /** `24h`, `7d` or an ISO date or time, to milliseconds; NaN when it is none of these. A plain date is the start of
  * that local day, as asof reads a plain date as its end. */
 export function sinceOf(s: string, now = Date.now()): number {
+  if (!realDay(s)) return NaN
   const m = /^(\d+)([hd])$/.exec(s)
   if (m) return now - Number(m[1]) * (m[2] === 'h' ? 36e5 : 864e5)
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? startOf(s) : Date.parse(s)
 }
-/** The end of a local day, as a UTC instant; a full timestamp is used as given. */
+/** The end of a local day, as a UTC instant; a full timestamp is used as given. A day that does not exist gives
+ * "Invalid Date", which every caller parses to NaN and reports as an input error. */
 export const endOf = (d: string) => {
+  if (!realDay(d)) return 'Invalid Date'
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
   const guess = Date.parse(`${d}T23:59:59.999Z`)
 

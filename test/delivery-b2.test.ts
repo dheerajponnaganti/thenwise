@@ -1,12 +1,14 @@
 // Delivery fixes B2: query scope and paths, branch labels, paging, resume brief, plans, and the hooks.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { uptime } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
-import { readTarget, runHook, shortPath, takeLock } from '../src/hooks/hook.ts'
+import { readTarget, runHook, shortPath, syncRun } from '../src/hooks/hook.ts'
+import { dropLock, lockHeld, takeLock } from '../src/ingest/lock.ts'
 import { keyOf, plansPart } from '../src/ingest/plans.ts'
 import { buildPassageIndex } from '../src/query/passages.ts'
 import { Graph } from '../src/query/engine.ts'
@@ -248,13 +250,78 @@ test('B2-28: the Bash hook on a command that is no read and no test run is cheap
   assert.ok(ms < (process.platform === 'win32' ? 3000 : 600), `${ms} ms`)
 })
 
-test('B2-32: a lock older than an hour is stale even when its pid is alive', () => {
+test('#101: a lock is taken only from a dead process or an earlier boot, never for its age', () => {
   const lock = join(tempDir(), 'sync.lock')
-  writeFileSync(lock, String(process.pid))
+  const at = (ms: number) => utimesSync(lock, new Date(ms), new Date(ms))
+  const boot = Date.now() - uptime() * 1000
+  // A holder that has run since boot (pid 1, or the System process on Windows), so its lock can be old and still its own.
+  writeFileSync(lock, String(process.platform === 'win32' ? 4 : 1))
+  at(Date.now() - Math.min(2 * 3_600_000, (Date.now() - boot) / 2)) // old, but after this boot
+  assert.equal(takeLock(lock, process.pid + 1), false, 'a live pid with an old mtime holds')
+  at(boot - 3_600_000)
+  assert.equal(takeLock(lock, process.pid + 1), true, 'a lock written before this boot is stale')
+  assert.equal(readFileSync(lock, 'utf8'), String(process.pid + 1), 'a lock holds only its pid, as older versions and uninstall read it')
+  writeFileSync(lock, '2147483646')
+  assert.equal(takeLock(lock, process.pid + 1), true, 'a dead pid is stale')
+
+  // One taker at a time removes a stale lock; a takeover left by a crash goes after a while.
+  writeFileSync(lock, '2147483646')
+  writeFileSync(`${lock}.takeover`, '1')
+  assert.equal(takeLock(lock, process.pid + 1), false, 'another taker is removing it')
+  utimesSync(`${lock}.takeover`, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000))
   assert.equal(takeLock(lock, process.pid + 1), false)
-  const old = new Date(Date.now() - 2 * 3_600_000)
-  utimesSync(lock, old, old)
   assert.equal(takeLock(lock, process.pid + 1), true)
+  assert.deepEqual(readdirSync(dirname(lock)), ['sync.lock'], 'nothing is left behind')
+
+  // A lock naming this very process that it never took is stale: a dead process had the same pid (a restarted container).
+  writeFileSync(lock, String(process.pid))
+  assert.equal(takeLock(lock), true)
+  assert.equal(takeLock(lock, process.pid + 1), false, 'and the new lock holds')
+  assert.equal(takeLock(lock), false, 'a lock this process took is not taken again by it')
+
+  // A step killed at its timeout: the sync removes the lock that names it, and no other.
+  writeFileSync(lock, String(process.pid + 1))
+  dropLock(lock, process.pid + 2)
+  assert.ok(existsSync(lock))
+  dropLock(lock, process.pid + 1)
+  assert.ok(!existsSync(lock))
+})
+
+test('#101: a lock whose pid now belongs to a process started after the lock is stale, since the pid was reused', async () => {
+  const lock = join(tempDir(), 'sync.lock')
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+  try {
+    await new Promise((r) => setTimeout(r, 300))
+    writeFileSync(lock, String(child.pid))
+    const before = new Date(Date.now() - 5000)
+    utimesSync(lock, before, before) // written before the process with that pid started
+    assert.equal(lockHeld(lock, 0), false)
+    assert.equal(takeLock(lock, process.pid + 1), true)
+    writeFileSync(lock, String(child.pid)) // written while that process runs: its own lock
+    assert.equal(lockHeld(lock, 0), true)
+    assert.equal(takeLock(lock, process.pid + 1), false)
+  } finally {
+    child.kill()
+  }
+})
+
+// Windows has no signals: a killed child there reports no signal, and its pid is dead, so its lock is stale anyway.
+test('#101: a sync step killed mid-run leaves no lock behind', { skip: process.platform === 'win32' }, () => {
+  const dir = tempDir()
+  const cli = join(dir, 'fake-cli.mjs')
+  const lock = join(dir, 'archive', 'archive.lock')
+  // The archive step takes its lock and dies the way a timeout kills it: no finally runs.
+  writeFileSync(cli, `import { mkdirSync, writeFileSync } from 'node:fs'\nif (process.argv[2] === 'archive') { mkdirSync(${JSON.stringify(join(dir, 'archive'))}, { recursive: true }); writeFileSync(${JSON.stringify(lock)}, String(process.pid)); process.kill(process.pid, 'SIGKILL') }\n`)
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = dir
+  try {
+    syncRun({ dir, cli })
+    assert.ok(!existsSync(lock), 'the lock of the killed step is removed')
+    assert.ok(!existsSync(join(dir, 'sync.lock')))
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
 })
 
 test('B2-33/34: hooks.json matches clear and compact, and ends a session with a sync', () => {

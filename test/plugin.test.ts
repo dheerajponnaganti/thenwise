@@ -4,7 +4,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
-import { cap, runHook, takeLock, trimTrace } from '../src/hooks/hook.ts'
+import { cap, runHook, trimTrace } from '../src/hooks/hook.ts'
+import { takeLock } from '../src/ingest/lock.ts'
 import { readLog } from '../src/core/log.ts'
 import { tempDir, writeGraph } from './mcp-fixture.ts'
 

@@ -6,7 +6,9 @@ import { appendFileSync, chmodSync, closeSync, existsSync, unlinkSync, mkdirSync
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
+import { listDir } from '../core/home.ts'
 import { errFields, logger } from '../core/log.ts'
+import { alive } from '../core/progress.ts'
 import { MASK_VERSION, maskDeep, maskSecrets } from '../core/secrets.ts'
 import { isForgotten, loadTombs } from '../privacy/tombstones.ts'
 import { globMatch, isOff } from './config.ts'
@@ -14,7 +16,7 @@ import type { Config } from './config.ts'
 import { antigravityConverter, antigravitySources } from './antigravity.ts'
 import { codexConverter, codexSources } from './codex.ts'
 import { copilotConverter, copilotSources } from './copilot.ts'
-import { alive, withLock } from './lock.ts'
+import { withLock } from './lock.ts'
 import { isMarked } from './parts.ts'
 import { chatLines, chatText, lastMemberSize, parseSession } from './transcript.ts'
 
@@ -224,14 +226,18 @@ export function maskTranscript(text: string): { text: string; unparsed: number[]
 const isSessionPath = (p: string[]) => p.length === 2 || (p.length === 4 && p[2] === 'subagents')
 
 function collect(dir: string, into: Map<string, Source>, prefer: boolean) {
-  if (!existsSync(dir)) return
   const walk = (abs: string, rel: string) => {
-    for (const e of readdirSync(abs, { withFileTypes: true })) {
+    for (const e of listDir(abs)) {
       const p = join(abs, e.name)
       const r = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) walk(p, r)
       else if (e.isFile() && e.name.endsWith('.jsonl') && isSessionPath(r.split('/'))) {
-        const st = statSync(p)
+        let st: ReturnType<typeof statSync>
+        try {
+          st = statSync(p)
+        } catch {
+          continue // removed since the listing, or in a folder this user can list but not search
+        }
         const old = into.get(r)
         // Same session in both places: keep the longer one; on a tie keep the live copy.
         if (!old || st.size > old.size || (st.size === old.size && prefer)) into.set(r, { rel: r, path: p, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs })
@@ -319,7 +325,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   mkdirSync(out, { recursive: true, mode: 0o700 })
   for (const d of [cfg.memDir, base, out]) chmodSync(d, 0o700)
   // Tmp files of a killed run: the sync stops archive with SIGTERM, so no finally ran. The archive lock keeps other archives of
-  // this store out. When this run took over a lock older than 30 minutes, its holder may still be alive, so a live pid's files
+  // this store out, but an older Thenwise in another tool still takes a lock older than 30 minutes, so a live pid's fresh files
   // stay. An hour untouched means no writer at all: a dead run's pid that another process now has.
   try {
     for (const f of [...readdirSync(out, { recursive: true, encoding: 'utf8' }).map((f) => join(out, f)), ...readdirSync(base).map((f) => join(base, f))]) {

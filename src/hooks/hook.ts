@@ -6,6 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
+import { listDir } from '../core/home.ts'
 import { formatEvent, type Level, logger, readLog, recentErrors } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import { isTestRun } from '../core/testrun.ts'
@@ -15,12 +16,13 @@ import { updateNotice } from '../setup/update.ts'
 import { codexConverter } from '../ingest/codex.ts'
 import { copilotConverter, copilotDir } from '../ingest/copilot.ts'
 import { hasPlanFiles, snapshotAll, snapshotBefore, snapshotNear } from '../ingest/plans.ts'
+import { dropLock, lockHeld, takeLock } from '../ingest/lock.ts'
 import { repoRoot } from '../ingest/repos.ts'
 import { parseSession } from '../ingest/transcript.ts'
 import { tighten } from '../privacy/perms.ts'
 import { asksAboutThePast, compactedMark, lateMark, pointerQuery, READERS, resumePending, STOP_SYNC_MS, stopIdle, stopStamp } from './entry.ts'
 import { factLines, handoffBlock, liveLines, recordAgent } from './handoff.ts'
-import { alive, progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
+import { progressLine, readProgress, running, writeProgress } from '../core/progress.ts'
 import { addedLine, addNews, forHost, noticeLevel, readSent, recordSent, shows, takeNews } from '../core/notices.ts'
 import { EXPIRY_DAYS, readNotes } from '../capture/notes.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
@@ -33,7 +35,6 @@ export const RESUME_TOKENS = 1500
 const MARK = 'When an answer relies on a memory result, write [memory: <id>] after it.'
 const QUERY_MS = 900
 const STATE_DAYS = 7
-const LOCK_STALE_MS = 3_600_000 // a live pid on an hour-old lock is a reused pid
 const SLOW = new Set(['archive', 'ingest']) // these get 10 minutes, every other sync step 2
 
 /** True while a shared project has sent nothing yet: its first push is long, so `team sync` gets the 10-minute class. */
@@ -117,30 +118,6 @@ export function log(env: HookEnv, msg: string, lvl: Level = 'info', ev = 'note')
   logger(ev.startsWith('sync') ? 'sync' : 'hook', env.dir)[lvl](ev, { msg })
 }
 
-/** True when this process now holds the lock. A lock whose pid is dead is taken over. */
-export function takeLock(file: string, pid = process.pid): boolean {
-  for (let i = 0; i < 2; i++) {
-    try {
-      writeFileSync(file, String(pid), { flag: 'wx' })
-
-      return true
-    } catch {
-      let held: number
-      try {
-        held = Number(readFileSync(file, 'utf8').trim())
-        // Empty means the holder made the file but has not written its pid yet; only an old empty file is stale.
-        if (!held && Date.now() - statSync(file).mtimeMs < 10_000) return false
-      } catch {
-        continue // released between our create and our read: try again
-      }
-      if (held && alive(held) && Date.now() - (statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) < LOCK_STALE_MS) return false
-      rmSync(file, { force: true })
-    }
-  }
-
-  return false
-}
-
 /** Runs one query command in a child that is killed after QUERY_MS, so a slow store cannot hold a hook. */
 function query(env: HookEnv, args: string[]): string {
   const r = spawnSync(process.execPath, [env.cli, ...args], { encoding: 'utf8', timeout: QUERY_MS, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } })
@@ -184,10 +161,7 @@ function startSync(env: HookEnv) {
   // THENWISE_SYNC=off keeps a frozen store frozen (evaluations, CI, read-only setups).
   if (process.env.THENWISE_SYNC === 'off') return log(env, 'sync off (THENWISE_SYNC=off)')
   const lock = join(env.dir, 'sync.lock')
-  try {
-    const held = Number(readFileSync(lock, 'utf8').trim())
-    if (held > 0 && alive(held) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return log(env, 'sync already running')
-  } catch {} // no lock, or it was released just now: start one
+  if (lockHeld(lock)) return log(env, 'sync already running')
   mkdirSync(env.dir, { recursive: true })
   // The worker logs each step itself, and a crash is logged by the cli entry, so its output is not needed.
   spawn(process.execPath, [env.cli, 'hook', 'sync-run'], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir } }).unref()
@@ -234,6 +208,8 @@ export function syncRun(env: HookEnv) {
       const t = Date.now()
       if (verb === 'team sync') writeProgress(env.dir, { phase: 'team sync', done: 0, total: 0 })
       const r = spawnSync(process.execPath, [env.cli, ...verb.split(' ')], { encoding: 'utf8', timeout: SLOW.has(verb) || (verb === 'team sync' && newShare(env.dir)) || verb.startsWith('distill') ? 600_000 : 120_000, windowsHide: true, env: { ...process.env, THENWISE_HOME: env.dir, THENWISE_PROGRESS: '1' } })
+      // A step killed at its timeout ran no `finally`: its locks would block every later sync while its pid lives again.
+      if (r.signal) for (const l of [join(env.dir, 'archive', 'archive.lock'), join(env.dir, 'graph.db.lock'), join(env.dir, 'team.lock')]) dropLock(l, r.pid)
       if (verb === 'ingest') changed = r.status !== 0 || /^(?:rebuilt everything|updated)\b/m.test(r.stdout)
       if (verb === 'ingest') chats = Number(/^(\d+) sessions in scope/m.exec(r.stdout)?.[1]) || undefined
       // The store is ready after the ingest: the person hears "done" then, not after the backup and the vault.
@@ -463,7 +439,7 @@ function chatCounts(home: string): string {
     }
   }
   const projects = join(home, '.claude', 'projects')
-  const claude = n(() => (existsSync(projects) ? readdirSync(projects).flatMap((k) => (statSync(join(projects, k)).isDirectory() ? readdirSync(join(projects, k)).filter((f) => f.endsWith('.jsonl')) : [])) : []))
+  const claude = listDir(projects).flatMap((k) => (k.isDirectory() ? listDir(join(projects, k.name)).filter((f) => f.isFile() && f.name.endsWith('.jsonl')) : [])).length
   const parts = [[claude, 'Claude Code'], [n(() => copilotSources(home)), 'Copilot'], [n(() => codexSources(home)), 'Codex'], [n(() => antigravitySources(home)), 'Antigravity']].filter(([c]) => (c as number) > 0).map(([c, t]) => `${(c as number).toLocaleString('en-US')} from ${t}`)
 
   return parts.length ? parts.join(', ') : 'none yet'
@@ -475,7 +451,7 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
     const graph = join(env.dir, 'graph.db')
     if (name === 'status') {
       const prog = progressLine(readProgress(env.dir))
-      const syncing = existsSync(join(env.dir, 'sync.lock'))
+      const syncing = lockHeld(join(env.dir, 'sync.lock'))
       const tail = readLog(env.dir).slice(-5).map(formatEvent).join('\n') || 'no log yet'
       if (!existsSync(graph)) return `No memory yet in ${env.dir}. ${prog ? `Thenwise ${prog}.` : `The first sync runs at the next session start.${syncing ? ' A sync is running now.' : ''}`}\n${tail}`
       const s = statSync(graph)

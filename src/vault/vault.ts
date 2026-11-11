@@ -8,7 +8,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 
 import { parseFrontMatter, quote } from '../core/frontmatter.ts'
 import { maskSecrets } from '../core/secrets.ts'
-import type { Config } from '../ingest/config.ts'
+import { type Config, offCheck } from '../ingest/config.ts'
 import { Graph, local } from '../query/engine.ts'
 import type { Node } from '../query/engine.ts'
 import { cut, repo, sessionProjects, sourceOf } from '../views/views.ts'
@@ -83,7 +83,8 @@ function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean,
   const sets = new Map<string, { decisions: Item[]; dead: Item[]; time: Item[]; digest: Item[] }>()
   const of = (p: string) => sets.get(p) ?? sets.set(p, { decisions: [], dead: [], time: [], digest: [] }).get(p)!
   const gname = (p: string) => (perProject ? p : '')
-  for (const n of g.nodes.values()) {
+  const shown = [...g.nodes.values()].filter((n) => !g.paused(n))
+  for (const n of shown) {
     const p = gname(projOf(n))
     const t = n.extra.trailers as Record<string, string[]> | undefined
     if (n.kind === 'pr') of(p).time.push({ n, text: `PR #${n.id.split('#').pop()}: ${cut(n.title, 140)}${n.until ? ` (merged ${local(n.until).slice(0, 10)})` : ` (${String(n.extra.state ?? 'open').toLowerCase()})`}` })
@@ -95,14 +96,14 @@ function drafts(g: Graph, projects: Config['viewProjects'], perProject: boolean,
     if (n.extra.curated && n.kind === 'dead_end') of(p).dead.push({ n, text: cut(n.title, 160) })
   }
   // The digest of the last 7 days, with each chat's turns gathered in one pass (bySource would scan the graph per chat).
-  const recent = [...g.nodes.values()].filter((n) => n.kind === 'session' && !n.extra.team && Date.parse(n.until || n.at) >= now - 7 * 864e5)
+  const recent = shown.filter((n) => n.kind === 'session' && !n.extra.team && Date.parse(n.until || n.at) >= now - 7 * 864e5)
   const turnsOf = new Map<string, Node[]>(recent.map((n) => [n.id, []]))
   for (const n of g.nodes.values()) if (n.kind === 'turn') turnsOf.get(n.source)?.push(n)
   for (const n of recent) of(gname(projOf(n))).digest.push({ n, text: digestLine(g, n, turnsOf.get(n.id)!) })
   const histories = new Map<string, Map<string, Node>>()
   const touch = (file: string, n: Node) => (histories.get(file) ?? histories.set(file, new Map()).get(file)!).set(n.id, n)
   for (const [file, ids] of touchedBy) for (const id of ids) touch(file, g.nodes.get(id)!)
-  for (const n of g.nodes.values()) {
+  for (const n of shown) {
     if (!['pr', 'commit', 'note', 'summary'].includes(n.kind)) continue
     for (const e of g.adj.get(n.id) ?? []) if (e.out && g.nodes.get(e.to)?.kind === 'file' && ['touches', 'changed', 'mentions'].includes(e.kind)) touch(e.to, n)
   }
@@ -210,6 +211,7 @@ export function writeVault(cfg: Config, opts: { db?: string; now?: Date } = {}):
   if (newer) return { ...res, stopped: `${dir} was written by a newer Thenwise (note format above ${VAULT_FORMAT}). Update Thenwise; nothing was written.` }
 
   const g = new Graph(dbPath)
+  g.off = offCheck(cfg) // notes written before for a folder paused since are rewritten or removed below
   const { notes, capped } = buildNotes(g, cfg, cfg.vault.layout, (opts.now ?? new Date()).getTime())
   g.db.close()
 

@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 
+import { distill } from '../src/capture/distill.ts'
+import { proposeExpiry } from '../src/capture/expire.ts'
+import { mineRules } from '../src/capture/mine.ts'
 import { parseFrontMatter } from '../src/core/frontmatter.ts'
+import { syncRun } from '../src/hooks/hook.ts'
+import { offCheck } from '../src/ingest/config.ts'
 import { storeFormat, STORE_FORMAT } from '../src/ingest/ingest.ts'
 import { Graph } from '../src/query/engine.ts'
 import * as c from '../src/query/commands.ts'
@@ -44,6 +49,71 @@ test('V-H1: decisions, dead ends, timeline and file histories, each with a banne
   }
   assert.match(notesOf(dir)['Decisions.md']!, /keep eight shards.*Why: fewer locks/)
   assert.deepEqual(readdirSync(out).filter((f) => f !== '_thenwise'), [])
+})
+
+test('#111: vault write and other store readers leave out paused folders', () => {
+  const { w, dir, cfg } = setup()
+  const scratch = join(w.vault, 'scratch') // a folder outside any repository, inside the configured roots
+  mkdirSync(scratch)
+  w.chat('c2', { cwd: scratch, turns: [{ prompt: 'quokka plan for the scratch folder', reply: 'done', edits: [join(scratch, 'q.md')] }] })
+  // Three reverts of src/a.ts make a rule proposal, and the later commits to it ask whether its decisions still hold.
+  const later = (min: number) => new Date(Date.now() + min * 60e3).toISOString() // after the decisions in the first commits
+  for (const i of [1, 2, 3]) {
+    w.commit(w.proj, 'src/a.ts', `Try layout ${i}`, '', later(2 * i))
+    w.commit(w.proj, 'src/a.ts', `Revert "Try layout ${i}"`, '', later(2 * i + 1))
+  }
+  w.archive()
+  w.ingest('graph.db')
+  const db = w.path('graph.db')
+  let removed = 0
+  const seen = (c: typeof cfg) => {
+    removed = writeVault(c, { db }).removed
+    const t = Object.values(notesOf(dir)).join('\n')
+    return { c1: t.includes('ses:c1'), c2: t.includes('ses:c2'), decision: t.includes('keep eight shards') }
+  }
+  assert.deepEqual(seen(cfg), { c1: true, c2: true, decision: true })
+  // Notes written before for a folder paused since are rewritten, or removed when nothing is left in them.
+  assert.deepEqual(seen({ ...cfg, offProjects: [w.proj] }), { c1: false, c2: true, decision: false })
+  assert.ok(removed > 0, 'the paused repo\'s file histories are removed')
+  assert.deepEqual(seen({ ...cfg, offProjects: [scratch] }), { c1: true, c2: false, decision: true })
+  assert.deepEqual(seen({ ...cfg, off: true }), { c1: false, c2: false, decision: false })
+  // Rule mining and decision rechecks write to the inbox: nothing from a paused folder.
+  const fresh = () => mkdtempSync(join(tmpdir(), 'thenwise-inbox-'))
+  const now = new Date()
+  for (const off of [undefined, offCheck({ off: false, offProjects: [w.proj] }), offCheck({ off: true, offProjects: [] })]) {
+    const on = off === undefined
+    assert.equal(mineRules(fresh(), db, now, off) > 0, on, `mine, ${on ? 'on' : 'off'}`)
+    assert.equal(proposeExpiry(fresh(), db, now, off) > 0, on, `rechecks, ${on ? 'on' : 'off'}`)
+  }
+  // Distill sends chats to a model: a paused chat is never read.
+  const sessions = (c: typeof w.cfg) => distill(c, { dryRun: true }).lines.filter((l) => l.startsWith('session ')).map((l) => l.split(':')[0]).sort()
+  assert.deepEqual(sessions(w.cfg), ['session c1', 'session c2'])
+  assert.deepEqual(sessions({ ...w.cfg, offProjects: [w.proj] }), ['session c2'])
+  assert.deepEqual(sessions({ ...w.cfg, offProjects: [scratch] }), ['session c1'])
+  assert.deepEqual(sessions({ ...w.cfg, off: true }), [])
+  // The sync rewrites the vault after `off` or `on`, even when no chat changed since its last write.
+  const sdir = mkdtempSync(join(tmpdir(), 'thenwise-sync-'))
+  const fake = join(sdir, 'fake-cli.mjs')
+  writeFileSync(fake, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(sdir, 'calls'))}, process.argv.slice(2).join(' ') + '\\n')\nif (process.argv[2] === 'ingest') console.log('nothing new: 0 chat files read in 0.0 s')\n`)
+  writeFileSync(join(sdir, 'config.json'), JSON.stringify({ vault: { path: w.vault } }))
+  writeFileSync(join(sdir, 'vault.json'), '{}')
+  const at = (s: number) => new Date(Date.now() + s * 1000)
+  utimesSync(join(sdir, 'vault.json'), at(1), at(1)) // the last vault write came after the config
+  const home = process.env.THENWISE_HOME
+  process.env.THENWISE_HOME = sdir
+  try {
+    const vaultRuns = () => {
+      writeFileSync(join(sdir, 'calls'), '')
+      syncRun({ dir: sdir, cli: fake })
+      return readFileSync(join(sdir, 'calls'), 'utf8').includes('vault write')
+    }
+    assert.equal(vaultRuns(), false, 'nothing new: no vault write')
+    utimesSync(join(sdir, 'config.json'), at(2), at(2)) // `thenwise off` saved the config
+    assert.equal(vaultRuns(), true, 'the config changed: the vault is written again')
+  } finally {
+    if (home === undefined) delete process.env.THENWISE_HOME
+    else process.env.THENWISE_HOME = home
+  }
 })
 
 test('V-H2: a folder per project when the layout says so, one set otherwise', () => {
@@ -199,7 +269,7 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
   buildPassageIndex(g)
   g.close()
   const out = mkdtempSync(join(tmpdir(), 'thenwise-out-'))
-  const cfg = { memDir: '', vaults: [], viewProjects: [], vault: { place: 'central', layout: 'shared', path: out, commit: false } } as any
+  const cfg = { memDir: '', vaults: [], viewProjects: [], off: false, offProjects: [], vault: { place: 'central', layout: 'shared', path: out, commit: false } } as any
   const r = writeVault(cfg, { db: dbFile })
   assert.equal(r.stopped, undefined)
   const files = Object.keys(notesOf(join(out, '_thenwise'))).filter((f) => f.startsWith('Files/'))
@@ -226,7 +296,7 @@ CREATE TABLE edges(src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL, at 
   buildPassageIndex(g)
   g.close()
   const out = mkdtempSync(join(tmpdir(), 'thenwise-out-'))
-  const cfg = { memDir: '', vaults: [], viewProjects: [], vault: { place: 'central', layout: 'per-project', path: out, commit: false } } as any
+  const cfg = { memDir: '', vaults: [], viewProjects: [], off: false, offProjects: [], vault: { place: 'central', layout: 'per-project', path: out, commit: false } } as any
   const t = Date.now()
   const r = writeVault(cfg, { db: dbFile })
   const ms = Date.now() - t

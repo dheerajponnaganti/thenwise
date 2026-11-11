@@ -200,8 +200,10 @@ export function syncRun(env: HookEnv) {
     // The team's notes are fetched before the ingest, so this sync already makes them searchable.
     const cfgNow = loadConfigSafe().config
     for (const verb of ['archive', ...(existsSync(join(env.dir, 'team.json')) ? ['team sync'] : []), 'ingest', 'mine', ...(cfgNow?.vault ? ['vault write'] : []), 'backup --daily', 'update-check --daily', ...(cfgNow?.captureAuto && distillDue(env.dir) ? [`distill --since ${lastDistill(env.dir)}`] : [])]) {
-      // The vault is rewritten from the whole graph: only after an ingest that changed it, or once a day.
-      if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5) {
+      // The vault is rewritten from the whole graph: only after an ingest that changed it, after a config change (`off` and
+      // `on` change what it may hold), or once a day.
+      const configAt = statSync(join(env.dir, 'config.json'), { throwIfNoEntry: false })?.mtimeMs ?? 0
+      if (verb === 'vault write' && !changed && existsSync(vaultStamp) && Date.now() - statSync(vaultStamp).mtimeMs < 864e5 && configAt <= statSync(vaultStamp).mtimeMs) {
         log(env, 'vault write skipped: nothing new since the last one', 'info', 'sync_vault')
         continue
       }

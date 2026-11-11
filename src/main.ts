@@ -244,13 +244,13 @@ if (cmd === 'status') {
 }
 
 if (cmd === 'mine') {
-  const { loadConfig } = await import('./ingest/config.ts')
+  const { loadConfig, offCheck } = await import('./ingest/config.ts')
   const cfg = loadConfig()
   const db = xp(flag('db')) ?? join(cfg.memDir, 'graph.db')
   if (!existsSync(db)) (console.error(`no graph at ${db}: run \`thenwise ingest\``), process.exit(2))
-  const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db)
+  const n = (await import('./capture/mine.ts')).mineRules(cfg.memDir, db, new Date(), offCheck(cfg))
   console.log(`${n} rule proposal${n === 1 ? '' : 's'} added to the inbox${n ? '; `thenwise inbox` lists them' : ''}`)
-  const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db)
+  const e = (await import('./capture/expire.ts')).proposeExpiry(cfg.memDir, db, new Date(), offCheck(cfg))
   console.log(`${e} decision${e === 1 ? '' : 's'} to recheck added to the inbox${e ? '; `thenwise inbox` lists them' : ''}`)
   process.exit(0)
 }

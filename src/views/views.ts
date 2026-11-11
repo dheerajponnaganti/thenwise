@@ -34,7 +34,7 @@ export function folderOf(fileId: string): string | undefined {
 export function sessionProjects(g: Graph, projects: { name: string; words: string[]; paths: string[] }[] = []) {
   // A session belongs to the repo whose commits and PRs its turns made or opened; failing that, to the top folder its
   // turns worked in most (a chat run from the home folder about ~/my-project is that project's); failing that, its cwd.
-  const sessions = [...g.nodes.values()].filter((n) => n.kind === 'session')
+  const sessions = [...g.nodes.values()].filter((n) => n.kind === 'session' && !g.paused(n))
   const projectOf = new Map<string, string>()
   const touchedBy = new Map<string, Set<string>>() // file id -> sessions/PRs/commits/notes that touched it
   for (const s of sessions) {

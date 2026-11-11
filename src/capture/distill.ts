@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { logger } from '../core/log.ts'
 import { maskSecrets } from '../core/secrets.ts'
 import type { Config } from '../ingest/config.ts'
-import { globMatch } from '../ingest/config.ts'
+import { globMatch, isOff } from '../ingest/config.ts'
 import { chatLines, parseSession } from '../ingest/transcript.ts'
 import { expireInbox, makeId, readNotes, saveNote } from './notes.ts'
 import type { NoteType } from './notes.ts'
@@ -135,7 +135,7 @@ export function distill(cfg: Config, opts: DistillOptions = {}): DistillResult {
       const id = f.replace(/\.jsonl\.gz$/, '')
       if (opts.session && opts.session !== id) continue
       const s = parseSession(chatLines(join(root, key, f)), id, cfg.home)
-      if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
+      if (!cfg.includeEntrypoints.includes(s.entrypoint) || !s.start || isOff(cfg, s.cwd) || ![s.cwd, ...s.paths].some((p) => p && cfg.roots.some((r) => under(p, r)))) continue
       if (opts.since && Date.parse(s.end) < Date.parse(opts.since)) continue
 
       const st = state[id] ?? { turn: '', summaries: [] }

@@ -231,7 +231,7 @@ export function prPart(inputs: PrInput[], repos: string[], commit: CommitLook, u
       const mc: string | undefined = p.mergeCommit?.oid
       // Masked like the stored text, so a full build and an update derive the same trailer notes.
       out.trailers.push(...parseTrailers(maskSecrets([p.body ?? '', ...comments].join('\n')).text, id, p.createdAt ?? '', name))
-      out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `PR closed without merging: ${p.title ?? ''}`.slice(0, 160), deadEndKind: 'closed-pr' } : {}) } }))
+      out.nodes.push(fullNode({ id, kind: 'pr', title: p.title ?? '', text: [p.body ?? '', ...comments].join('\n\n'), at: p.createdAt ?? '', until: p.mergedAt ?? '', project: name, source: url, extra: { state: p.state, head: p.headRefName, base: p.baseRefName, url, ...(repo ? { repo } : {}), ...(p.state === 'CLOSED' && !p.mergedAt ? { deadEnd: `#${p.number} closed without merging`, deadEndKind: 'closed-pr' } : {}) } }))
       if (out.numbers.has(p.number)) out.ambiguous.add(p.number)
       out.numbers.set(p.number, id)
       out.urls.set(url, id)
@@ -589,6 +589,10 @@ export const teamChats = (cfg: Config): WireChat[] => {
   return readChats(cfg.memDir).filter((c) => !own.has(c.session))
 }
 
+// A teammate's kind and tool name rank and lead hint lines, so only values this code itself writes are kept.
+const TURN_DEAD_KINDS = new Set<string | undefined>(['undone', 'failed-test', 'marked', 'phrase'])
+const TOOLS = new Set<string | undefined>(['Claude Code', 'Copilot', 'Codex', 'Antigravity'])
+
 /** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,
  * with `part_of` edges and links to this machine's checkout of the project's files. Commit and PR links come from teamClaims. */
 export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: WireChat[] = teamChats(cfg)): Part {
@@ -600,12 +604,12 @@ export function teamChatsPart(cfg: Config, repos: string[] = cfg.repos, chats: W
     if (!checkouts.has(c.project)) checkouts.set(c.project, checkoutOf(c.project, repos))
     const repo = checkouts.get(c.project)
     const sid = `tses:${c.owner}/${c.session}`
-    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(c.tool ? { tool: c.tool } : {}) } }))
+    out.nodes.push(fullNode({ id: sid, kind: 'session', title: c.head, text: c.head, at: iso(c.started_at), until: iso(c.ended_at), project: c.project, source: `team:${c.owner}`, extra: { sharedBy: c.owner, team: true, ...imported, project: c.project, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}) } }))
     for (const t of c.turns) {
       const at = iso(t.at)
       const id = `${t.kind === 'summary' ? 'tsum' : 'tturn'}:${c.owner}/${t.id}`
-      const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: t.dead_kind || 'phrase' } : {}
-      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(c.tool ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }))
+      const dead = t.dead_end && t.kind === 'turn' ? { deadEnd: t.dead_text || t.line || 'dead end', deadEndKind: TURN_DEAD_KINDS.has(t.dead_kind) ? t.dead_kind : 'phrase' } : {}
+      out.nodes.push(fullNode({ id, kind: t.kind, title: t.kind === 'summary' ? `Compaction summary of ${c.session}` : t.line, text: t.passages.join('\n\n'), at, project: c.project, source: sid, extra: { sharedBy: c.owner, team: true, ...imported, passages: t.passages, ...(TOOLS.has(c.tool) ? { tool: c.tool } : {}), ...dead, ...(t.kind === 'turn' ? questionFields(t.passages.join('\n')) : {}) } }))
       out.edges.push({ src: id, dst: sid, kind: 'part_of', at, extra: {} })
       if (repo) for (const p of t.paths) out.edges.push({ src: id, dst: `file:${posix.join(normPath(repo), p)}`, kind: 'read', at, extra: {} })
     }

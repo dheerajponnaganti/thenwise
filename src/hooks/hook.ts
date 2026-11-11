@@ -55,6 +55,7 @@ export const cap = (s: string, n: number) => (tokens(s) <= n ? s : `${s.slice(0,
 
 const DEAD = /^\s*dead end \(automatic(?:, ([\w-]+))?\): (.+)$/m
 // Dead ends from what happened. A phrase match is about half right, so it only fills what these leave.
+// A teammate's dead end is what they said happened, so it ranks with the phrase matches.
 const STRUCTURAL = new Set(['undone', 'failed-test', 'marked', 'revert', 'closed-pr'])
 const idOf = (e: string[]) => /^- \[[^\]]*\] (\S+)/.exec(e[0] ?? '')?.[1] ?? '?'
 const dateOf = (e: string[]) => /^\s*date: (\S+)/m.exec(e.join('\n'))?.[1] ?? ''
@@ -78,7 +79,7 @@ export function trimTrace(out: string, path: string): string {
     const lines = entry.split('\n')
     const tag = /^- \[([^\]]*)\]/.exec(lines[0] ?? '')?.[1]?.toLowerCase() ?? ''
     const dead = DEAD.exec(entry)
-    if (dead) (STRUCTURAL.has(dead[1] ?? 'phrase') ? done : said).push(oneLine(lines, `dead end (${dead[1] ?? 'phrase'}): ${dead[2]}`))
+    if (dead) (STRUCTURAL.has(dead[1] ?? 'phrase') && !mate(lines) ? done : said).push(oneLine(lines, `dead end (${dead[1] ?? 'phrase'}): ${dead[2]}`))
     else if (/^(decision|dead_end|rule|finding)$/.test(tag)) kept.push(lines.filter((l) => l.trim() !== '').join('\n'))
     if (tag === 'commit') {
       last ||= `- last changed: ${idOf(lines)} (${dateOf(lines)})`

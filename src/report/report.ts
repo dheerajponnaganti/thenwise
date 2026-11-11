@@ -168,11 +168,13 @@ function ghCreate(r: Report, bodyFile: string): { ok: boolean; out: string } {
 const flagOf = (argv: string[], n: string) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : undefined)
 
 /**
- * `thenwise report [--what <text>] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]`.
+ * `thenwise report [--what <text> | --what -] [--title <text>] [--code E4F2] [--idea] [--send | --open | --copy] [--yes]`.
  * With no action it shows the report and saves it. --send uses gh, else the browser form; --open is the form; --copy the clipboard.
  */
 export async function reportCommand(argv: string[], dir: string = resolveDataDir()): Promise<number> {
-  const r = await buildReport({ what: flagOf(argv, 'what'), title: flagOf(argv, 'title'), code: flagOf(argv, 'code'), kind: argv.includes('--idea') ? 'idea' : 'bug', dir })
+  const what = flagOf(argv, 'what')
+  // `--what -` reads the text from stdin, so an agent's command line never holds it.
+  const r = await buildReport({ what: what === '-' ? readFileSync(0, 'utf8') : what, title: flagOf(argv, 'title'), code: flagOf(argv, 'code'), kind: argv.includes('--idea') ? 'idea' : 'bug', dir })
   const md = toMarkdown(r)
   const file = saveReport(md, dir)
   const action = ['send', 'open', 'copy'].find((a) => argv.includes(`--${a}`))

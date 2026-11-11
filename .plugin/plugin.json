@@ -7,5 +7,5 @@
   "repository": "https://github.com/dheerajponnaganti/thenwise",
   "keywords": ["copilot-cli", "claude-code", "memory", "mcp", "plugin", "sqlite"],
   "hooks": "hooks/copilot.json",
-  "commands": "commands"
+  "commands": "commands-copilot"
 }

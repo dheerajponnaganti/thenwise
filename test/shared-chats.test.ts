@@ -674,6 +674,18 @@ test('#100: a chat that really left a readable archive is still unshared', needs
   }
 })
 
+test('#120: a chat last written before the project\'s since date is skipped without parsing it', needs, async () => {
+  const t = await team()
+  try {
+    t.share(t.a, '2099-01-01')
+    // Not gzip: building this chat throws, so only the skip by the manifest time keeps the push alive.
+    writeFileSync(archived(t.a.cfg).find((x) => x.session === 'c1')!.path, 'not a chat')
+    assert.match(await pushShared(t.a.cfg), /^0 chats pushed/)
+  } finally {
+    await t.stop()
+  }
+})
+
 test('T18-H6: unshare-chats --pause keeps the server copy and sends nothing new; unshare removes the project', needs, async () => {
   const t = await team()
   try {

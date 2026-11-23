@@ -145,6 +145,14 @@ test('S6-B7: only Read has a hook entry, so Grep and Glob get no hint', () => {
   assert.equal(runHook('read', { tool_name: 'Grep', tool_input: {}, session_id: 's' }, withStore()), '')
 })
 
+test('#151: Claude Code and Codex give every hook 5 seconds, so a slow node start does not skip it', () => {
+  const claude = Object.values(JSON.parse(readFileSync('hooks/hooks.json', 'utf8')).hooks).flat() as any[]
+  const codex = JSON.stringify(JSON.parse(readFileSync('hooks/codex.json', 'utf8')))
+  const timeouts = [...claude.flatMap((m) => m.hooks.map((h: any) => h.timeout)), ...[...codex.matchAll(/"timeout":(\d+)/g)].map((m) => Number(m[1]))]
+  assert.ok(timeouts.length >= 12)
+  for (const s of timeouts) assert.equal(s, 5)
+})
+
 test('A7: a hook fed garbage still exits 0 and prints nothing to the chat', () => {
   const dir = tempDir()
   for (const name of ['session-start', 'read', 'nope']) {

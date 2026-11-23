@@ -4,14 +4,14 @@
       {
         "matcher": "^(Write|Edit|MultiEdit)$",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "plan"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "plan"], "timeout": 5 }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "prompt"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "prompt"], "timeout": 5 }
         ]
       }
     ],
@@ -19,14 +19,14 @@
       {
         "matcher": "startup|resume|clear|fork|compact",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-start"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-start"], "timeout": 5 }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop"], "timeout": 5 }
         ]
       }
     ],
@@ -34,14 +34,14 @@
       {
         "matcher": "rate_limit|overloaded|server_error|billing_error",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop-failure"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "stop-failure"], "timeout": 5 }
         ]
       }
     ],
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-end"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "session-end"], "timeout": 5 }
         ]
       }
     ],
@@ -49,7 +49,7 @@
       {
         "matcher": "^Bash$",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 5 }
         ]
       }
     ],
@@ -57,13 +57,13 @@
       {
         "matcher": "^Read$",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "read"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "read"], "timeout": 5 }
         ]
       },
       {
         "matcher": "^(Write|Edit|MultiEdit|Bash)$",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 3 }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "hook", "post"], "timeout": 5 }
         ]
       }
     ]

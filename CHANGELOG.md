@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Claude Code and Codex now give each Thenwise hook 5 seconds instead of 3. On a slow node start, such as right after a restart or with antivirus scanning each launch, the hook waits instead of being skipped with "didn't answer in time". A normal hook still takes about a tenth of a second.
+
 ## 0.3.3
 
 - `thenwise off` now holds back everything from a paused folder, at once: search, the memory tools, hooks, the session brief, vault notes, rule proposals, decision rechecks, distill and the inbox. It covers folders outside a repository and any spelling of a path, such as a symlink, and a running memory server sees `off` and `on` at once. `thenwise on` brings everything back unchanged.

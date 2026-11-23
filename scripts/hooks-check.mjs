@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks hooks/hooks.json (Claude Code) and hooks/copilot.json (Copilot CLI) against the CLI: every entry runs `thenwise hook <name>` from the plugin folder, names a hook the
-// CLI handles, sits under a known event and keeps the 3 s timeout. Exits 1 and lists each problem.
+// CLI handles, sits under a known event and keeps a timeout of at most 5 s (3 s for Copilot). Exits 1 and lists each problem.
 
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -37,7 +37,7 @@ for (const [event, groups] of Object.entries(hooks)) {
       if (h.type !== 'command') problems.push(`${event}: type ${h.type}, expected command`)
       if (!name) problems.push(`${event}: command ${JSON.stringify(h.command)} does not run "thenwise hook <name>" from the plugin folder`)
       else if (!handled.has(name)) problems.push(`${event}: hook "${name}" is not handled in src/hooks/hook.ts`)
-      if (!(h.timeout > 0 && h.timeout <= 3)) problems.push(`${event}: timeout ${h.timeout}, expected 1 to 3 seconds`)
+      if (!(h.timeout > 0 && h.timeout <= 5)) problems.push(`${event}: timeout ${h.timeout}, expected 1 to 5 seconds`)
     }
   }
 }
@@ -57,7 +57,7 @@ for (const [event, entries] of Object.entries(codexHooks)) {
     const win = /^node "%PLUGIN_ROOT%\\dist\\cli\.js" hook ([a-z-]+)$/.exec(h.commandWindows ?? '')?.[1]
     if (!win) problems.push(`codex.json ${event}: commandWindows ${h.commandWindows} must run the plugin's CLI`)
     else if (win !== name) problems.push(`codex.json ${event}: commandWindows runs "${win}", command runs "${name}"`)
-    if (!(h.timeout > 0 && h.timeout <= 3)) problems.push(`codex.json ${event}: timeout ${h.timeout}, expected 1 to 3 seconds`)
+    if (!(h.timeout > 0 && h.timeout <= 5)) problems.push(`codex.json ${event}: timeout ${h.timeout}, expected 1 to 5 seconds`)
   }
 }
 

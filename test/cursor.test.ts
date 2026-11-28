@@ -163,3 +163,26 @@ test('the Cursor plugin entry: its manifest names a Cursor-format hooks file wit
   const { PLUGIN_FILES } = await import('../scripts/plugin-folder.mjs')
   assert.ok(PLUGIN_FILES.includes('.cursor-plugin'))
 })
+
+test('doctor sees a Cursor install, and notes when Cursor also loads Claude Code\'s copy, so each hook runs twice', async () => {
+  const { runDoctor } = await import('../src/setup/doctor.ts')
+  const home = mkdtempSync(join(tmpdir(), 'tw-cursor-doc-'))
+  mkdirSync(join(home, '.cursor/plugins/cache/thenwise/thenwise'), { recursive: true })
+  const find = async (name: string) => (await runDoctor(home, { gh: () => true, mcp: () => true })).find((c) => c.name === name)
+  assert.equal((await find('plugin'))!.ok, true)
+  assert.equal(await find('cursor'), undefined, 'one install: nothing to say')
+  mkdirSync(join(home, '.claude/plugins'), { recursive: true })
+  writeFileSync(join(home, '.claude/plugins/installed_plugins.json'), JSON.stringify({ plugins: { 'thenwise@thenwise': [{}] } }))
+  const both = (await find('cursor')) as { ok: boolean; warn?: boolean; detail: string }
+  assert.equal(both.ok, true)
+  assert.equal(both.warn, true)
+  assert.match(both.detail, /runs twice/)
+})
+
+test('#153: the memory server ignores a ${workspaceFolder} the Cursor CLI never filled in', async () => {
+  const { filled } = await import('../src/server/stdio.ts')
+  assert.equal(filled('${workspaceFolder}'), undefined)
+  assert.equal(filled('/work/${env:HOME}/x'), undefined)
+  assert.equal(filled('/work/repo'), '/work/repo')
+  assert.equal(filled(undefined), undefined)
+})

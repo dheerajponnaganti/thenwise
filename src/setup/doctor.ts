@@ -76,7 +76,17 @@ function pluginRegistered(home: string): boolean {
   if (dirs(codex).some((m) => dirs(join(codex, m)).some((p) => /thenwise/i.test(p)))) return true
 
   // Antigravity: one plugins folder, shared by its CLI, app and IDE.
-  return dirs(join(home, '.gemini', 'config', 'plugins')).some((p) => /thenwise/i.test(p))
+  if (dirs(join(home, '.gemini', 'config', 'plugins')).some((p) => /thenwise/i.test(p))) return true
+
+  return cursorPlugin(home)
+}
+
+/** Cursor's own install: plugins/cache/<marketplace>/<plugin>, or a local folder plugins/local/<plugin>. */
+export function cursorPlugin(home: string): boolean {
+  const root = join(home, '.cursor', 'plugins')
+  const dirs = (d: string) => listDir(d).filter((e) => e.isDirectory()).map((e) => e.name)
+
+  return dirs(join(root, 'cache')).some((m) => dirs(join(root, 'cache', m)).some((p) => /thenwise/i.test(p))) || dirs(join(root, 'local')).some((p) => /thenwise/i.test(p))
 }
 
 export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: string; gh?: () => boolean; git?: () => boolean; mcp?: () => boolean } = {}): Promise<Check[]> {
@@ -124,7 +134,13 @@ export async function runDoctor(home: string = homedir(), opts: { nodeVersion?: 
     checks.push({ name: 'disk', ok: true, warn: short, detail: short ? `${mb(room.free)} free, store is ${mb(room.store)}: a rebuild needs about ${mb(room.need)}. Free some space.` : `${mb(room.free)} free, store is ${mb(room.store)}` })
   }
 
-  add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI, Codex or Antigravity', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise. In Antigravity run: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin')
+  add('plugin', pluginRegistered(home), 'registered with Claude Code, Copilot CLI, Codex, Antigravity or Cursor', 'The Thenwise plugin is not registered. In Claude Code run: /plugin marketplace add dheerajponnaganti/thenwise, then /plugin install thenwise@thenwise. In Copilot CLI run: copilot plugin install thenwise@thenwise. In Codex run: codex plugin add thenwise@thenwise. In Antigravity run: agy plugin install https://github.com/dheerajponnaganti/thenwise/tree/main/plugin. In the Cursor agent run: /plugin marketplace add https://github.com/dheerajponnaganti/thenwise, then install thenwise.')
+  // Cursor also loads Claude Code's plugins, so with its own install too each Cursor hook runs twice (a session starts once).
+  let inClaude = false
+  try {
+    inClaude = /thenwise/i.test(readFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), 'utf8'))
+  } catch {} // no Claude Code plugins
+  if (inClaude && cursorPlugin(home)) checks.push({ name: 'cursor', ok: true, warn: true, detail: "Thenwise is installed in Cursor and in Claude Code, whose plugins Cursor also loads, so each Cursor hook runs twice. Thenwise answers a session's start once; to stop the rest, remove one of the two." })
   // Codex runs plugin hooks only once the person trusts them in /hooks, and asks again after every plugin update.
   const codexTrust = codexHooksTrusted(home)
   if (codexTrust !== undefined) add('codex hooks', codexTrust, 'trusted in Codex', "Codex has not trusted Thenwise's hooks, so automatic sync and hook context are off there; memory tools still work. In Codex, open /hooks and trust them.")

@@ -21,7 +21,7 @@ export const OWNER = [/\/Users\/dheeraj/i, /\/home\/dheeraj/i, /carapace-private
 export const NAME = /dheeraj|ponnaganti/i
 // img.shields.io/github/<kind>/.../<owner>/<repo> is a badge for the repo, the same as a github.com link.
 const HANDLE = /(github\.com\/|raw\.githubusercontent\.com\/|cdn\.jsdelivr\.net\/gh\/|img\.shields\.io\/github\/(?:[\w.-]+\/)*?|^|[\s("'`<[@])dheerajponnaganti(\/[\w.-]+)?/gim
-export const NAME_OK = new Set(['LICENSE', 'package.json', 'package-lock.json', 'CHANGELOG.md', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.plugin/plugin.json', '.codex-plugin/plugin.json', '.antigravity-plugin/plugin.json', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'])
+export const NAME_OK = new Set(['LICENSE', 'package.json', 'package-lock.json', 'CHANGELOG.md', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.plugin/plugin.json', '.codex-plugin/plugin.json', '.antigravity-plugin/plugin.json', '.cursor-plugin/plugin.json', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'])
 
 // Eval data never enters the repo: question sets, answers, gold sets, chat archives and stores.
 const DATA = [/(^|\/)answers[^/]*\.jsonl/i, /(^|\/)questions[^/]*\.jsonl/i, /(^|\/)gold[^/]*\.jsonl/i, /\.jsonl\.gz$/i, /(^|\/)graph[^/]*\.db$/i]

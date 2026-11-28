@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks hooks/hooks.json (Claude Code) and hooks/copilot.json (Copilot CLI) against the CLI: every entry runs `thenwise hook <name>` from the plugin folder, names a hook the
+// Checks hooks/hooks.json (Claude Code), hooks/copilot.json (Copilot CLI) and hooks/cursor.json (Cursor) against the CLI: every entry runs `thenwise hook <name>` from the plugin folder, names a hook the
 // CLI handles, sits under a known event and keeps a timeout of at most 5 s (3 s for Copilot). Exits 1 and lists each problem.
 
 import { readFileSync } from 'node:fs'
@@ -101,8 +101,33 @@ for (const [event, entries] of Object.entries(copilot.hooks)) {
   }
 }
 
+// Cursor: its own format, the command a shell string from the plugin folder. Cursor blocks an action when a permission hook
+// (preToolUse, before*) prints anything but JSON, so Thenwise registers none: a broken install must never block an edit.
+const CURSOR_EVENTS = new Set(['sessionStart', 'postToolUse', 'postToolUseFailure', 'stop', 'sessionEnd'])
+const cursor = JSON.parse(readFileSync(join(ROOT, 'hooks/cursor.json'), 'utf8'))
+if (cursor.version !== 1) problems.push('cursor.json: version must be 1')
+let cursorCount = 0
+for (const [event, entries] of Object.entries(cursor.hooks)) {
+  if (/^(pre|before)/.test(event)) problems.push(`cursor.json: ${event} is a permission hook and blocks Cursor when Thenwise is broken`)
+  else if (!CURSOR_EVENTS.has(event)) problems.push(`cursor.json ${event}: not an event Thenwise uses`)
+  for (const h of entries) {
+    cursorCount++
+    if (h.matcher !== undefined) {
+      try {
+        new RegExp(h.matcher)
+      } catch {
+        problems.push(`cursor.json ${event}: matcher ${h.matcher} is not a valid pattern`)
+      }
+    }
+    const name = /^node "\$\{CURSOR_PLUGIN_ROOT\}\/dist\/cli\.js" hook ([a-z-]+)$/.exec(h.command ?? '')?.[1]
+    if (!name) problems.push(`cursor.json ${event}: command ${h.command} must run the plugin's CLI`)
+    else if (!handled.has(name)) problems.push(`cursor.json ${event}: hook "${name}" is not handled in src/hooks/hook.ts`)
+    if (!(h.timeout > 0 && h.timeout <= 5)) problems.push(`cursor.json ${event}: timeout ${h.timeout}, expected 1 to 5 seconds`)
+  }
+}
+
 if (problems.length) {
   console.error(`hooks check: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n${problems.map((p) => `  ${p}`).join('\n')}`)
   process.exit(1)
 }
-console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} Claude Code, ${Object.values(copilot.hooks).flat().length} Copilot CLI, ${codexCount} Codex and ${agyCount} Antigravity hooks fine`)
+console.log(`hooks check: ${Object.values(hooks).flat().flatMap((g) => g.hooks).length} Claude Code, ${Object.values(copilot.hooks).flat().length} Copilot CLI, ${codexCount} Codex, ${agyCount} Antigravity and ${cursorCount} Cursor hooks fine`)

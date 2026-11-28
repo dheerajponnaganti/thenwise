@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook session-start",
+        "timeout": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "^Read$",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook read",
+        "timeout": 5
+      },
+      {
+        "matcher": "^(Write|Shell)$",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook post",
+        "timeout": 5
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "matcher": "^Shell$",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook post",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook stop",
+        "timeout": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/cli.js\" hook session-end",
+        "timeout": 5
+      }
+    ]
+  }
+}

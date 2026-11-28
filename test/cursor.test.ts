@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
@@ -149,4 +149,17 @@ test('two Thenwise installs in Cursor run every hook: the second session start o
   const second = JSON.parse(hookRun('session-start', cursorPayload('sessionStart', { session_id: 'cur-2', conversation_id: 'cur-2' }), dir).stdout)
   assert.match(first.additional_context, /memory_\* tools/)
   assert.deepEqual(second, {})
+})
+
+test('the Cursor plugin entry: its manifest names a Cursor-format hooks file with no permission hook, and ships in plugin/', async () => {
+  const manifest = JSON.parse(readFileSync('.cursor-plugin/plugin.json', 'utf8'))
+  assert.equal(manifest.hooks, './hooks/cursor.json')
+  assert.equal(manifest.version, JSON.parse(readFileSync('package.json', 'utf8')).version)
+  const { version, hooks } = JSON.parse(readFileSync('hooks/cursor.json', 'utf8'))
+  assert.equal(version, 1)
+  assert.ok(Object.keys(hooks).every((e) => !/^(pre|before)/.test(e)), 'a broken install must never block a Cursor action')
+  for (const h of Object.values(hooks).flat() as any[]) assert.match(h.command, /^node "\$\{CURSOR_PLUGIN_ROOT\}\/dist\/cli\.js" hook [a-z-]+$/)
+  // @ts-expect-error a plain script with no types
+  const { PLUGIN_FILES } = await import('../scripts/plugin-folder.mjs')
+  assert.ok(PLUGIN_FILES.includes('.cursor-plugin'))
 })

@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { listDir } from '../core/home.ts'
+import { cursorTool } from './cursor.ts'
 
 export const COPILOT_ENTRYPOINT = 'copilot-cli'
 
@@ -12,6 +13,9 @@ export const copilotDir = (home: string) => process.env.COPILOT_HOME || join(hom
 
 // Claude Code names a project folder by its path with every other character turned into "-"; Copilot chats join the same key.
 export const projectKey = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, '-')
+
+// Cursor's event names, as Claude Code spells them.
+const CURSOR_EVENTS: Record<string, string> = { sessionStart: 'SessionStart', sessionEnd: 'SessionEnd', beforeSubmitPrompt: 'UserPromptSubmit', preToolUse: 'PreToolUse', postToolUse: 'PostToolUse', postToolUseFailure: 'PostToolUseFailure', stop: 'Stop', preCompact: 'PreCompact' }
 
 type Tool = { name: string; input: Record<string, unknown> }
 
@@ -59,6 +63,19 @@ export function asClaudeTool(name: string, args: unknown): Tool[] {
 
 /** A hook payload in Claude Code's fields and tool names. Claude Code's own payloads come back as they were. */
 export function claudeHookInput(raw: Record<string, any>): Record<string, any> {
+  // Cursor: one payload of its own for every hook, whichever file registered it. Its folder is the first workspace root (cwd
+  // is absent or empty), its events are camelCase, and its email never goes further than here.
+  if (typeof raw.cursor_version === 'string') {
+    const { user_email: _email, workspace_roots, conversation_id, hook_event_name, ...rest } = raw
+    const event = CURSOR_EVENTS[hook_event_name] ?? hook_event_name
+    raw = { ...rest, session_id: raw.session_id ?? conversation_id, cwd: raw.cwd || (Array.isArray(workspace_roots) ? (workspace_roots[0] ?? '') : ''), hook_event_name: event, ...(event === 'SessionStart' ? { source: 'startup' } : {}) }
+    if (typeof raw.tool_name === 'string') {
+      const t = cursorTool(raw.tool_name, raw.tool_input)
+      raw = { ...raw, tool_name: t.name, tool_input: t.input }
+    }
+
+    return raw
+  }
   // Antigravity: camelCase, its folders as a list, and the prompt on every model call of a turn: only the first one counts.
   if (raw.conversationId !== undefined) {
     const { toolCall, invocationNum, lastUserInput, workspacePaths, transcriptPath, conversationId } = raw

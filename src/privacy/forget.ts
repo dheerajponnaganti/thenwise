@@ -14,7 +14,7 @@ import { headCwd } from '../hooks/handoff.ts'
 import { takeLock } from '../ingest/lock.ts'
 import { antigravityDirs, antigravitySources } from '../ingest/antigravity.ts'
 import { codexDir, codexSources } from '../ingest/codex.ts'
-import { cursorSources } from '../ingest/cursor.ts'
+import { cursorRunsFile, cursorSources } from '../ingest/cursor.ts'
 import { copilotDir, copilotSources } from '../ingest/copilot.ts'
 import type { Config } from '../ingest/config.ts'
 import { tighten } from './perms.ts'
@@ -211,6 +211,8 @@ export async function forget(cfg: Config, target: string, opts: ForgetOpts = {})
     for (const id of sessions) {
       const own = `${id.replace(/[^\w-]/g, '_')}.`
       for (const f of existsSync(stateDir) ? readdirSync(stateDir) : []) if (f.startsWith(own)) (rmSync(join(stateDir, f)), state++)
+      const runs = cursorRunsFile(cfg.memDir, id)
+      if (existsSync(runs)) (rmSync(runs), state++)
     }
 
     const db = join(cfg.memDir, 'graph.db')

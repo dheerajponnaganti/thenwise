@@ -1,12 +1,15 @@
 // Cursor: its agent transcripts (projects/<folder key>/agent-transcripts/<id>/<id>.jsonl, written by the CLI and the IDE's
 // agent) in Claude Code's transcript shape, so one pipeline (masking, [no-memory], forget, search) serves them too. Cursor's
 // own files are only ever read. The transcripts hold prompts, replies and tool calls with their inputs: no tool results,
-// no exit codes and a time only on each prompt, to the minute.
+// no exit codes and a time only on each prompt, to the minute. Whether a shell command failed comes from Thenwise's own
+// hook, which records each run in cursor-runs/<chat id>.jsonl.
 
-import { existsSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join, parse, sep } from 'node:path'
 
 import { listDir } from '../core/home.ts'
+import { maskSecrets } from '../core/secrets.ts'
 import { projectKey } from './copilot.ts'
 
 export const CURSOR_ENTRYPOINT = 'cursor'
@@ -70,11 +73,59 @@ export function cursorTool(name: string, input: unknown): { name: string; input:
   return { name, input: a }
 }
 
-/** Turns one transcript line into Claude Code transcript lines. Each tool call gets an empty result right away, since the file
- * keeps none, so no step reads as one the chat stopped in. Replies take their prompt's time. */
-export function cursorConverter(sessionId: string, cwd: string): (line: string) => string[] {
+export const cursorRunsFile = (memDir: string, sessionId: string) => join(memDir, 'cursor-runs', `${sessionId.replace(/[^\w.-]/g, '_')}.jsonl`)
+const commandHash = (cmd: string) => createHash('sha256').update(cmd).digest('hex').slice(0, 16)
+const ERROR_MAX = 4000
+
+/** From the post hook: one line per shell run in a Cursor chat. The command is kept only as a hash, to match its call in the
+ * transcript (which has no call ids); a failure keeps its error text, masked. */
+export function recordCursorRun(memDir: string, sessionId: string, run: { id?: unknown; command: string; error?: unknown }) {
+  const file = cursorRunsFile(memDir, sessionId)
+  mkdirSync(join(memDir, 'cursor-runs'), { recursive: true, mode: 0o700 })
+  const failed = typeof run.error === 'string'
+  const out = failed ? maskSecrets((run.error as string).slice(0, ERROR_MAX)).text : undefined
+  appendFileSync(file, `${JSON.stringify({ id: typeof run.id === 'string' ? run.id : undefined, cmd: commandHash(run.command), failed, out })}\n`, { mode: 0o600 })
+}
+
+/** The recorded runs of one chat, in order, per command. A run two installs both recorded counts once. */
+function runsOf(memDir: string, sessionId: string): Map<string, { failed: boolean; out?: string }[]> {
+  const byCmd = new Map<string, { failed: boolean; out?: string }[]>()
+  let text = ''
+  try {
+    text = readFileSync(cursorRunsFile(memDir, sessionId), 'utf8')
+  } catch {
+    return byCmd // no hook ran: every result stays empty
+  }
+  const ids = new Set<string>()
+  for (const line of text.split('\n')) {
+    let r: any
+    try {
+      r = JSON.parse(line)
+    } catch {
+      continue // an empty or torn last line
+    }
+    if (typeof r?.cmd !== 'string' || (r.id && ids.has(r.id))) continue
+    if (r.id) ids.add(r.id)
+    byCmd.set(r.cmd, [...(byCmd.get(r.cmd) ?? []), { failed: r.failed === true, out: typeof r.out === 'string' ? r.out : undefined }])
+  }
+
+  return byCmd
+}
+
+/** Turns one transcript line into Claude Code transcript lines. Each tool call gets a result right away, since the file keeps
+ * none, so no step reads as one the chat stopped in: empty, or a shell command's error when the hook recorded it failing.
+ * The nth run of a command is matched to the nth recorded run of it. Replies take their prompt's time.
+ * shortcut: a chat read from its tail only (the live brief of a very long chat) can match runs to the wrong calls; fine while
+ * that brief only names the last steps. */
+export function cursorConverter(sessionId: string, cwd: string, memDir = ''): (line: string) => string[] {
   let n = 0
   let at: string | undefined
+  const runs = memDir ? runsOf(memDir, sessionId) : new Map<string, { failed: boolean; out?: string }[]>()
+  const result = (t: any) => {
+    const run = t.name === 'Bash' && typeof t.input.command === 'string' ? runs.get(commandHash(t.input.command))?.shift() : undefined
+
+    return run?.failed ? { type: 'tool_result', tool_use_id: t.id, content: run.out ?? '', is_error: true } : { type: 'tool_result', tool_use_id: t.id, content: '' }
+  }
 
   return (line) => {
     let d: any
@@ -103,7 +154,7 @@ export function cursorConverter(sessionId: string, cwd: string): (line: string) 
     if (!blocks.length) return []
     const tools = blocks.filter((b: any) => b.type === 'tool_use')
 
-    return tools.length ? [row('assistant', blocks), row('user', tools.map((t: any) => ({ type: 'tool_result', tool_use_id: t.id, content: '' })))] : [row('assistant', blocks)]
+    return tools.length ? [row('assistant', blocks), row('user', tools.map(result))] : [row('assistant', blocks)]
   }
 }
 

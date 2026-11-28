@@ -30,7 +30,7 @@ import { EXPIRY_DAYS, overdue, pausedNotes, readNotes } from '../capture/notes.t
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
-import { cursorSources } from '../ingest/cursor.ts'
+import { cursorSources, recordCursorRun } from '../ingest/cursor.ts'
 import { copilotSources } from '../ingest/copilot.ts'
 
 export const TRACE_TOKENS = 600
@@ -657,6 +657,8 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
         return ''
       }
       const cmd = input.tool_input?.command
+      // Cursor's transcript keeps no exit codes: record whether this run failed, for the archive to read.
+      if (cursorHost && typeof cmd === 'string' && typeof input.session_id === 'string' && input.session_id) recordCursorRun(env.dir, input.session_id, { id: input.tool_use_id, command: cmd, error: input.hook_event_name === 'PostToolUseFailure' ? String(input.error_message ?? '') : undefined })
       if (typeof cmd !== 'string' || !cwd) return ''
       const target = readTarget(cmd, cwd)
       const plans = hasPlanFiles(cwd)

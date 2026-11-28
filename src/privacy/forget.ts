@@ -14,6 +14,7 @@ import { headCwd } from '../hooks/handoff.ts'
 import { takeLock } from '../ingest/lock.ts'
 import { antigravityDirs, antigravitySources } from '../ingest/antigravity.ts'
 import { codexDir, codexSources } from '../ingest/codex.ts'
+import { cursorSources } from '../ingest/cursor.ts'
 import { copilotDir, copilotSources } from '../ingest/copilot.ts'
 import type { Config } from '../ingest/config.ts'
 import { tighten } from './perms.ts'
@@ -88,7 +89,7 @@ function chatsOf(cfg: Config): Chat[] {
       }
     }
   }
-  for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home)]) {
+  for (const c of [...copilotSources(cfg.home), ...codexSources(cfg.home), ...antigravitySources(cfg.home), ...cursorSources(cfg.home)]) {
     cwds.set(`${c.rel.split('/')[0]}/${c.id}`, c.cwd)
     add(c.rel.split('/')[0]!, c.id)
   }

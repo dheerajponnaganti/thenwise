@@ -16,6 +16,7 @@ import { globMatch, isOff } from './config.ts'
 import type { Config } from './config.ts'
 import { antigravityConverter, antigravitySources } from './antigravity.ts'
 import { codexConverter, codexSources } from './codex.ts'
+import { cursorConverter, cursorSources } from './cursor.ts'
 import { copilotConverter, copilotSources } from './copilot.ts'
 import { withLock } from './lock.ts'
 import { isMarked } from './parts.ts'
@@ -331,6 +332,7 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   other('copilot', copilotSources(cfg.home), copilotConverter)
   other('codex', codexSources(cfg.home), codexConverter)
   other('antigravity', antigravitySources(cfg.home), antigravityConverter)
+  other('cursor', cursorSources(cfg.home), cursorConverter)
   const res: ArchiveResult = { seen: 0, archived: 0, remasked: 0, newer: 0, skipped: 0, excluded: 0, failed: [], failures: [], excludedChats: 0, off: 0, leftover: [], pruned: [], unparsed: [], bytes: 0 }
   if (cfg.off) return { ...res, off: sources.size }
   mkdirSync(out, { recursive: true, mode: 0o700 })

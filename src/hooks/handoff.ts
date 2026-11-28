@@ -11,6 +11,7 @@ import { ago } from '../core/time.ts'
 import { type Config, globMatch, isOff } from '../ingest/config.ts'
 import { antigravityConverter, antigravitySources } from '../ingest/antigravity.ts'
 import { codexConverter, codexSources } from '../ingest/codex.ts'
+import { cursorConverter, cursorSources } from '../ingest/cursor.ts'
 import { copilotConverter, copilotSources, projectKey } from '../ingest/copilot.ts'
 import { markedAnswers, markedDeadEnd, markedQuestions, questionId, structural } from '../ingest/deadend.ts'
 import { trigramSim } from '../capture/similar.ts'
@@ -26,12 +27,13 @@ const WHOLE = 25 << 20 // a chat up to this size is read whole (masking and pars
 const HEAD = 64 << 10 // a longer one: its start (the task) ...
 const TAIL = 8 << 20 // ... and its last part (where it stopped)
 
-export type Tool = 'Claude Code' | 'Copilot' | 'Codex' | 'Antigravity'
+export type Tool = 'Claude Code' | 'Copilot' | 'Codex' | 'Antigravity' | 'Cursor'
 // The other tools' chats, found by their own readers and turned into Claude Code's lines at the door.
 const OTHERS: { tool: Exclude<Tool, 'Claude Code'>; sources: (home: string) => { rel: string; path: string; id: string; cwd: string }[]; convert: (id: string, cwd: string) => (line: string) => string[] }[] = [
   { tool: 'Copilot', sources: copilotSources, convert: copilotConverter },
   { tool: 'Codex', sources: codexSources, convert: codexConverter },
   { tool: 'Antigravity', sources: antigravitySources, convert: antigravityConverter },
+  { tool: 'Cursor', sources: cursorSources, convert: cursorConverter },
 ]
 
 export interface LiveChat {

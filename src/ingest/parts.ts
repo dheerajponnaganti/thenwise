@@ -13,6 +13,7 @@ import type { TrailerItem } from '../capture/notes.ts'
 import { globMatch } from './config.ts'
 import { ANTIGRAVITY_ENTRYPOINT } from './antigravity.ts'
 import { CODEX_ENTRYPOINT } from './codex.ts'
+import { CURSOR_ENTRYPOINT } from './cursor.ts'
 import { COPILOT_ENTRYPOINT } from './copilot.ts'
 import type { Config } from './config.ts'
 import { skipReason } from '../vault/user.ts'
@@ -142,7 +143,7 @@ export function sessionPart(s: Session, key: string, sfx = ''): SessionPart {
   // A subagent file adds turns to its parent, whose own file gives the session node.
   const dirs = editDirs(s)
   // A chat from another coding tool says so, so answers can name where they came from.
-  const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : {}
+  const tool = s.entrypoint === COPILOT_ENTRYPOINT ? { tool: 'Copilot' } : s.entrypoint === CODEX_ENTRYPOINT ? { tool: 'Codex' } : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? { tool: 'Antigravity' } : s.entrypoint === CURSOR_ENTRYPOINT ? { tool: 'Cursor' } : {}
   if (!s.sub) node({ id: sid, kind: 'session', title: first.split('\n')[0]!.slice(0, 200), text: first.slice(0, 2000), at: s.start, until: s.end, project: key, source: `${key}/${s.id}.jsonl`, extra: { cwd: s.cwd, ...tool, ...(s.capped ? { capped: s.capped } : {}), ...(dirs.length ? { editDirs: dirs } : {}), ...(s.cost ? { cost: s.cost, costs: s.costs } : {}) } })
   const done = structural(s.turns)
   const facts = sessionFacts(s.turns, s.cwd ?? '')
@@ -614,7 +615,7 @@ export const teamChats = (cfg: Config): WireChat[] => {
 
 // A teammate's kind and tool name rank and lead hint lines, so only values this code itself writes are kept.
 const TURN_DEAD_KINDS = new Set<string | undefined>(['undone', 'failed-test', 'marked', 'phrase'])
-const TOOLS = new Set<string | undefined>(['Claude Code', 'Copilot', 'Codex', 'Antigravity'])
+const TOOLS = new Set<string | undefined>(['Claude Code', 'Copilot', 'Codex', 'Antigravity', 'Cursor'])
 
 /** Chats teammates shared, from team-chats.db (written by `team sync`): a session, its turns and compaction summaries,
  * with `part_of` edges and links to this machine's checkout of the project's files. Commit and PR links come from teamClaims. */

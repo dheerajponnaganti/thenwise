@@ -16,6 +16,7 @@ export const PLUGIN_FILES = [
   '.plugin',
   '.codex-plugin',
   '.antigravity-plugin',
+  '.cursor-plugin',
   'hooks',
   'hooks.json',
   'mcp_config.json',

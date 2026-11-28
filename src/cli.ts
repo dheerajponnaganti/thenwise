@@ -8,8 +8,9 @@ for (const s of [process.stdout, process.stderr]) (s as unknown as { _handle?: {
 // The hooks on most tool calls stop here when they have nothing to do, before SQLite and the store code load.
 if (process.argv[2] === 'hook' && ['post', 'read', 'prompt', 'stop', 'stop-failure'].includes(process.argv[3]!)) {
   const { hookInput, nothingToDo } = await import('./hooks/entry.ts')
-  if (nothingToDo(process.argv[3]!, await hookInput())) {
-    if (process.env.ANTIGRAVITY_CONVERSATION_ID) console.log('{}')
+  const input = await hookInput()
+  if (nothingToDo(process.argv[3]!, input)) {
+    if (process.env.ANTIGRAVITY_CONVERSATION_ID || typeof input.cursor_version === 'string') console.log('{}')
     process.exit(0)
   }
 }

@@ -174,7 +174,8 @@ if (cmd === 'hook') {
   const { hookInput } = await import('./hooks/entry.ts')
   const out = runHook(vaultArg ?? '', vaultArg === 'sync-run' || vaultArg === 'status' ? {} : await hookInput(), { dir: resolveDataDir(), cli: process.argv[1]! })
   // Antigravity reads a hook's stdout as JSON, so saying nothing is printed as an empty object.
-  if (out || process.env.ANTIGRAVITY_CONVERSATION_ID) process.stdout.write(`${out || '{}'}\n`)
+  // Cursor records empty output as a failed run, so it gets an empty object too.
+  if (out || process.env.ANTIGRAVITY_CONVERSATION_ID || (vaultArg !== 'sync-run' && typeof (await hookInput()).cursor_version === 'string')) process.stdout.write(`${out || '{}'}\n`)
   process.exit(0)
 }
 

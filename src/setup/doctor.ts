@@ -49,7 +49,7 @@ async function sqliteFts5(): Promise<boolean> {
 function mcpStarts(home: string): boolean {
   const cli = fileURLToPath(new URL(`../cli${extname(fileURLToPath(import.meta.url))}`, import.meta.url))
   const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'doctor', version: '1' } } }
-  const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, HOME: home } })
+  const r = spawnSync(process.execPath, [cli, 'mcp'], { input: `${JSON.stringify(init)}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`, encoding: 'utf8', timeout: 5000, windowsHide: true, env: { ...process.env, HOME: home, THENWISE_SYNC: 'off' } }) // a check, never a sync
 
   return /"memory_search"/.test(r.stdout ?? '')
 }

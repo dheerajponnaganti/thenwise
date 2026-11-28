@@ -9,6 +9,7 @@ import { errFields, logger } from '../core/log.ts'
 import { normPath } from '../core/vault-index.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
+import { cursorSources } from '../ingest/cursor.ts'
 import { copilotSources } from '../ingest/copilot.ts'
 
 export interface FoundProject {
@@ -89,7 +90,7 @@ function scanProjects(claudeDir: string, sample: number): FoundProject[] {
       return []
     }
   }
-  for (const c of [copilotSources, codexSources, antigravitySources].flatMap(sources)) {
+  for (const c of [copilotSources, codexSources, antigravitySources, cursorSources].flatMap(sources)) {
     if (/^([a-zA-Z]:)?[\\/]?$/.test(c.cwd)) continue
     const name = c.rel.split('/')[0]!
     const p = out.find(({ key }) => key === name)

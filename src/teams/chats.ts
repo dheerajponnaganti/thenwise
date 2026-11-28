@@ -20,6 +20,7 @@ import { isOff } from '../ingest/config.ts'
 import type { Config } from '../ingest/config.ts'
 import { ANTIGRAVITY_ENTRYPOINT } from '../ingest/antigravity.ts'
 import { CODEX_ENTRYPOINT } from '../ingest/codex.ts'
+import { CURSOR_ENTRYPOINT } from '../ingest/cursor.ts'
 import { COPILOT_ENTRYPOINT } from '../ingest/copilot.ts'
 import { githubSlug, real, repoRoot, sessionRepo } from '../ingest/repos.ts'
 import { chatLines, parseSession } from '../ingest/transcript.ts'
@@ -386,7 +387,7 @@ export function buildChat(cfg: Config, repo: string, c: Candidate, scrub: (t: st
     })
   }
   if (!turns.length) return { skip: 'empty' }
-  const unit: Unit = { project: projectKey(repo), tool: s.entrypoint === COPILOT_ENTRYPOINT ? 'Copilot' : s.entrypoint === CODEX_ENTRYPOINT ? 'Codex' : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? 'Antigravity' : 'Claude Code', head: clean(s.turns[0]!.prompt.split('\n')[0]!).slice(0, 200), started_at: Date.parse(s.start) || 0, ended_at: Date.parse(s.end) || 0, mask: MASK_VERSION, turns }
+  const unit: Unit = { project: projectKey(repo), tool: s.entrypoint === COPILOT_ENTRYPOINT ? 'Copilot' : s.entrypoint === CODEX_ENTRYPOINT ? 'Codex' : s.entrypoint === ANTIGRAVITY_ENTRYPOINT ? 'Antigravity' : s.entrypoint === CURSOR_ENTRYPOINT ? 'Cursor' : 'Claude Code', head: clean(s.turns[0]!.prompt.split('\n')[0]!).slice(0, 200), started_at: Date.parse(s.start) || 0, ended_at: Date.parse(s.end) || 0, mask: MASK_VERSION, turns }
 
   return { session: c.session, unit, sha: createHash('sha256').update(JSON.stringify(unit)).digest('hex'), bytes, passages: count, subagentFiles: cfg.shareSubagents ? 0 : c.subagents.length, cut, dropped }
 }

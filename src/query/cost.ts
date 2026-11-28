@@ -8,7 +8,7 @@ import type { Node } from './engine.ts'
 type Point = [string, number | null, number, number, number]
 interface Sum { chats: number; costed: number; priced: number; usd: number; input: number; cached: number; output: number }
 
-const TOOLS = ['Claude Code', 'Codex', 'Copilot', 'Antigravity']
+const TOOLS = ['Claude Code', 'Codex', 'Copilot', 'Antigravity', 'Cursor']
 const TOKENS = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 const USD = (n: number) => `$${n.toFixed(2)}`
 const empty = (): Sum => ({ chats: 0, costed: 0, priced: 0, usd: 0, input: 0, cached: 0, output: 0 })

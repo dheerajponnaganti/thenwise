@@ -30,6 +30,7 @@ import { EXPIRY_DAYS, overdue, pausedNotes, readNotes } from '../capture/notes.t
 import { codexHooksTrusted } from '../ingest/codex.ts'
 import { antigravitySources } from '../ingest/antigravity.ts'
 import { codexSources } from '../ingest/codex.ts'
+import { cursorSources } from '../ingest/cursor.ts'
 import { copilotSources } from '../ingest/copilot.ts'
 
 export const TRACE_TOKENS = 600
@@ -466,7 +467,7 @@ function chatCounts(home: string): string {
   }
   const projects = join(home, '.claude', 'projects')
   const claude = listDir(projects).flatMap((k) => (k.isDirectory() ? listDir(join(projects, k.name)).filter((f) => f.isFile() && f.name.endsWith('.jsonl')) : [])).length
-  const parts = [[claude, 'Claude Code'], [n(() => copilotSources(home)), 'Copilot'], [n(() => codexSources(home)), 'Codex'], [n(() => antigravitySources(home)), 'Antigravity']].filter(([c]) => (c as number) > 0).map(([c, t]) => `${(c as number).toLocaleString('en-US')} from ${t}`)
+  const parts = [[claude, 'Claude Code'], [n(() => copilotSources(home)), 'Copilot'], [n(() => codexSources(home)), 'Codex'], [n(() => antigravitySources(home)), 'Antigravity'], [n(() => cursorSources(home)), 'Cursor']].filter(([c]) => (c as number) > 0).map(([c, t]) => `${(c as number).toLocaleString('en-US')} from ${t}`)
 
   return parts.length ? parts.join(', ') : 'none yet'
 }

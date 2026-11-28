@@ -46,7 +46,7 @@ export async function hookInput(): Promise<Record<string, any>> {
   let raw = ''
   for await (const d of process.stdin) raw += d
   try {
-    input = claudeHookInput(JSON.parse(raw || '{}'))
+    input = claudeHookInput(JSON.parse(raw.replace(/^\uFEFF/, '') || '{}'))
   } catch {
     input = {}
   }

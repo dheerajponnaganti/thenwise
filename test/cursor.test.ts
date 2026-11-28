@@ -1,12 +1,13 @@
 // Cursor chats in one memory with Claude Code's: its agent transcripts in the transcript shape, joined to the right project.
 
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 
-import { projectKey } from '../src/ingest/copilot.ts'
+import { claudeHookInput, projectKey } from '../src/ingest/copilot.ts'
 import { cursorConverter, cursorKey, cursorSources, cursorTool, folderOfKey, promptTime, spelledBack } from '../src/ingest/cursor.ts'
 import { parseSession } from '../src/ingest/transcript.ts'
 
@@ -101,4 +102,51 @@ test('sources: each transcript joins its folder as Claude Code keys it; a no-fol
     ['0a1b2c3d-0000-0000-0000-000000000000', home, `${projectKey(home)}/0a1b2c3d-0000-0000-0000-000000000000.jsonl`],
     ['2f4691c6-7300-4674-b634-5b1d9dfa7575', folder, `${projectKey(folder)}/2f4691c6-7300-4674-b634-5b1d9dfa7575.jsonl`],
   ])
+})
+
+// ---- hooks: Cursor sends one payload of its own to every hook, whichever file registered it ----
+
+const cli = resolve('src/cli.ts')
+const cursorPayload = (event: string, more: object = {}) => ({ conversation_id: 'cur-1', session_id: 'cur-1', generation_id: 'g', model: 'm', hook_event_name: event, cursor_version: '2026.11.22-e9042b2', workspace_roots: ['/work/repo'], user_email: 'someone@example.com', transcript_path: null, ...more })
+const hookRun = (name: string, payload: unknown, dir: string, raw = false) =>
+  spawnSync(process.execPath, [cli, 'hook', name], { input: raw ? String(payload) : JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, THENWISE_HOME: dir, HOME: dir, THENWISE_SYNC: 'off', CLAUDE_PLUGIN_ROOT: '/somewhere' } })
+
+test('a Cursor payload reads like Claude Code: folder from the workspace, events and tools renamed, the email dropped', () => {
+  const start = claudeHookInput(cursorPayload('sessionStart'))
+  assert.equal(start.hook_event_name, 'SessionStart')
+  assert.equal(start.source, 'startup')
+  assert.equal(start.cwd, '/work/repo')
+  assert.equal(start.session_id, 'cur-1')
+  assert.equal(start.user_email, undefined)
+  assert.ok(!JSON.stringify(start).includes('someone@example.com'))
+  const shell = claudeHookInput(cursorPayload('postToolUseFailure', { tool_name: 'Shell', tool_input: { command: 'npm test', cwd: '' }, cwd: '' }))
+  assert.deepEqual([shell.hook_event_name, shell.tool_name, shell.tool_input, shell.cwd], ['PostToolUseFailure', 'Bash', { command: 'npm test' }, '/work/repo'])
+  const read = claudeHookInput(cursorPayload('postToolUse', { tool_name: 'Read', tool_input: { file_path: '/work/repo/a.ts' } }))
+  assert.deepEqual([read.tool_name, read.tool_input], ['Read', { file_path: '/work/repo/a.ts' }])
+})
+
+test('Cursor gets its own reply shape and always JSON: a guide at the start, {} when there is nothing to say, a BOM read', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-cursor-hook-'))
+  writeFileSync(join(dir, 'config.json'), JSON.stringify({ exclude_projects: ['*'] }))
+  const a = hookRun('session-start', cursorPayload('sessionStart'), dir)
+  assert.equal(a.status, 0)
+  const out = JSON.parse(a.stdout)
+  assert.match(out.additional_context, /memory_\* tools/)
+  assert.equal(out.hookSpecificOutput, undefined, 'never the Claude Code shape, though CLAUDE_PLUGIN_ROOT is set')
+  assert.equal(out.systemMessage, undefined)
+  const b = hookRun('post', cursorPayload('postToolUse', { tool_name: 'Write', tool_input: { file_path: '/work/repo/x.js' } }), dir)
+  assert.deepEqual(JSON.parse(b.stdout), {})
+  const c = hookRun('stop', cursorPayload('stop', { status: 'completed' }), dir)
+  assert.deepEqual(JSON.parse(c.stdout), {})
+  const d = hookRun('session-start', '﻿' + JSON.stringify(cursorPayload('sessionStart', { session_id: 'cur-bom', conversation_id: 'cur-bom' })), dir, true)
+  assert.match(JSON.parse(d.stdout).additional_context, /memory_\* tools/)
+})
+
+test('two Thenwise installs in Cursor run every hook: the second session start of a session says nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-cursor-twice-'))
+  writeFileSync(join(dir, 'config.json'), JSON.stringify({ exclude_projects: ['*'] }))
+  const first = JSON.parse(hookRun('session-start', cursorPayload('sessionStart', { session_id: 'cur-2', conversation_id: 'cur-2' }), dir).stdout)
+  const second = JSON.parse(hookRun('session-start', cursorPayload('sessionStart', { session_id: 'cur-2', conversation_id: 'cur-2' }), dir).stdout)
+  assert.match(first.additional_context, /memory_\* tools/)
+  assert.deepEqual(second, {})
 })

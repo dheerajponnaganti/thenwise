@@ -281,8 +281,13 @@ export function syncNotice(dir: string, now = Date.now()): string {
 
 // Copilot (it sets COPILOT_PLUGIN_ROOT) reads additionalContext at the top level; Claude Code reads it under hookSpecificOutput.
 // Commands are named the way this tool runs them (forHost), so Codex and Antigravity never read a command they lack.
+// Cursor: set from the payload by runHook (never from the environment, which Cursor fills with Claude Code's names).
+let cursorHost = false
+// Cursor reads additional_context and drops a text over 10,000 characters whole, so a longer one is cut to fit.
+const CURSOR_MAX = 10_000
 const reply = (event: string, context: string, told = '') => {
   const [additionalContext, systemMessage] = [forHost(context), forHost(told)]
+  if (cursorHost) return additionalContext ? JSON.stringify({ additional_context: additionalContext.length > CURSOR_MAX ? `${additionalContext.slice(0, CURSOR_MAX - 6)}\n(cut)` : additionalContext }) : ''
   // Antigravity parses output strictly: only its session and invocation hooks may add steps, and PostToolUse must stay empty.
   return process.env.ANTIGRAVITY_CONVERSATION_ID ? JSON.stringify(event === 'SessionStart' || event === 'UserPromptSubmit' ? { injectSteps: [{ ephemeralMessage: additionalContext }] } : {}) :
     JSON.stringify(process.env.COPILOT_PLUGIN_ROOT ? { additionalContext } : { ...(systemMessage ? { systemMessage } : {}), hookSpecificOutput: { hookEventName: event, additionalContext } })
@@ -292,12 +297,14 @@ const reply = (event: string, context: string, told = '') => {
 const contextOf = (out: string): string => {
   const o = JSON.parse(out)
 
-  return o.hookSpecificOutput?.additionalContext ?? o.additionalContext ?? o.injectSteps?.[0]?.ephemeralMessage ?? ''
+  return o.hookSpecificOutput?.additionalContext ?? o.additionalContext ?? o.additional_context ?? o.injectSteps?.[0]?.ephemeralMessage ?? ''
 }
 /** Copilot and Antigravity show no hook text to the person; Claude Code and Codex show a systemMessage. */
-export const showsPerson = () => !process.env.COPILOT_PLUGIN_ROOT && !process.env.ANTIGRAVITY_CONVERSATION_ID
+export const showsPerson = () => !cursorHost && !process.env.COPILOT_PLUGIN_ROOT && !process.env.ANTIGRAVITY_CONVERSATION_ID
 
 // Copilot's shell tool has no plugin variables, so the model needs the plugin's folder to run the /thenwise: commands.
+// Cursor gets no rule file by default, so the start says where past work lives.
+const CURSOR_GUIDE = 'Thenwise memory is on. For questions about past work, decisions or what was tried, call the memory_* tools before guessing.'
 const copilotGuide = (root: string) => `Thenwise memory runs from ${root}. In its /thenwise: commands, \${CLAUDE_PLUGIN_ROOT} stands for that folder. For questions about past work, decisions or what was tried, call the memory_* tools before guessing.`
 
 /** Files already hinted, kept per session and agent (a subagent's Read must not spend the main thread's hint). */
@@ -405,8 +412,18 @@ function resumeAfterCompact(env: HookEnv, cwd: string, graph: string, tail: stri
 
 /** The stdout for one hook, or '' for none. Every Thenwise block it sends to the agent is recorded for /thenwise:shown. */
 export function runHook(name: string, input: Record<string, any>, env: HookEnv): string {
-  const out = hookReply(name, input, env)
+  cursorHost = typeof input.cursor_version === 'string'
   const sid = input.session_id ?? input.sessionId
+  // Two Thenwise installs in Cursor (Claude Code's, imported, and Cursor's own) both run every hook: one start per session.
+  if (cursorHost && name === 'session-start' && typeof sid === 'string' && sid) {
+    try {
+      mkdirSync(join(env.dir, 'hook-state'), { recursive: true, mode: 0o700 })
+      writeFileSync(join(env.dir, 'hook-state', `${sid.replace(/[^\w.-]/g, '_')}.cursor-start`), '', { flag: 'wx', mode: 0o600 })
+    } catch {
+      return '' // the other install answered this start
+    }
+  }
+  const out = hookReply(name, input, env)
   const compact = name === 'session-start' && input.source === 'compact'
   if ((out || compact) && typeof sid === 'string') {
     try {
@@ -574,7 +591,7 @@ function hookReply(name: string, input: Record<string, any>, env: HookEnv): stri
 
         return ctx || person ? reply(event, ctx, person) : ''
       }
-      const guide = fresh && process.env.COPILOT_PLUGIN_ROOT ? copilotGuide(process.env.COPILOT_PLUGIN_ROOT) : ''
+      const guide = fresh && process.env.COPILOT_PLUGIN_ROOT ? copilotGuide(process.env.COPILOT_PLUGIN_ROOT) : fresh && cursorHost ? CURSOR_GUIDE : ''
       // Where another session of this project stopped, read from its live chat file: the store may not hold it yet.
       // A team member: the start's sync may fetch a teammate's chat after this brief; the first prompts look for it.
       const sid = String(input.session_id ?? '')

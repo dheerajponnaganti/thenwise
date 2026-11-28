@@ -111,9 +111,13 @@ function launchFolder(): string {
   return script && process.env.PWD && dirname(dirname(realpathSync(script))) === realpathSync(here) ? process.env.PWD : here
 }
 
+/** A folder from the environment, unless it is a variable the tool never filled in: the Cursor CLI passes `${workspaceFolder}`
+ * through as it is written, which would scope every answer to a folder that does not exist. */
+export const filled = (v: string | undefined) => (v && !v.includes('${') ? v : undefined)
+
 export function createServer(dbPath: () => string, fixedProject?: string) {
   // Read at each open: Copilot may start this server before it writes the session's workspace file.
-  const here = () => fixedProject ?? process.env.THENWISE_PROJECT ?? process.env.CLAUDE_PROJECT_DIR ?? (root || copilotSessionCwd(homedir()) || launchFolder())
+  const here = () => fixedProject ?? filled(process.env.THENWISE_PROJECT) ?? filled(process.env.CLAUDE_PROJECT_DIR) ?? (root || copilotSessionCwd(homedir()) || launchFolder())
   // A client that offers MCP roots says which folder it works in. Antigravity does, and starts plugin servers in the plugin folder.
   let root = ''
   let askRoots = false

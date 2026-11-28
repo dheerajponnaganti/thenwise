@@ -372,3 +372,41 @@ test('#120: the server reuses its config load, and still sees `thenwise off` and
     else process.env.THENWISE_HOME = home
   }
 })
+
+test('the memory server starts the background sync when a client connects, so a tool without hooks still saves its chats', async () => {
+  const { readLog } = await import('../src/core/log.ts')
+  const start = async (sync: string) => {
+    const dir = tempDir()
+    writeGraph(dir)
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ exclude_projects: ['*'] })) // the sync reads nothing real
+    const p = spawn(process.execPath, [cli, 'mcp'], { env: { ...process.env, THENWISE_HOME: dir, THENWISE_SYNC: sync, THENWISE_LOG: 'on' } })
+    p.stdout.on('data', () => {})
+    p.stdin.write(`${JSON.stringify(init)}\n`)
+    await new Promise((r) => setTimeout(r, 1500))
+    p.stdin.end()
+    await new Promise((r) => p.on('exit', r))
+
+    return readLog(dir).map((e) => e.msg).join('\n')
+  }
+  assert.match(await start('on'), /sync started|sync already running/)
+  assert.match(await start('off'), /sync off/)
+})
+
+test('doctor checks that the memory server starts without starting a sync', async () => {
+  const { runDoctor } = await import('../src/setup/doctor.ts')
+  const { readLog } = await import('../src/core/log.ts')
+  const dir = tempDir()
+  writeGraph(dir)
+  const keep = { THENWISE_SYNC: process.env.THENWISE_SYNC, THENWISE_HOME: process.env.THENWISE_HOME, THENWISE_LOG: process.env.THENWISE_LOG }
+  delete process.env.THENWISE_SYNC
+  process.env.THENWISE_HOME = dir
+  process.env.THENWISE_LOG = 'on'
+  try {
+    await runDoctor(process.env.HOME!, { gh: () => true, git: () => true })
+  } finally {
+    for (const [k, v] of Object.entries(keep)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+  }
+  const said = readLog(dir).map((e) => e.msg).join('\n')
+  assert.match(said, /sync off/, 'the server ran')
+  assert.doesNotMatch(said, /sync started/)
+})

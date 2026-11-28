@@ -12,6 +12,7 @@ import { errFields, errorCode, logger, queryFields, redact } from '../core/log.t
 import { isOff, loadConfigSafe, offCheck } from '../ingest/config.ts'
 import { copilotSessionCwd } from '../ingest/copilot.ts'
 import { handoffBlock, ownChat } from '../hooks/handoff.ts'
+import { startSync } from '../hooks/hook.ts'
 import { incompleteNote, percent, readProgress, running } from '../core/progress.ts'
 import { addNews, forHost, heldHandoff, setClient } from '../core/notices.ts'
 import { codexHooksTrusted } from '../ingest/codex.ts'
@@ -283,6 +284,15 @@ export function createServer(dbPath: () => string, fixedProject?: string) {
       setClient(String(p.clientInfo?.name ?? ''))
       askRoots = !!p.capabilities?.roots
       log.info('start', { v: version() })
+      // A tool whose hooks are off or missing (Cursor with third-party plugins off, a plain MCP setup) still gets its chats
+      // saved: the server starts the same background sync a session start does. One runs at a time; THENWISE_SYNC=off stops it.
+      if (process.argv[1]) {
+        try {
+          startSync({ dir: resolveDataDir(), cli: process.argv[1] })
+        } catch (e) {
+          log.warn('sync_start_failed', errFields(e)) // memory answers from the store as it is
+        }
+      }
       const asked = typeof p.protocolVersion === 'string' ? p.protocolVersion : ''
 
       return ok(m.id, { protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'thenwise', version: version() }, instructions: INSTRUCTIONS })

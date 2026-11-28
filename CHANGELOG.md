@@ -5,6 +5,7 @@
 - Thenwise now remembers Cursor chats. It reads the agent transcripts that Cursor's CLI and IDE agent write under `~/.cursor/projects/`, joins each chat to its folder, and keeps its prompts, replies, file reads, edits and commands. Cursor's transcripts keep no command output, so a failed test in a Cursor chat is not yet recorded as a dead end.
 - Thenwise's hooks now understand Cursor. Cursor runs Claude Code's plugin hooks and sends them its own payload, so the hooks now read Cursor's folder, events and tool names, reply in Cursor's shape, and never pass on the email address Cursor includes. With Thenwise installed twice in Cursor, a session's start runs once.
 - The plugin now carries a Cursor entry: a Cursor manifest and hooks in Cursor's own format. Cursor reads it before the Claude Code files in the same folder, whether Thenwise came in through Claude Code or through Cursor's own plugin marketplace. It registers no hook that can block a Cursor action.
+- The memory server now starts the background sync when a tool connects to it. Chats are saved even where Thenwise's hooks do not run, such as Cursor with third-party plugins turned off or a plain MCP setup. One sync runs at a time, and `THENWISE_SYNC=off` still stops it.
 - Claude Code and Codex now give each Thenwise hook 5 seconds instead of 3. On a slow node start, such as right after a restart or with antivirus scanning each launch, the hook waits instead of being skipped with "didn't answer in time". A normal hook still takes about a tenth of a second.
 
 ## 0.3.3

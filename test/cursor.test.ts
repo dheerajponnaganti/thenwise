@@ -186,3 +186,22 @@ test('#153: the memory server ignores a ${workspaceFolder} the Cursor CLI never 
   assert.equal(filled('/work/repo'), '/work/repo')
   assert.equal(filled(undefined), undefined)
 })
+
+test('a Cursor shell run that failed reads as a failed test: the hook records it, masked, and the chat reader marks that call', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tw-cursor-runs-'))
+  const run = (event: string, id: string, more: object = {}) =>
+    hookRun('post', cursorPayload(event, { tool_name: 'Shell', tool_input: { command: 'npm test', cwd: '' }, tool_use_id: id, ...more }), dir)
+  assert.equal(run('postToolUseFailure', 't1', { error_message: 'AssertionError: 0 == 4 token=ghp_abcdefghijklmnopqrstuvwxyz0123456789', failure_type: 'error' }).status, 0)
+  run('postToolUseFailure', 't1', { error_message: 'AssertionError: 0 == 4', failure_type: 'error' }) // a second install, same run
+  run('postToolUse', 't2', { tool_output: 'ok' })
+  const kept = readFileSync(join(dir, 'cursor-runs', 'cur-1.jsonl'), 'utf8')
+  assert.ok(!kept.includes('npm test'), 'the command is kept only as a hash')
+  assert.ok(!kept.includes('ghp_abcdefghij'), 'the error is masked')
+  const f = cursorConverter('cur-1', '/work/repo', dir)
+  const lines = [prompt('fix add'), reply(tool('Shell', { command: 'npm test' })), reply(tool('StrReplace', { path: '/work/repo/a.js', old_string: 'a', new_string: 'b' })), reply(tool('Shell', { command: 'npm test' }))].flatMap(f)
+  const results = lines.map((l) => JSON.parse(l)).filter((r) => r.type === 'user' && Array.isArray(r.message.content)).map((r) => r.message.content[0])
+  assert.deepEqual(results.map((r) => r.is_error === true), [true, false, false], 'the first run failed, the later one passed')
+  assert.match(results[0].content, /AssertionError/)
+  const s = parseSession(lines, 'cur-1', dir)
+  assert.deepEqual(s.turns[0]!.tests.map((t) => t.failed), [true, false])
+})

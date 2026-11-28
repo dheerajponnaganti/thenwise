@@ -323,10 +323,10 @@ function archiveLocked(cfg: Config, opts: ArchiveOpts): ArchiveResult {
   collect(join(base, 'claude-projects'), sources, false)
   collect(join(cfg.claudeDir, 'projects'), sources, true)
   // A chat file can go between the listing and the stat (Copilot clears a session, Codex moves a rollout): skip it.
-  const other = (tool: string, found: { rel: string; path: string; id: string; cwd: string }[], conv: (id: string, cwd: string) => (line: string) => string[]) => {
+  const other = (tool: string, found: { rel: string; path: string; id: string; cwd: string }[], conv: (id: string, cwd: string, memDir: string) => (line: string) => string[]) => {
     for (const c of found) {
       const st = statSync(c.path, { throwIfNoEntry: false })
-      if (st) sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, tool, convert: () => conv(c.id, c.cwd) })
+      if (st) sources.set(c.rel, { rel: c.rel, path: c.path, size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, tool, convert: () => conv(c.id, c.cwd, cfg.memDir) })
     }
   }
   other('copilot', copilotSources(cfg.home), copilotConverter)

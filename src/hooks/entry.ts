@@ -110,6 +110,7 @@ export function nothingToDo(name: string, i: Record<string, any>): boolean {
   }
   const cmd = i.tool_input?.command
   if (typeof cmd !== 'string' || !i.cwd) return true
+  if (typeof i.cursor_version === 'string') return false // every Cursor run is recorded
   const first = cmd.trim().split(/\s+/)[0]!.split('/').pop()!
   const mayRead = READERS.test(first) && !/[|;&<>`$()\n]/.test(cmd)
 

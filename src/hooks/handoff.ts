@@ -29,7 +29,7 @@ const TAIL = 8 << 20 // ... and its last part (where it stopped)
 
 export type Tool = 'Claude Code' | 'Copilot' | 'Codex' | 'Antigravity' | 'Cursor'
 // The other tools' chats, found by their own readers and turned into Claude Code's lines at the door.
-const OTHERS: { tool: Exclude<Tool, 'Claude Code'>; sources: (home: string) => { rel: string; path: string; id: string; cwd: string }[]; convert: (id: string, cwd: string) => (line: string) => string[] }[] = [
+const OTHERS: { tool: Exclude<Tool, 'Claude Code'>; sources: (home: string) => { rel: string; path: string; id: string; cwd: string }[]; convert: (id: string, cwd: string, memDir: string) => (line: string) => string[] }[] = [
   { tool: 'Copilot', sources: copilotSources, convert: copilotConverter },
   { tool: 'Codex', sources: codexSources, convert: codexConverter },
   { tool: 'Antigravity', sources: antigravitySources, convert: antigravityConverter },
@@ -162,7 +162,7 @@ export function readLive(cfg: Config, chat: LiveChat, whole = WHOLE): (Session &
   const tombs = loadTombs(cfg.memDir)
   if (cfg.excludeProjects.some((g) => globMatch(g, key)) || isForgotten(tombs, chat.rel, chat.cwd)) return null
   const { lines, partial, tailFrom } = liveLines(chat.path, whole)
-  const convert = OTHERS.find((o) => o.tool === chat.tool)?.convert(chat.id, chat.cwd ?? '')
+  const convert = OTHERS.find((o) => o.tool === chat.tool)?.convert(chat.id, chat.cwd ?? '', cfg.memDir)
   const s = parseSession(convert ? lines.flatMap(convert) : lines, chat.id, cfg.home)
   // A long chat's middle is not read: a call from its start whose result sits there is no step the chat stopped in.
   if (partial && s.openCall && Date.parse(s.openCall.at) < firstTime(lines.slice(tailFrom))) delete s.openCall
